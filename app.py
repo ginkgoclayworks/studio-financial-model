@@ -485,7 +485,7 @@ with tab_run:
 
         st.markdown("#### Captured charts")
         for fname, data in images:
-            st.image(data, caption=fname, use_column_width=True)
+            st.image(data, caption=fname, use_container_width=True)
 
         # Download bundle (PNGs + manifest) for the cell
         buf = io.BytesIO()

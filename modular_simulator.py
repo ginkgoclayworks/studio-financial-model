@@ -1412,7 +1412,13 @@ def _core_simulation_and_reports():
                 ax.set_xlabel("Month")
     
            # Collect and de‑duplicate legend entries from all facets
-
+            for ax in fig.axes:
+                # keep existing text but shrink font
+                ax.set_xlabel(ax.get_xlabel(), fontsize=10)
+                ax.set_ylabel(ax.get_ylabel(), fontsize=10)
+                ax.tick_params(axis="both", which="major", labelsize=9)
+                ax.tick_params(axis="both", which="minor", labelsize=8)  # if you have minor ticks
+                
             handles_all, labels_all = [], []
             for ax_ in axes.flat:
                 h_, l_ = ax_.get_legend_handles_labels()
@@ -1422,7 +1428,8 @@ def _core_simulation_and_reports():
             for h_, l_ in zip(handles_all, labels_all):
                 if l_ not in by_label:
                     by_label[l_] = h_
-    
+            # ↓ Make axis labels and tick labels smaller on all axes in this figure
+            
             fig.legend(
                 list(by_label.values()),
                 list(by_label.keys()),

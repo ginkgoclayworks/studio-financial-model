@@ -1411,27 +1411,26 @@ def _core_simulation_and_reports():
                 if j == 0: ax.set_ylabel("Dollars ($)")
                 ax.set_xlabel("Month")
     
-          # --- Collect and de-duplicate legend entries from this figure ---
+           # Collect and de‑duplicate legend entries from all facets
+
             handles_all, labels_all = [], []
-            for ax_ in fig.axes:   # use the existing fig, not a new plt.subplots
+            for ax_ in axes.flat:
                 h_, l_ = ax_.get_legend_handles_labels()
                 handles_all.extend(h_); labels_all.extend(l_)
-            
             from collections import OrderedDict
             by_label = OrderedDict()
             for h_, l_ in zip(handles_all, labels_all):
                 if l_ not in by_label:
                     by_label[l_] = h_
-            
-            # Place legend at bottom, larger fontsize
+    
             fig.legend(
                 list(by_label.values()),
                 list(by_label.keys()),
                 loc="upper center",
                 bbox_to_anchor=(0.5, -0.02),   # push below x-axis
-                ncol=min(4, len(by_label)),    # spread entries horizontally
+                ncol=min(4, len(by_label)),    # spread entries
                 frameon=False,
-                fontsize=12                    # bump size up
+                fontsize = 10
             )
             
             # Title + spacing that leaves headroom (top) and legend space (bottom)

@@ -246,11 +246,8 @@ class FigureCapture:
         def _ensure_suffix(fig):
             if not self.title_suffix:
                 return
-            current = fig._suptitle.get_text() if fig._suptitle else ""
-            if current:
-                if self.title_suffix not in current:
-                    fig._suptitle.set_text(f"{current} — {self.title_suffix}")
-            else:
+            has_any_title = any(ax.get_title() for ax in fig.get_axes())
+            if not has_any_title:
                 fig.suptitle(self.title_suffix)
 
         def _show(*args, **kwargs):

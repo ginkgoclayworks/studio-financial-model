@@ -1,13 +1,14 @@
-streamlit>=1.35
+streamlit>=1.35,<2
 pandas>=2.2
-numpy>=1.26
+numpy>=2.3
 matplotlib>=3.8
 seaborn>=0.13
 requests>=2.31
 python-dateutil>=2.9
-pytrends>=4.9.6
 
-# Optional parquet support — handled via try/except in code.
-# If you want it, uncomment one (or both) of the next lines:
-# pyarrow>=15
-# fastparquet>=2024.5
+# Google Trends client (works on 3.13 up to 4.9.2)
+pytrends==4.9.2
+
+# Optional local dev extras (commented out so Cloud doesn’t try to install them)
+# pyarrow>=16.1.0
+# fastparquet>=2024.2.0

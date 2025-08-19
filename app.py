@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Aug 18 22:29:13 2025
-
-@author: harshadghodke
+Streamlit app for GCWS simulator
 """
 
-# app.py
-import io, json, re, shutil, zipfile
+import io, json, re, zipfile
 from pathlib import Path
 from typing import Optional, List, Tuple
 
@@ -121,77 +118,117 @@ def run_cell_cached(env: dict, strat: dict, seed: int):
     df_cell, eff = (res if isinstance(res, tuple) else (res, None))
     return df_cell, eff, cap.images, cap.manifest
 
-# ---------- metrics ----------
-def first_insolvency_month(series: pd.Series) -> float:
-    s = series.dropna()
-    idx = s.index[s.values < 0]
-    return float(idx.min()) if len(idx) else np.nan
-
-def first_sustained_ge_zero(series: pd.Series, k: int = 3) -> float:
-    s = series.dropna().sort_index()
-    ok = (s >= 0).astype(int).rolling(k, min_periods=k).sum() == k
-    idx = ok[ok].index
-    return float(idx.min()) if len(idx) else np.nan
-
-def pick_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+# ---------- column detection & timings (robust) ----------
+def _pick_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     for c in candidates:
         if c in df.columns:
             return c
     return None
 
-def summarize_cell(df: pd.DataFrame) -> pd.DataFrame:
-    # expects columns: environment, strategy, simulation_id, month, cash_balance, dscr, (maybe cfads)
-    keys = ["environment", "strategy", "simulation_id"]
-    T = int(df["month"].max())
-    cash_col = pick_col(df, ["cash_balance","cash","ending_cash"])
-    cf_col   = pick_col(df, ["cfads","operating_cash_flow","op_cf","net_cash_flow","cash_flow"])
+def _first_cash_negative(g: pd.DataFrame, month_col: str, cash_col: str) -> float:
+    g = g.sort_values(month_col)
+    m = g.loc[g[cash_col] < 0, month_col]
+    return float(m.iloc[0]) if not m.empty else np.nan
+
+def _first_sustained_ge_zero(g: pd.DataFrame, month_col: str, cf_col: str, k: int = 3) -> float:
+    g = g.sort_values(month_col)
+    ok = (g[cf_col] >= 0).astype(int).rolling(k, min_periods=k).sum() == k
+    m = g.loc[ok.values, month_col]
+    return float(m.iloc[0]) if not m.empty else np.nan
+
+def summarize_cell(df: pd.DataFrame):
+    """
+    Summarize a single (environment,strategy) 'cell' DataFrame.
+    Returns (row_dict, timings_df).
+    Robust to missing environment/strategy/simulation_id and CF columns.
+    """
+    if df is None or df.empty:
+        raise ValueError("summarize_cell: got an empty DataFrame")
+
+    df = df.copy()
+
+    # Identify columns
+    month_col = _pick_col(df, ["month", "t", "period", "month_idx"])
+    if month_col is None:
+        raise KeyError("Could not find a month column (tried: month, t, period, month_idx).")
+
+    sim_col = _pick_col(df, ["simulation_id", "sim_id", "sim"])
+    if sim_col is None:
+        # Treat the whole df as a single simulation
+        df["_sim_id"] = 0
+        sim_col = "_sim_id"
+
+    cash_col = _pick_col(df, ["cash_balance", "cash", "ending_cash"])
     if cash_col is None:
-        raise RuntimeError("cash balance column not found")
+        raise KeyError("Could not find a cash balance column (tried: cash_balance, cash, ending_cash).")
+
+    cf_col = _pick_col(df, ["cfads", "operating_cash_flow", "op_cf", "net_cash_flow", "cash_flow"])
     if cf_col is None:
-        df["_fallback_cf"] = (df.sort_values(keys+["month"])
-                                .groupby(keys)[cash_col].diff().fillna(0.0))
+        # Fallback: month-over-month change in cash as proxy for CF
+        df["_fallback_cf"] = (df.sort_values([sim_col, month_col])
+                                .groupby(sim_col)[cash_col]
+                                .diff()
+                                .fillna(0.0))
         cf_col = "_fallback_cf"
 
-    grp = df.sort_values(keys+["month"]).groupby(keys)
-    t_ins = grp.apply(lambda g: first_insolvency_month(g.set_index("month")[cash_col])).reset_index(name="t_insolvency")
-    t_be  = grp.apply(lambda g: first_sustained_ge_zero(g.set_index("month")[cf_col], k=3)).reset_index(name="t_breakeven")
-    timings = t_ins.merge(t_be, on=keys, how="outer")
+    # Sort and group
+    df = df.sort_values([sim_col, month_col])
+    grp = df.groupby(sim_col, as_index=False)
 
-    # survival by “ever negative cash”
-    ever_neg = (grp[cash_col].min().reset_index(name="min_cash")
-                    .assign(neg=lambda d: d["min_cash"] < 0)
-                    .groupby(["environment","strategy"])["neg"].mean()
-                    .reset_index(name="prob_insolvent_by_T"))
-    surv = ever_neg.assign(survival_prob=lambda d: 1.0 - d["prob_insolvent_by_T"])[["environment","strategy","survival_prob"]]
+    # Timings per simulation
+    first_insolvency = grp.apply(lambda g: _first_cash_negative(g, month_col, cash_col)) \
+                          .reset_index(name="t_insolvency")
+    first_breakeven  = grp.apply(lambda g: _first_sustained_ge_zero(g, month_col, cf_col, k=3)) \
+                          .reset_index(name="t_breakeven")
+    timings = first_insolvency.merge(first_breakeven, on=sim_col, how="outer")
 
-    # end-of-horizon cash + DSCR 12
-    last = df[df["month"] == T]
-    cash_q = (last.groupby(["environment","strategy"])[cash_col]
-                  .quantile([0.10,0.50,0.90]).unstack().reset_index()
-                  .rename(columns={0.10:"cash_q10",0.50:"cash_med",0.90:"cash_q90"}))
-    m12 = 12 if T >= 12 else T
-    dscr_q = (df[df["month"] == m12]
-                .groupby(["environment","strategy"])["dscr"]
-                .quantile([0.10,0.50,0.90]).unstack().reset_index()
-                .rename(columns={0.10:"dscr_q10",0.50:"dscr_med",0.90:"dscr_q90"}))
+    # Horizon
+    T = int(df[month_col].max())
 
-    # timing medians
-    def med(s): 
-        s = s.replace([np.inf,-np.inf], np.nan).dropna()
-        return float(s.median()) if len(s) else np.nan
-    timing_summary = (timings.groupby(["environment","strategy"])
-                      .agg(median_time_to_insolvency_months=("t_insolvency", med),
-                           median_time_to_breakeven_months=("t_breakeven", med))
-                      .reset_index())
+    # Survival prob = 1 - share of sims that ever went < 0 cash
+    prob_insolvent = (df.groupby(sim_col)[cash_col].min() < 0).mean()
+    survival_prob = float(1.0 - prob_insolvent)
 
-    matrix_row = (surv.merge(cash_q, on=["environment","strategy"], how="left")
-                      .merge(dscr_q, on=["environment","strategy"], how="left")
-                      .merge(timing_summary, on=["environment","strategy"], how="left"))
-    return matrix_row, timings
+    # End-of-horizon cash
+    last = df[df[month_col] == T]
+    cash_q10 = float(last[cash_col].quantile(0.10))
+    cash_med = float(last[cash_col].quantile(0.50))
+    cash_q90 = float(last[cash_col].quantile(0.90))
+
+    # DSCR at month 12 if available, else at T (optional)
+    dscr_col = _pick_col(df, ["dscr", "DSCR"])
+    dscr_q10 = dscr_med = dscr_q90 = np.nan
+    if dscr_col is not None:
+        m_dscr = 12 if df[month_col].max() >= 12 else T
+        at_m = df[df[month_col] == m_dscr]
+        if not at_m.empty:
+            dscr_q10 = float(at_m[dscr_col].quantile(0.10))
+            dscr_med = float(at_m[dscr_col].quantile(0.50))
+            dscr_q90 = float(at_m[dscr_col].quantile(0.90))
+
+    # Median timings across sims (NaNs ignored)
+    med_t_insolv = float(timings["t_insolvency"].dropna().median()) if timings["t_insolvency"].notna().any() else np.nan
+    med_t_be     = float(timings["t_breakeven"].dropna().median())   if timings["t_breakeven"].notna().any() else np.nan
+    share_insolv = float(timings["t_insolvency"].notna().mean()) if len(timings) else np.nan
+
+    row = {
+        "survival_prob": survival_prob,
+        "cash_q10": cash_q10,
+        "cash_med": cash_med,
+        "cash_q90": cash_q90,
+        "dscr_q10": dscr_q10,
+        "dscr_med": dscr_med,
+        "dscr_q90": dscr_q90,
+        "median_time_to_insolvency_months": med_t_insolv,
+        "median_time_to_breakeven_months":  med_t_be,
+        "share_insolvent_by_T": share_insolv,
+        "T": T,
+    }
+
+    return row, timings
 
 # ---------- UI ----------
 st.set_page_config(page_title="GCWS Simulator", layout="wide")
-
 st.title("Ginkgo Clayworks — Scenario Explorer")
 
 # Presets (match your code)
@@ -237,15 +274,15 @@ with tab_run:
     if run_btn:
         with st.spinner("Running simulator…"):
             df_cell, eff, images, manifest = run_cell_cached(env, strat, seed)
-            row, timings = summarize_cell(df_cell)
+            row_dict, timings = summarize_cell(df_cell)
 
         st.subheader(f"KPIs — {env['name']} | {strat['name']}")
-        kpi = row.iloc[0]
+        kpi = row_dict
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Survival prob @ horizon", f"{kpi['survival_prob']:.2f}")
         col2.metric("Cash p10 → p50 ($k)", f"{kpi['cash_q10']/1e3:,.0f} → {kpi['cash_med']/1e3:,.0f}")
-        col3.metric("DSCR @ M12 (p50)", f"{kpi['dscr_med']:.2f}")
-        col4.metric("Breakeven (median, months)", f"{kpi['median_time_to_breakeven_months']:.0f}")
+        col3.metric("DSCR @ M12 (p50)", f"{kpi['dscr_med']:.2f}" if not np.isnan(kpi['dscr_med']) else "NA")
+        col4.metric("Breakeven (median, months)", f"{kpi['median_time_to_breakeven_months']:.0f}" if not np.isnan(kpi['median_time_to_breakeven_months']) else "NA")
 
         st.markdown("#### Captured charts")
         for fname, data in images:
@@ -268,13 +305,15 @@ with tab_matrix:
     st.caption("Runs all presets in SCENARIOS × STRATEGIES with independent seeds.")
     if st.button("Build matrix"):
         with st.spinner("Running matrix…"):
-            pieces = []
+            rows = []
             for i, E in enumerate(SCENARIOS):
                 for j, S in enumerate(STRATEGIES):
                     df_cell, eff, _imgs, _man = run_cell_cached(E, S, 42 + 1000*(i*len(STRATEGIES)+j))
-                    row, _ = summarize_cell(df_cell)
-                    pieces.append(row)
-            matrix = pd.concat(pieces, ignore_index=True)
+                    row_dict, _ = summarize_cell(df_cell)
+                    row_dict["environment"] = E["name"]
+                    row_dict["strategy"] = S["name"]
+                    rows.append(row_dict)
+            matrix = pd.DataFrame(rows)
 
         st.markdown("##### Survival probability")
         pv = (matrix.pivot(index="environment", columns="strategy", values="survival_prob")

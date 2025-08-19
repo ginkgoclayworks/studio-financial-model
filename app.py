@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Created on Tue Aug 19 07:59:18 2025
+
+@author: harshadghodke
+
+
 Streamlit app for GCWS simulator
 """
 
@@ -17,6 +22,42 @@ import seaborn as sns  # for heatmaps
 
 # Your adapter: must expose run_original_once(script_path, overrides_dict)
 from final_batch_adapter import run_original_once
+
+
+# put this near the top of app.py (after imports)
+PARAM_SPECS = {
+    # -------- Environment (scenario) --------
+    "DOWNTURN_PROB_PER_MONTH": {"type": "float", "min": 0.0, "max": 0.5, "step": 0.01, "label": "Downturn prob / mo"},
+    "DOWNTURN_JOIN_MULT":     {"type": "float", "min": 0.2, "max": 1.5, "step": 0.01, "label": "Join multiplier in downturn"},
+    "DOWNTURN_CHURN_MULT":    {"type": "float", "min": 0.5, "max": 3.0, "step": 0.05, "label": "Churn multiplier in downturn"},
+    "MARKET_POOLS_INFLOW":    {"type": "json",  "label": "Market inflow (json)"},
+    "grant_amount":           {"type": "int",   "min": 0, "max": 100_000, "step": 1000, "label": "Grant amount"},
+    "grant_month":            {"type": "int",   "min": -1, "max": 36, "step": 1, "label": "Grant month (None=-1)"},
+    # Optional future levers:
+    "PRICE_ELASTICITY":       {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Price elasticity ε"},
+    "REF_PRICE":              {"type": "int",   "min": 50, "max": 500, "step": 10, "label": "Reference price"},
+    "WOM_RATE":               {"type": "float", "min": 0.0, "max": 0.2, "step": 0.005, "label": "Word-of-mouth rate"},
+    "MARKETING_SPEND":        {"type": "int",   "min": 0, "max": 20_000, "step": 500, "label": "Marketing spend / mo"},
+    "CAC":                    {"type": "int",   "min": 50, "max": 2000, "step": 10, "label": "CAC ($/lead)"},
+    "LEAD_TO_JOIN_RATE":      {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Lead→Join conversion"},
+    "MAX_ONBOARD_PER_MONTH":  {"type": "int",   "min": 1, "max": 200, "step": 1, "label": "Max onboarding / mo"},
+    # -------- Strategy --------
+    "RENT":                   {"type": "int",   "min": 1000, "max": 10_000, "step": 50, "label": "Rent ($/mo)"},
+    "OWNER_DRAW":             {"type": "int",   "min": 0, "max": 5000, "step": 50, "label": "Owner draw ($/mo)"},
+    "EVENTS_ENABLED":         {"type": "bool",  "label": "Events enabled"},
+    "BASE_EVENTS_PER_MONTH_LAMBDA": {"type": "float", "min": 0.0, "max": 20.0, "step": 0.5, "label": "Events λ"},
+    "EVENTS_MAX_PER_MONTH":   {"type": "int",   "min": 0, "max": 20, "step": 1, "label": "Events max / mo"},
+    "TICKET_PRICE":           {"type": "int",   "min": 0, "max": 500, "step": 5, "label": "Ticket price"},
+    "CLASSES_ENABLED":        {"type": "bool",  "label": "Classes enabled"},
+    "CLASS_COHORTS_PER_MONTH": {"type": "int",  "min": 0, "max": 12, "step": 1, "label": "Class cohorts / mo"},
+    "CLASS_CAP_PER_COHORT":   {"type": "int",   "min": 1, "max": 30, "step": 1, "label": "Class cap / cohort"},
+    "CLASS_PRICE":            {"type": "int",   "min": 0, "max": 1000, "step": 10, "label": "Class price"},
+    "CLASS_CONV_RATE":        {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Class→Member conv"},
+    "CLASS_CONV_LAG_MO":      {"type": "int",   "min": 0, "max": 12, "step": 1, "label": "Class conv lag (mo)"},
+}
+    
+    
+
 
 SCRIPT = "modular_simulator.py"   # your core simulator
 
@@ -52,6 +93,65 @@ def build_overrides(env: dict, strat: dict) -> dict:
         "grant_month": env.get("grant_month", None),
     }]
     return ov
+
+def _normalize_env(env: dict) -> dict:
+    env = dict(env)
+    gm = env.get("grant_month", None)
+    if isinstance(gm, (int, np.integer)) and gm < 0:
+        env["grant_month"] = None
+    return env
+
+def render_param_controls(title: str, params: dict, *, group_keys: Optional[List[str]] = None, prefix: str = "") -> dict:
+    """
+    Render Streamlit inputs for any keys in `params` using PARAM_SPECS.
+    Unknown keys fall back to a generic text/number box.
+    Returns a **new dict** with edited values.
+    """
+    out = dict(params)
+    with st.expander(title, expanded=True):
+        # batch edit within a form to avoid constant reruns
+        with st.form(key=f"form_{prefix}_{title}"):
+            for k, v in params.items():
+                spec = PARAM_SPECS.get(k)
+                label = spec["label"] if spec and "label" in spec else k
+                wid_key = f"{prefix}_{k}"
+
+                if spec is None:
+                    # best effort fallback
+                    if isinstance(v, bool):
+                        out[k] = st.checkbox(label, value=v, key=wid_key)
+                    elif isinstance(v, (int, np.integer)):
+                        out[k] = st.number_input(label, value=int(v), key=wid_key)
+                    elif isinstance(v, (float, np.floating)):
+                        out[k] = float(st.number_input(label, value=float(v), key=wid_key))
+                    elif isinstance(v, dict):
+                        out[k] = json.loads(st.text_area(label, value=json.dumps(v, indent=2), key=wid_key))
+                    else:
+                        out[k] = st.text_input(label, value=str(v), key=wid_key)
+                    continue
+
+                t = spec["type"]
+                if t == "bool":
+                    out[k] = st.checkbox(label, value=bool(v), key=wid_key)
+                elif t == "int":
+                    out[k] = int(st.slider(label, min_value=spec["min"], max_value=spec["max"], step=spec["step"], value=int(v), key=wid_key))
+                elif t == "float":
+                    out[k] = float(st.slider(label, min_value=float(spec["min"]), max_value=float(spec["max"]), step=float(spec["step"]), value=float(v), key=wid_key))
+                elif t == "json":
+                    default = json.dumps(v, indent=2) if isinstance(v, dict) else (v if isinstance(v, str) else "{}")
+                    txt = st.text_area(label, value=default, key=wid_key, height=120)
+                    try:
+                        out[k] = json.loads(txt)
+                    except Exception:
+                        st.warning(f"{k}: invalid JSON; keeping previous value")
+                        out[k] = v
+                else:
+                    out[k] = st.text_input(label, value=str(v), key=wid_key)
+
+            submitted = st.form_submit_button("Apply changes")
+            # If not submitted, return the original params to avoid partial changes
+            return out if submitted else params
+
 
 # ---- capture all plt.show() calls from your modular_simulator without touching it
 class FigureCapture:
@@ -264,18 +364,38 @@ STRATEGIES = [
 # Sidebar controls
 with st.sidebar:
     st.header("Configuration")
-    scen_names = [s["name"] for s in SCENARIOS]
+
+    scen_names  = [s["name"] for s in SCENARIOS]
     strat_names = [s["name"] for s in STRATEGIES]
-    scen_sel = st.selectbox("Scenario", scen_names, index=0)
-    strat_sel = st.selectbox("Strategy", strat_names, index=0)
-    seed = st.number_input("Random seed", value=42, step=1)
-    st.caption("Adjust specific params below (optional):")
-    env = json.loads(json.dumps(next(s for s in SCENARIOS if s["name"] == scen_sel)))
+
+    scen_sel  = st.selectbox("Scenario preset", scen_names, index=0)
+    strat_sel = st.selectbox("Strategy preset", strat_names, index=0)
+    seed      = st.number_input("Random seed", value=42, step=1)
+
+    # start from the chosen preset (deep copy via JSON)
+    env   = json.loads(json.dumps(next(s for s in SCENARIOS  if s["name"] == scen_sel)))
     strat = json.loads(json.dumps(next(s for s in STRATEGIES if s["name"] == strat_sel)))
-    # quick tweaks
-    strat["RENT"] = st.slider("Rent ($/mo)", 2000, 6000, int(strat["RENT"]), 100)
-    strat["OWNER_DRAW"] = st.slider("Owner draw ($/mo)", 0, 3000, int(strat["OWNER_DRAW"]), 100)
-    env["DOWNTURN_PROB_PER_MONTH"] = st.slider("Downturn prob / mo", 0.0, 0.5, float(env["DOWNTURN_PROB_PER_MONTH"]), 0.01)
+
+    # render all known fields dynamically
+    env   = render_param_controls("Scenario parameters", env,   prefix="env")
+    strat = render_param_controls("Strategy parameters", strat, prefix="strat")
+
+    # Preset save/load
+    st.markdown("---")
+    colA, colB = st.columns(2)
+    if colA.button("Save preset (download)"):
+        blob = json.dumps({"env": env, "strat": strat}, indent=2).encode("utf-8")
+        st.download_button("Download JSON", data=blob, file_name="gcws_preset.json", mime="application/json", key="dl_preset")
+    uploaded = colB.file_uploader("Load preset JSON", type=["json"], accept_multiple_files=False)
+    if uploaded is not None:
+        try:
+            preset = json.loads(uploaded.read())
+            env.update(preset.get("env", {}))
+            strat.update(preset.get("strat", {}))
+            st.success("Preset loaded. Scroll up and press Apply in each expander if needed.")
+        except Exception as e:
+            st.error(f"Invalid preset: {e}")
+
     run_btn = st.button("Run simulation", type="primary")
 
 # Tabs
@@ -285,15 +405,17 @@ tab_run, tab_matrix = st.tabs(["Single run", "Matrix heatmaps"])
 with tab_run:
     if run_btn:
         with st.spinner("Running simulator…"):
-            df_cell, eff, images, manifest = run_cell_cached(env, strat, seed)
+            env_norm = _normalize_env(env)
+            df_cell, eff, images, manifest = run_cell_cached(env_norm, strat, seed)
             row_dict, timings = summarize_cell(df_cell)
-
+            
         st.subheader(f"KPIs — {env['name']} | {strat['name']}")
         kpi = row_dict
+        dscr_med = kpi.get("dscr_med", np.nan)
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Survival prob @ horizon", f"{kpi['survival_prob']:.2f}")
         col2.metric("Cash p10 → p50 ($k)", f"{kpi['cash_q10']/1e3:,.0f} → {kpi['cash_med']/1e3:,.0f}")
-        col3.metric("DSCR @ M12 (p50)", f"{kpi['dscr_med']:.2f}" if not np.isnan(kpi['dscr_med']) else "NA")
+        col3.metric("DSCR @ M12 (p50)", f"{dscr_med:.2f}" if not np.isnan(kpi['dscr_med']) else "NA")
         col4.metric("Breakeven (median, months)", f"{kpi['median_time_to_breakeven_months']:.0f}" if not np.isnan(kpi['median_time_to_breakeven_months']) else "NA")
 
         st.markdown("#### Captured charts")
@@ -320,7 +442,8 @@ with tab_matrix:
             rows = []
             for i, E in enumerate(SCENARIOS):
                 for j, S in enumerate(STRATEGIES):
-                    df_cell, eff, _imgs, _man = run_cell_cached(E, S, 42 + 1000*(i*len(STRATEGIES)+j))
+                    E_norm = _normalize_env(E)
+                    df_cell, eff, _imgs, _man = run_cell_cached(E_norm, S, 42 + 1000*(i*len(STRATEGIES)+j))
                     row_dict, _ = summarize_cell(df_cell)
                     row_dict["environment"] = E["name"]
                     row_dict["strategy"] = S["name"]

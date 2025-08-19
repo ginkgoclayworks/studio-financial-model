@@ -143,79 +143,79 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
 
     out = dict(params)
     with st.expander(title, expanded=True):
-        with st.form(key=f"form_{prefix}_{title}"):
-            for k, v in params.items():
-                spec = PARAM_SPECS.get(k)
-                label = spec["label"] if spec and "label" in spec else k
-                wid_key = f"{prefix}_{k}"
+        for k, v in params.items():
+            spec = PARAM_SPECS.get(k)
+            label = spec["label"] if spec and "label" in spec else k
+            wid_key = f"{prefix}_{k}"
 
-                if spec is None:
-                    # best-effort fallback with None safety
-                    if isinstance(v, bool):
-                        out[k] = st.checkbox(label, value=bool(v) if v is not None else False, key=wid_key)
-                    elif isinstance(v, (int, np.integer)) or (v is None):
-                        out[k] = st.number_input(label, value=int(v) if v is not None else 0, key=wid_key)
-                    elif isinstance(v, (float, np.floating)):
-                        out[k] = float(st.number_input(label, value=float(v), key=wid_key))
-                    elif isinstance(v, dict):
-                        try:
-                            default_txt = json.dumps(v if v is not None else {}, indent=2)
-                        except Exception:
-                            default_txt = "{}"
-                        out[k] = json.loads(st.text_area(label, value=default_txt, key=wid_key))
-                    else:
-                        out[k] = st.text_input(label, value="" if v is None else str(v), key=wid_key)
-                    continue
-
-                t = spec["type"]
-                if t == "bool":
+            if spec is None:
+                # best-effort fallback with None safety
+                if isinstance(v, bool):
                     out[k] = st.checkbox(label, value=bool(v) if v is not None else False, key=wid_key)
-
-                elif t == "int":
-                    val = _as_int(v, spec)
-                    out[k] = int(st.slider(
-                        label,
-                        min_value=int(spec["min"]),
-                        max_value=int(spec["max"]),
-                        step=int(spec["step"]),
-                        value=val,
-                        key=wid_key,
-                    ))
-
-                elif t == "float":
-                    val = _as_float(v, spec)
-                    out[k] = float(st.slider(
-                        label,
-                        min_value=float(spec["min"]),
-                        max_value=float(spec["max"]),
-                        step=float(spec["step"]),
-                        value=val,
-                        key=wid_key,
-                    ))
-                    
-                elif t == "market_inflow":
-                    # Render three explicit sliders. Start from current values or sensible defaults.
-                    cur = v if isinstance(v, dict) else {}
-                    cur = _normalize_market_inflow(cur)
-                    c = st.slider("Community studio inflow", 0, 50, cur["community_studio"], key=f"{wid_key}_c")
-                    h = st.slider("Home studio inflow",      0, 50, cur["home_studio"],      key=f"{wid_key}_h")
-                    n = st.slider("No access inflow",        0, 50, cur["no_access"],        key=f"{wid_key}_n")
-                    out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
-                    
-                elif t == "json":
-                    default = json.dumps(v, indent=2) if isinstance(v, dict) else (v if isinstance(v, str) else "{}")
-                    txt = st.text_area(label, value=default, key=wid_key, height=120)
+                elif isinstance(v, (int, np.integer)) or (v is None):
+                    out[k] = st.number_input(label, value=int(v) if v is not None else 0, key=wid_key)
+                elif isinstance(v, (float, np.floating)):
+                    out[k] = float(st.number_input(label, value=float(v), key=wid_key))
+                elif isinstance(v, dict):
                     try:
-                        out[k] = json.loads(txt)
+                        default_txt = json.dumps(v if v is not None else {}, indent=2)
                     except Exception:
-                        st.warning(f"{k}: invalid JSON; keeping previous value")
-                        out[k] = v
-
+                        default_txt = "{}"
+                    out[k] = json.loads(st.text_area(label, value=default_txt, key=wid_key))
                 else:
                     out[k] = st.text_input(label, value="" if v is None else str(v), key=wid_key)
+                continue
 
-            submitted = st.form_submit_button("Apply changes")
-            return out if submitted else params
+            t = spec["type"]
+            if t == "bool":
+                out[k] = st.checkbox(label, value=bool(v) if v is not None else False, key=wid_key)
+
+            elif t == "int":
+                val = _as_int(v, spec)
+                out[k] = int(st.slider(
+                    label,
+                    min_value=int(spec["min"]),
+                    max_value=int(spec["max"]),
+                    step=int(spec["step"]),
+                    value=val,
+                    key=wid_key,
+                ))
+
+            elif t == "float":
+                val = _as_float(v, spec)
+                out[k] = float(st.slider(
+                    label,
+                    min_value=float(spec["min"]),
+                    max_value=float(spec["max"]),
+                    step=float(spec["step"]),
+                    value=val,
+                    key=wid_key,
+                ))
+                
+            elif t == "market_inflow":
+                # Render three explicit sliders. Start from current values or sensible defaults.
+                cur = v if isinstance(v, dict) else {}
+                cur = _normalize_market_inflow(cur)
+                c = st.slider("Community studio inflow", 0, 50, cur["community_studio"], key=f"{wid_key}_c")
+                h = st.slider("Home studio inflow",      0, 50, cur["home_studio"],      key=f"{wid_key}_h")
+                n = st.slider("No access inflow",        0, 50, cur["no_access"],        key=f"{wid_key}_n")
+                out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
+                
+            elif t == "json":
+                default = json.dumps(v, indent=2) if isinstance(v, dict) else (v if isinstance(v, str) else "{}")
+                txt = st.text_area(label, value=default, key=wid_key, height=120)
+                try:
+                    out[k] = json.loads(txt)
+                except Exception:
+                    st.warning(f"{k}: invalid JSON; keeping previous value")
+                    out[k] = v
+
+            else:
+                out[k] = st.text_input(label, value="" if v is None else str(v), key=wid_key)
+
+            pass
+        
+            return out
 
 
 # ---- capture all plt.show() calls from your modular_simulator without touching it

@@ -1,0 +1,19 @@
+{
+  "MONTHS": 60,
+  "N_SIMULATIONS": 100,
+  "PRICE": 175,
+  "PRICE_ELASTICITY": 0.6,
+  "RENT_SCENARIOS": [
+    2500,
+    3500,
+    4500
+  ],
+  "OWNER_DRAW_SCENARIOS": [
+    0,
+    1000,
+    2000,
+    3000
+  ],
+  "DOWNTURN_PROB_PER_MONTH": null,
+  "CAPACITY_SOFT_CAP": null
+}

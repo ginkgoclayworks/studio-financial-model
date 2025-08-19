@@ -1,0 +1,67 @@
+[
+  {
+    "name": "Baseline",
+    "DOWNTURN_PROB_PER_MONTH": 0.05,
+    "DOWNTURN_JOIN_MULT": 1.0,
+    "DOWNTURN_CHURN_MULT": 1.0,
+    "MARKET_POOLS_INFLOW": {
+      "community_studio": 4,
+      "home_studio": 2,
+      "no_access": 3
+    },
+    "grant_amount": 0.0,
+    "grant_month": null
+  },
+  {
+    "name": "Recession",
+    "DOWNTURN_PROB_PER_MONTH": 0.18,
+    "DOWNTURN_JOIN_MULT": 0.65,
+    "DOWNTURN_CHURN_MULT": 1.5,
+    "MARKET_POOLS_INFLOW": {
+      "community_studio": 2,
+      "home_studio": 1,
+      "no_access": 1
+    },
+    "grant_amount": 0.0,
+    "grant_month": null
+  },
+  {
+    "name": "SlowRecovery_Grant25k_M4",
+    "DOWNTURN_PROB_PER_MONTH": 0.1,
+    "DOWNTURN_JOIN_MULT": 0.85,
+    "DOWNTURN_CHURN_MULT": 1.2,
+    "MARKET_POOLS_INFLOW": {
+      "community_studio": 3,
+      "home_studio": 1,
+      "no_access": 2
+    },
+    "grant_amount": 25000,
+    "grant_month": 4
+  },
+  {
+    "name": "Boom",
+    "DOWNTURN_PROB_PER_MONTH": 0.02,
+    "DOWNTURN_JOIN_MULT": 1.2,
+    "DOWNTURN_CHURN_MULT": 0.85,
+    "MARKET_POOLS_INFLOW": {
+      "community_studio": 6,
+      "home_studio": 3,
+      "no_access": 4
+    },
+    "grant_amount": 0.0,
+    "grant_month": null
+  },
+  {
+    "name": "GreatDepression",
+    "DOWNTURN_PROB_PER_MONTH": 0.35,
+    "DOWNTURN_JOIN_MULT": 0.35,
+    "DOWNTURN_CHURN_MULT": 2.5,
+    "MARKET_POOLS_INFLOW": {
+      "community_studio": 1,
+      "home_studio": 0,
+      "no_access": 1
+    },
+    "grant_amount": 0.0,
+    "grant_month": null
+  }
+]

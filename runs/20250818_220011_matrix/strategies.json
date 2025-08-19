@@ -1,0 +1,12 @@
+[
+  {
+    "name": "I_all_upfront_Base",
+    "RENT": 3500,
+    "OWNER_DRAW": 1000
+  },
+  {
+    "name": "II_staged_Base",
+    "RENT": 3500,
+    "OWNER_DRAW": 1000
+  }
+]

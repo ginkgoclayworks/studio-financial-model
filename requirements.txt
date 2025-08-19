@@ -1,7 +1,13 @@
-streamlit
-pandas
-numpy
-matplotlib
-seaborn
-pyarrow ; optional
-fastparquet ; optional
+streamlit>=1.35
+pandas>=2.2
+numpy>=1.26
+matplotlib>=3.8
+seaborn>=0.13
+requests>=2.31
+python-dateutil>=2.9
+pytrends>=4.9.6
+
+# Optional parquet support — handled via try/except in code.
+# If you want it, uncomment one (or both) of the next lines:
+# pyarrow>=15
+# fastparquet>=2024.5

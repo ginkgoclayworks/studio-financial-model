@@ -215,7 +215,7 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
 
             pass
         
-            return out
+        return out
 
 
 # ---- capture all plt.show() calls from your modular_simulator without touching it
@@ -253,7 +253,25 @@ class FigureCapture:
         def _show(*args, **kwargs):
             counter["i"] += 1
             fig = plt.gcf()
-            _ensure_suffix(fig)
+        
+            _ensure_suffix(fig)  # your existing helper
+        
+            # --- NEW: de-clash titles and improve spacing ---
+            has_suptitle  = bool(fig._suptitle and fig._suptitle.get_text())
+            has_ax_titles = any(ax.get_title() for ax in fig.get_axes())
+        
+            if has_suptitle and has_ax_titles:
+                # Give the suptitle its own headroom and shrink it a touch.
+                fig._suptitle.set_y(0.98)
+                try:
+                    fig._suptitle.set_fontsize(max(fig._suptitle.get_fontsize() - 2, 10))
+                except Exception:
+                    pass
+                # Leave extra space at the top for the axis title(s).
+                fig.tight_layout(rect=[0, 0, 1, 0.94])
+            else:
+                fig.tight_layout()
+        
             buf = io.BytesIO()
             fig.savefig(buf, dpi=200, bbox_inches="tight", format="png")
             buf.seek(0)

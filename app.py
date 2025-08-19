@@ -450,7 +450,7 @@ with st.sidebar:
 
     scen_sel  = st.selectbox("Scenario preset", scen_names, index=0)
     strat_sel = st.selectbox("Strategy preset", strat_names, index=0)
-    seed      = st.number_input("Random seed", value=42, step=1)
+    seed      = 42
 
     # start from the chosen preset (deep copy via JSON)
     env   = json.loads(json.dumps(next(s for s in SCENARIOS  if s["name"] == scen_sel)))
@@ -459,6 +459,22 @@ with st.sidebar:
     # render all known fields dynamically
     env   = render_param_controls("Scenario parameters", env,   prefix="env")
     strat = render_param_controls("Strategy parameters", strat, prefix="strat")
+
+    # --- Discrete Events controls ---
+    with st.expander("Events (discrete controls)", expanded=True):
+        events_fixed_ui = st.selectbox(
+            "Events per month (fixed)", [0, 1, 2, 3, 4], index=0
+        )
+        ticket_choice_ui = st.selectbox(
+            "Event ticket price ($)", [50, 75, 100, 125], index=2
+        )
+    
+    if not strat.get("EVENTS_ENABLED", False):
+        events_fixed_ui = 0
+    
+    strat["BASE_EVENTS_PER_MONTH_LAMBDA"] = float(events_fixed_ui)
+    strat["EVENTS_MAX_PER_MONTH"]         = int(events_fixed_ui)
+    strat["TICKET_PRICE"]                 = int(ticket_choice_ui)
 
     # Preset save/load
     st.markdown("---")
@@ -522,11 +538,21 @@ with tab_matrix:
             rows = []
             for i, E in enumerate(SCENARIOS):
                 for j, S in enumerate(STRATEGIES):
+                    # Copy the preset and apply the same discrete Events mapping
+                    S2 = json.loads(json.dumps(S))  # deep copy
+                    events_enabled_ui = bool(strat.get("EVENTS_ENABLED", True))  # use the UI checkbox
+                    efixed = int(events_fixed_ui) if events_enabled_ui else 0
+                    S2["BASE_EVENTS_PER_MONTH_LAMBDA"] = float(efixed)
+                    S2["EVENTS_MAX_PER_MONTH"]         = int(efixed)
+                    S2["TICKET_PRICE"]                 = int(ticket_choice_ui)
+            
                     E_norm = _normalize_env(E)
-                    df_cell, eff, _imgs, _man = run_cell_cached(E_norm, S, 42 + 1000*(i*len(STRATEGIES)+j))
+                    df_cell, eff, _imgs, _man = run_cell_cached(
+                        E_norm, S2, 42 + 1000*(i*len(STRATEGIES)+j)
+                    )
                     row_dict, _ = summarize_cell(df_cell)
                     row_dict["environment"] = E["name"]
-                    row_dict["strategy"] = S["name"]
+                    row_dict["strategy"] = S2["name"]
                     rows.append(row_dict)
             matrix = pd.DataFrame(rows)
 

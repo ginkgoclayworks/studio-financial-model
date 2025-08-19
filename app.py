@@ -176,10 +176,18 @@ def summarize_cell(df: pd.DataFrame):
     grp = df.groupby(sim_col, as_index=False)
 
     # Timings per simulation
-    first_insolvency = grp.apply(lambda g: _first_cash_negative(g, month_col, cash_col)) \
-                          .reset_index(name="t_insolvency")
-    first_breakeven  = grp.apply(lambda g: _first_sustained_ge_zero(g, month_col, cf_col, k=3)) \
-                          .reset_index(name="t_breakeven")
+    first_insolvency = (
+        grp.apply(lambda g: _first_cash_negative(g, month_col, cash_col))
+          .reset_index()
+    )
+    first_insolvency = first_insolvency.rename(columns={0: "t_insolvency"})
+    
+    first_breakeven = (
+        grp.apply(lambda g: _first_sustained_ge_zero(g, month_col, cf_col, k=3))
+          .reset_index()
+    )
+    first_breakeven = first_breakeven.rename(columns={0: "t_breakeven"})
+    
     timings = first_insolvency.merge(first_breakeven, on=sim_col, how="outer")
 
     # Horizon

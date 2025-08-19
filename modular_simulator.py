@@ -1422,9 +1422,18 @@ def _core_simulation_and_reports():
                 if l_ not in by_label:
                     by_label[l_] = h_
     
-            fig.legend(list(by_label.values()), list(by_label.keys()), loc="upper center", ncol=3)
-            fig.suptitle(f"Revenue vs OpEx — {scen} | Rent ${rent_val:,.0f}/mo", y=1.03, fontsize=14)
-            fig.tight_layout()
+            fig.legend(
+                list(by_label.values()),
+                list(by_label.keys()),
+                loc="upper center",
+                bbox_to_anchor=(0.5, -0.02),   # push below x-axis
+                ncol=min(4, len(by_label)),    # spread entries
+                frameon=False
+            )
+            
+            # Title + spacing that leaves headroom (top) and legend space (bottom)
+            fig.suptitle(f"Revenue vs OpEx — {scen} | Rent ${rent_val:,.0f}/mo", y=0.98, fontsize=14)
+            fig.tight_layout(rect=[0, 0.06, 1, 0.95])  # bottom/top margins for legend/title
             plt.show()
     
     

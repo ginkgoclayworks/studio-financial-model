@@ -1411,31 +1411,32 @@ def _core_simulation_and_reports():
                 if j == 0: ax.set_ylabel("Dollars ($)")
                 ax.set_xlabel("Month")
     
-           # Collect and de‑duplicate legend entries from all facets
-            fig, axes = plt.subplots(1, 1, figsize=(10, 6))
+          # --- Collect and de-duplicate legend entries from this figure ---
             handles_all, labels_all = [], []
-            for ax_ in axes.flat:
+            for ax_ in fig.axes:   # use the existing fig, not a new plt.subplots
                 h_, l_ = ax_.get_legend_handles_labels()
                 handles_all.extend(h_); labels_all.extend(l_)
+            
             from collections import OrderedDict
             by_label = OrderedDict()
             for h_, l_ in zip(handles_all, labels_all):
                 if l_ not in by_label:
                     by_label[l_] = h_
-    
+            
+            # Place legend at bottom, larger fontsize
             fig.legend(
                 list(by_label.values()),
                 list(by_label.keys()),
                 loc="upper center",
                 bbox_to_anchor=(0.5, -0.02),   # push below x-axis
-                ncol=min(4, len(by_label)),    # spread entries
+                ncol=min(4, len(by_label)),    # spread entries horizontally
                 frameon=False,
-                fontsize = 10
+                fontsize=12                    # bump size up
             )
             
             # Title + spacing that leaves headroom (top) and legend space (bottom)
             fig.suptitle(f"Revenue vs OpEx — {scen} | Rent ${rent_val:,.0f}/mo", y=0.98, fontsize=14)
-            fig.tight_layout(rect=[0, 0.06, 1, 0.95])  # bottom/top margins for legend/title
+            fig.tight_layout(rect=[0, 0.08, 1, 0.95])  # leave more room at bottom
             plt.show()
     
     

@@ -455,7 +455,7 @@ with st.sidebar:
     # start from the chosen preset (deep copy via JSON)
     env   = json.loads(json.dumps(next(s for s in SCENARIOS  if s["name"] == scen_sel)))
     strat = json.loads(json.dumps(next(s for s in STRATEGIES if s["name"] == strat_sel)))
-
+    strat.setdefault("EVENTS_ENABLED", True)
     # render all known fields dynamically
     env   = render_param_controls("Scenario parameters", env,   prefix="env")
     strat = render_param_controls("Strategy parameters", strat, prefix="strat")

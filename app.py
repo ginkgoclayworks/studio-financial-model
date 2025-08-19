@@ -44,7 +44,6 @@ PARAM_SPECS = {
     # -------- Strategy --------
     "RENT":                   {"type": "int",   "min": 1000, "max": 10_000, "step": 50, "label": "Rent ($/mo)"},
     "OWNER_DRAW":             {"type": "int",   "min": 0, "max": 5000, "step": 50, "label": "Owner draw ($/mo)"},
-    "EVENTS_ENABLED":         {"type": "bool",  "label": "Events enabled"},
     "BASE_EVENTS_PER_MONTH_LAMBDA": {"type": "float", "min": 0.0, "max": 20.0, "step": 0.5, "label": "Events λ"},
     "EVENTS_MAX_PER_MONTH":   {"type": "int",   "min": 0, "max": 20, "step": 1, "label": "Events max / mo"},
     "TICKET_PRICE":           {"type": "int",   "min": 0, "max": 500, "step": 5, "label": "Ticket price"},
@@ -455,7 +454,6 @@ with st.sidebar:
     # start from the chosen preset (deep copy via JSON)
     env   = json.loads(json.dumps(next(s for s in SCENARIOS  if s["name"] == scen_sel)))
     strat = json.loads(json.dumps(next(s for s in STRATEGIES if s["name"] == strat_sel)))
-    strat.setdefault("EVENTS_ENABLED", True)
     # render all known fields dynamically
     env   = render_param_controls("Scenario parameters", env,   prefix="env")
     strat = render_param_controls("Strategy parameters", strat, prefix="strat")
@@ -469,8 +467,8 @@ with st.sidebar:
             "Event ticket price ($)", [50, 75, 100, 125], index=2
         )
     
-    if not strat.get("EVENTS_ENABLED", False):
-        events_fixed_ui = 0
+    # if not strat.get("EVENTS_ENABLED", False):
+    #     events_fixed_ui = 0
     
     strat["BASE_EVENTS_PER_MONTH_LAMBDA"] = float(events_fixed_ui)
     strat["EVENTS_MAX_PER_MONTH"]         = int(events_fixed_ui)
@@ -511,7 +509,7 @@ with tab_run:
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Survival prob @ horizon", f"{kpi['survival_prob']:.2f}")
         col2.metric("Cash p10 → p50 ($k)", f"{kpi['cash_q10']/1e3:,.0f} → {kpi['cash_med']/1e3:,.0f}")
-        col3.metric("DSCR @ M12 (p50)", f"{dscr_med:.2f}" if not np.isnan(kpi['dscr_med']) else "NA")
+        col3.metric("DSCR @ M12 (p50)", f"{dscr_med:.2f}" if not np.isnan(dscr_med) else "NA")
         col4.metric("Breakeven (median, months)", f"{kpi['median_time_to_breakeven_months']:.0f}" if not np.isnan(kpi['median_time_to_breakeven_months']) else "NA")
 
         st.markdown("#### Captured charts")
@@ -540,8 +538,7 @@ with tab_matrix:
                 for j, S in enumerate(STRATEGIES):
                     # Copy the preset and apply the same discrete Events mapping
                     S2 = json.loads(json.dumps(S))  # deep copy
-                    events_enabled_ui = bool(strat.get("EVENTS_ENABLED", True))  # use the UI checkbox
-                    efixed = int(events_fixed_ui) if events_enabled_ui else 0
+                    efixed = int(events_fixed_ui)   # 0..4 from UI; 0 == disabled
                     S2["BASE_EVENTS_PER_MONTH_LAMBDA"] = float(efixed)
                     S2["EVENTS_MAX_PER_MONTH"]         = int(efixed)
                     S2["TICKET_PRICE"]                 = int(ticket_choice_ui)

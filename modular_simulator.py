@@ -1412,6 +1412,7 @@ def _core_simulation_and_reports():
                 ax.set_xlabel("Month")
     
            # Collect and de‑duplicate legend entries from all facets
+            fig, axes = plt.subplots(1, 1, figsize=(10, 6))
             handles_all, labels_all = [], []
             for ax_ in axes.flat:
                 h_, l_ = ax_.get_legend_handles_labels()

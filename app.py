@@ -102,8 +102,8 @@ def build_overrides(env: dict, strat: dict) -> dict:
         ov["OWNER_DRAW_SCENARIOS"] = [float(strat["OWNER_DRAW"])]
     # pass grant + capex timing through SCENARIO_CONFIGS
     ov["SCENARIO_CONFIGS"] = [{
-        "name": strat["name"],
-        "capex_timing": "all" if ("all_upfront" in strat["name"]) else "staged",
+        "name": env.get("name", "Scenario"),
+        "capex_timing": "all" if ("all_upfront" in strat.get("name","")) else "staged",
         "grant_amount": env.get("grant_amount", 0.0),
         "grant_month": env.get("grant_month", None),
     }]

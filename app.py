@@ -30,7 +30,7 @@ PARAM_SPECS = {
     "DOWNTURN_PROB_PER_MONTH": {"type": "float", "min": 0.0, "max": 0.5, "step": 0.01, "label": "Downturn prob / mo"},
     "DOWNTURN_JOIN_MULT":     {"type": "float", "min": 0.2, "max": 1.5, "step": 0.01, "label": "Join multiplier in downturn"},
     "DOWNTURN_CHURN_MULT":    {"type": "float", "min": 0.5, "max": 3.0, "step": 0.05, "label": "Churn multiplier in downturn"},
-    "MARKET_POOLS_INFLOW":    {"type": "json",  "label": "Market inflow (json)"},
+    "MARKET_POOLS_INFLOW": {"type": "market_inflow", "label": "Market inflow"},
     "grant_amount":           {"type": "int",   "min": 0, "max": 100_000, "step": 1000, "label": "Grant amount"},
     "grant_month":            {"type": "int",   "min": -1, "max": 36, "step": 1, "label": "Grant month (None=-1)"},
     # Optional future levers:
@@ -62,6 +62,21 @@ PARAM_SPECS = {
 SCRIPT = "modular_simulator.py"   # your core simulator
 
 # ---------- small helpers ----------
+def _normalize_market_inflow(d: dict) -> dict:
+    # Keep only the three known pools; coerce to non-negative ints.
+    pools = {
+        "community_studio": d.get("community_studio", 0),
+        "home_studio":      d.get("home_studio", 0),
+        "no_access":        d.get("no_access", 0),
+    }
+    out = {}
+    for k, v in pools.items():
+        try:
+            out[k] = max(0, int(v))
+        except Exception:
+            out[k] = 0
+    return out
+
 def slug(s: str) -> str:
     s = s.lower().strip()
     s = re.sub(r"\s+", "-", s)
@@ -99,6 +114,9 @@ def _normalize_env(env: dict) -> dict:
     gm = env.get("grant_month", None)
     if isinstance(gm, (int, np.integer)) and gm < 0:
         env["grant_month"] = None
+    # normalize market inflow
+    if isinstance(env.get("MARKET_POOLS_INFLOW"), dict):
+        env["MARKET_POOLS_INFLOW"] = _normalize_market_inflow(env["MARKET_POOLS_INFLOW"])
     return env
 
 def render_param_controls(title: str, params: dict, *, group_keys: Optional[List[str]] = None, prefix: str = "") -> dict:
@@ -174,7 +192,16 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
                         value=val,
                         key=wid_key,
                     ))
-
+                    
+                elif t == "market_inflow":
+                    # Render three explicit sliders. Start from current values or sensible defaults.
+                    cur = v if isinstance(v, dict) else {}
+                    cur = _normalize_market_inflow(cur)
+                    c = st.slider("Community studio inflow", 0, 50, cur["community_studio"], key=f"{wid_key}_c")
+                    h = st.slider("Home studio inflow",      0, 50, cur["home_studio"],      key=f"{wid_key}_h")
+                    n = st.slider("No access inflow",        0, 50, cur["no_access"],        key=f"{wid_key}_n")
+                    out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
+                    
                 elif t == "json":
                     default = json.dumps(v, indent=2) if isinstance(v, dict) else (v if isinstance(v, str) else "{}")
                     txt = st.text_area(label, value=default, key=wid_key, height=120)

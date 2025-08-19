@@ -107,9 +107,24 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
     Unknown keys fall back to a generic text/number box.
     Returns a **new dict** with edited values.
     """
+    def _as_int(v, spec):
+        if v is None:
+            return int(spec.get("min", 0))
+        try:
+            return int(v)
+        except Exception:
+            return int(spec.get("min", 0))
+
+    def _as_float(v, spec):
+        if v is None:
+            return float(spec.get("min", 0.0))
+        try:
+            return float(v)
+        except Exception:
+            return float(spec.get("min", 0.0))
+
     out = dict(params)
     with st.expander(title, expanded=True):
-        # batch edit within a form to avoid constant reruns
         with st.form(key=f"form_{prefix}_{title}"):
             for k, v in params.items():
                 spec = PARAM_SPECS.get(k)
@@ -117,26 +132,49 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
                 wid_key = f"{prefix}_{k}"
 
                 if spec is None:
-                    # best effort fallback
+                    # best-effort fallback with None safety
                     if isinstance(v, bool):
-                        out[k] = st.checkbox(label, value=v, key=wid_key)
-                    elif isinstance(v, (int, np.integer)):
-                        out[k] = st.number_input(label, value=int(v), key=wid_key)
+                        out[k] = st.checkbox(label, value=bool(v) if v is not None else False, key=wid_key)
+                    elif isinstance(v, (int, np.integer)) or (v is None):
+                        out[k] = st.number_input(label, value=int(v) if v is not None else 0, key=wid_key)
                     elif isinstance(v, (float, np.floating)):
                         out[k] = float(st.number_input(label, value=float(v), key=wid_key))
                     elif isinstance(v, dict):
-                        out[k] = json.loads(st.text_area(label, value=json.dumps(v, indent=2), key=wid_key))
+                        try:
+                            default_txt = json.dumps(v if v is not None else {}, indent=2)
+                        except Exception:
+                            default_txt = "{}"
+                        out[k] = json.loads(st.text_area(label, value=default_txt, key=wid_key))
                     else:
-                        out[k] = st.text_input(label, value=str(v), key=wid_key)
+                        out[k] = st.text_input(label, value="" if v is None else str(v), key=wid_key)
                     continue
 
                 t = spec["type"]
                 if t == "bool":
-                    out[k] = st.checkbox(label, value=bool(v), key=wid_key)
+                    out[k] = st.checkbox(label, value=bool(v) if v is not None else False, key=wid_key)
+
                 elif t == "int":
-                    out[k] = int(st.slider(label, min_value=spec["min"], max_value=spec["max"], step=spec["step"], value=int(v), key=wid_key))
+                    val = _as_int(v, spec)
+                    out[k] = int(st.slider(
+                        label,
+                        min_value=int(spec["min"]),
+                        max_value=int(spec["max"]),
+                        step=int(spec["step"]),
+                        value=val,
+                        key=wid_key,
+                    ))
+
                 elif t == "float":
-                    out[k] = float(st.slider(label, min_value=float(spec["min"]), max_value=float(spec["max"]), step=float(spec["step"]), value=float(v), key=wid_key))
+                    val = _as_float(v, spec)
+                    out[k] = float(st.slider(
+                        label,
+                        min_value=float(spec["min"]),
+                        max_value=float(spec["max"]),
+                        step=float(spec["step"]),
+                        value=val,
+                        key=wid_key,
+                    ))
+
                 elif t == "json":
                     default = json.dumps(v, indent=2) if isinstance(v, dict) else (v if isinstance(v, str) else "{}")
                     txt = st.text_area(label, value=default, key=wid_key, height=120)
@@ -145,11 +183,11 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
                     except Exception:
                         st.warning(f"{k}: invalid JSON; keeping previous value")
                         out[k] = v
+
                 else:
-                    out[k] = st.text_input(label, value=str(v), key=wid_key)
+                    out[k] = st.text_input(label, value="" if v is None else str(v), key=wid_key)
 
             submitted = st.form_submit_button("Apply changes")
-            # If not submitted, return the original params to avoid partial changes
             return out if submitted else params
 
 

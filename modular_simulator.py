@@ -1428,7 +1428,8 @@ def _core_simulation_and_reports():
                 loc="upper center",
                 bbox_to_anchor=(0.5, -0.02),   # push below x-axis
                 ncol=min(4, len(by_label)),    # spread entries
-                frameon=False
+                frameon=False,
+                fontsize = 10
             )
             
             # Title + spacing that leaves headroom (top) and legend space (bottom)

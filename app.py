@@ -250,22 +250,62 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
             out[k] = st.checkbox(label, value=bool(v), key=wid_key)
 
         elif t == "int":
-            lo, hi, step = int(spec["min"]), int(spec["max"]), int(spec["step"])
+            # normalize bounds and step
+            lo = int(spec.get("min", 0))
+            hi = int(spec.get("max", 100))
+            step = int(spec.get("step", 1)) or 1  # never 0
+        
+            # normalize current value
             try:
-                v_int = int(v)
+                if v is None:
+                    v_int = lo
+                elif isinstance(v, (np.integer,)):
+                    v_int = int(v)  # cast numpy -> py int
+                else:
+                    v_int = int(v)
             except Exception:
-                v_int = _default_from_spec(spec, key=k)
+                v_int = lo
             v_int = _clamp_num(v_int, lo, hi)
-            out[k] = int(st.slider(label, min_value=lo, max_value=hi, step=step, value=v_int, key=wid_key))
+        
+            # guard against stale bad state
+            if isinstance(v_int, bool):  # just in case
+                v_int = lo
+        
+            try:
+                out[k] = int(st.slider(
+                    label, min_value=lo, max_value=hi, step=step, value=int(v_int), key=wid_key
+                ))
+            except Exception:
+                # last‑ditch fallback if a weird value sneaks in
+                out[k] = int(st.number_input(label, min_value=lo, max_value=hi, step=step,
+                                             value=int(v_int), key=wid_key))
 
         elif t == "float":
-            lo, hi, step = float(spec["min"]), float(spec["max"]), float(spec["step"])
+            lo = float(spec.get("min", 0.0))
+            hi = float(spec.get("max", 1.0))
+            step = float(spec.get("step", (hi - lo) or 0.01))
+            if step <= 0:
+                step = 0.01
+        
+            # normalize current value
             try:
-                v_f = float(v)
+                if v is None:
+                    v_f = lo
+                elif isinstance(v, (np.floating,)):
+                    v_f = float(v)
+                else:
+                    v_f = float(v)
             except Exception:
-                v_f = _default_from_spec(spec, key=k)
+                v_f = lo
             v_f = _clamp_num(v_f, lo, hi)
-            out[k] = float(st.slider(label, min_value=lo, max_value=hi, step=step, value=v_f, key=wid_key))
+        
+            try:
+                out[k] = float(st.slider(
+                    label, min_value=lo, max_value=hi, step=step, value=float(v_f), key=wid_key
+                ))
+            except Exception:
+                out[k] = float(st.number_input(label, min_value=lo, max_value=hi, step=step,
+                                               value=float(v_f), key=wid_key))
 
         elif t == "market_inflow":
             base = f"{wid_key}"

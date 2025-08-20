@@ -141,17 +141,21 @@ def sanitize_text(s: str) -> str:
 def build_overrides(env: dict, strat: dict) -> dict:
     """Use ONLY globals your simulator already knows about."""
     ov = {}
+    # copy env (except meta)
     for k, v in env.items():
         if k not in {"name", "grant_month", "grant_amount"}:
             ov[k] = v
+    # copy strat (except meta)
     for k, v in strat.items():
         if k != "name":
             ov[k] = v
+
     # singletons for sweeps
     if "RENT" in strat:
         ov["RENT_SCENARIOS"] = np.array([float(strat["RENT"])], dtype=float)
     if "OWNER_DRAW" in strat:
         ov["OWNER_DRAW_SCENARIOS"] = [float(strat["OWNER_DRAW"])]
+
     # pass grant + capex timing through SCENARIO_CONFIGS
     ov["SCENARIO_CONFIGS"] = [{
         "name": env.get("name", "Scenario"),
@@ -159,6 +163,31 @@ def build_overrides(env: dict, strat: dict) -> dict:
         "grant_amount": env.get("grant_amount", 0.0),
         "grant_month": env.get("grant_month", None),
     }]
+
+    # ---- Capacity mapping (UI → simulator) ----
+    cap_val = None
+    if "MEMBER_CAP" in strat:
+        cap_val = strat["MEMBER_CAP"]
+    elif "MEMBER_CAP" in env:
+        cap_val = env["MEMBER_CAP"]
+
+    if cap_val is not None:
+        try:
+            cap_i = int(cap_val)
+        except Exception:
+            cap_i = int(float(cap_val))  # last resort
+        ov["HARD_CAP"]   = cap_i     # simulator key (used by plots)
+        ov["MEMBER_CAP"] = cap_i     # keep UI name too (harmless / future-proof)
+
+    # Optional: expansion threshold pass-through (same name both sides here)
+    if "EXPANSION_THRESHOLD" in strat or "EXPANSION_THRESHOLD" in env:
+        try:
+            ov["EXPANSION_THRESHOLD"] = int(
+                strat.get("EXPANSION_THRESHOLD", env.get("EXPANSION_THRESHOLD", 0))
+            )
+        except Exception:
+            ov["EXPANSION_THRESHOLD"] = 0
+
     return ov
 
 def _normalize_env(env: dict) -> dict:
@@ -465,16 +494,83 @@ st.title("Ginkgo Clayworks — Scenario Explorer")
 
 # Presets (match your code)
 SCENARIOS = [
-    {"name":"Baseline", "DOWNTURN_PROB_PER_MONTH":0.05, "DOWNTURN_JOIN_MULT":1.0, "DOWNTURN_CHURN_MULT":1.0,
-     "MARKET_POOLS_INFLOW":{"community_studio":4,"home_studio":2,"no_access":3}, "grant_amount":0.0, "grant_month":None},
-    {"name":"Recession", "DOWNTURN_PROB_PER_MONTH":0.18, "DOWNTURN_JOIN_MULT":0.65, "DOWNTURN_CHURN_MULT":1.50,
-     "MARKET_POOLS_INFLOW":{"community_studio":2,"home_studio":1,"no_access":1}, "grant_amount":0.0, "grant_month":None},
-    {"name":"SlowRecovery_Grant25k_M4", "DOWNTURN_PROB_PER_MONTH":0.10, "DOWNTURN_JOIN_MULT":0.85, "DOWNTURN_CHURN_MULT":1.20,
-     "MARKET_POOLS_INFLOW":{"community_studio":3,"home_studio":1,"no_access":2}, "grant_amount":25_000, "grant_month":4},
-    {"name":"Boom", "DOWNTURN_PROB_PER_MONTH":0.02, "DOWNTURN_JOIN_MULT":1.20, "DOWNTURN_CHURN_MULT":0.85,
-     "MARKET_POOLS_INFLOW":{"community_studio":6,"home_studio":3,"no_access":4}, "grant_amount":0.0, "grant_month":None},
-    {"name":"GreatDepression", "DOWNTURN_PROB_PER_MONTH":0.28, "DOWNTURN_JOIN_MULT":0.45, "DOWNTURN_CHURN_MULT":1.90,
-     "MARKET_POOLS_INFLOW":{"community_studio":1,"home_studio":0,"no_access":1}, "grant_amount":0.0, "grant_month":None},
+    {
+        "name": "Baseline",
+        "DOWNTURN_PROB_PER_MONTH": 0.05,
+        "DOWNTURN_JOIN_MULT": 1.00,
+        "DOWNTURN_CHURN_MULT": 1.00,
+        "MARKET_POOLS_INFLOW": {"community_studio": 4, "home_studio": 2, "no_access": 3},
+        "grant_amount": 0.0, "grant_month": None,
+
+        # Growth-ish levers (sane defaults)
+        "WOM_RATE": 0.03,
+        "LEAD_TO_JOIN_RATE": 0.20,
+        "MAX_ONBOARD_PER_MONTH": 10,
+
+        # Capacity levers
+        "MEMBER_CAP": 92,              # soft cap line in your plots is ~92
+        "EXPANSION_THRESHOLD": 20,     # tweakable
+    },
+    {
+        "name": "Recession",
+        "DOWNTURN_PROB_PER_MONTH": 0.18,
+        "DOWNTURN_JOIN_MULT": 0.65,
+        "DOWNTURN_CHURN_MULT": 1.50,
+        "MARKET_POOLS_INFLOW": {"community_studio": 2, "home_studio": 1, "no_access": 1},
+        "grant_amount": 0.0, "grant_month": None,
+
+        "WOM_RATE": 0.02,
+        "LEAD_TO_JOIN_RATE": 0.15,
+        "MAX_ONBOARD_PER_MONTH": 8,
+
+        "MEMBER_CAP": 86,
+        "EXPANSION_THRESHOLD": 25,
+    },
+    {
+        "name": "SlowRecovery_Grant25k_M4",
+        "DOWNTURN_PROB_PER_MONTH": 0.10,
+        "DOWNTURN_JOIN_MULT": 0.85,
+        "DOWNTURN_CHURN_MULT": 1.20,
+        "MARKET_POOLS_INFLOW": {"community_studio": 3, "home_studio": 1, "no_access": 2},
+        "grant_amount": 25000, "grant_month": 4,
+
+        "WOM_RATE": 0.025,
+        "LEAD_TO_JOIN_RATE": 0.18,
+        "MAX_ONBOARD_PER_MONTH": 9,
+
+        "MEMBER_CAP": 92,
+        "EXPANSION_THRESHOLD": 22,
+    },
+    {
+        "name": "Boom",
+        "DOWNTURN_PROB_PER_MONTH": 0.02,
+        "DOWNTURN_JOIN_MULT": 1.20,
+        "DOWNTURN_CHURN_MULT": 0.85,
+        "MARKET_POOLS_INFLOW": {"community_studio": 6, "home_studio": 3, "no_access": 4},
+        "grant_amount": 0.0, "grant_month": None,
+
+        "WOM_RATE": 0.04,
+        "LEAD_TO_JOIN_RATE": 0.25,
+        "MAX_ONBOARD_PER_MONTH": 12,
+
+        "MEMBER_CAP": 100,
+        "EXPANSION_THRESHOLD": 18,
+    },
+    {
+        "name": "GreatDepression",
+        "DOWNTURN_PROB_PER_MONTH": 0.28,
+        "DOWNTURN_JOIN_MULT": 0.45,
+        "DOWNTURN_CHURN_MULT": 1.90,
+        "MARKET_POOLS_INFLOW": {"community_studio": 1, "home_studio": 0, "no_access": 1},
+        "grant_amount": 0.0, "grant_month": None,
+
+        "WOM_RATE": 0.01,
+        "LEAD_TO_JOIN_RATE": 0.10,
+        "MAX_ONBOARD_PER_MONTH": 6,
+
+        "MEMBER_CAP": 75,
+        "EXPANSION_THRESHOLD": 30,
+    },
 ]
 STRATEGIES = [
     {"name":"I_all_upfront_Base", "RENT":3500, "OWNER_DRAW":1000},

@@ -305,9 +305,9 @@ def build_overrides(env: dict, strat: dict) -> dict:
         cap_val = None
 
     if cap_val is not None and cap_val > 0:
-        ov["HARD_CAP"] = cap_val
+        ov["MAX_MEMBERS"] = cap_val
     else:
-        ov.pop("HARD_CAP", None)  # ensure we don't accidentally pin capacity
+        ov.pop("MAX_MEMBERS", None)  # ensure we don't accidentally pin capacity
 
     # Don't leak UI-only field
     ov.pop("MEMBER_CAP", None)

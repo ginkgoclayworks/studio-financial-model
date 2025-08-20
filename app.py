@@ -528,12 +528,18 @@ class FigureCapture:
 # ---------- caching ----------
 @st.cache_data(show_spinner=False)
 def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: Optional[str] = None):
+    # make sure cache_key participates in the hash even if unused
     if cache_key is None:
-        cache_key = _make_cache_key(env, strat, seed)  # participate in hash    ov = build_overrides(env, strat)
+        cache_key = _make_cache_key(env, strat, seed)
+
+    # ✅ build overrides BEFORE using ov
+    ov = build_overrides(env, strat)
     ov["RANDOM_SEED"] = seed
+
     title_suffix = f"{env['name']} | {strat['name']}"
     with FigureCapture(title_suffix) as cap:
         res = run_original_once(SCRIPT, ov)
+
     df_cell, eff = (res if isinstance(res, tuple) else (res, None))
 
     df_cell = df_cell.copy()
@@ -542,6 +548,8 @@ def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: Optional[str] 
     if "simulation_id" not in df_cell.columns:
         df_cell["simulation_id"] = 0
     return df_cell, eff, cap.images, cap.manifest
+
+
 # ---------- column detection & timings (robust) ----------
 def pick_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     for c in candidates:

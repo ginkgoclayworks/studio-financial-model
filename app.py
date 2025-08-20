@@ -92,26 +92,75 @@ def _update_from(src, dst, keys):
         if k in src:
             dst[k] = src[k]
 
+def _default_from_spec_for_push(key: str, spec: dict):
+    t = (spec or {}).get("type")
+    if key == "grant_month":          # sentinel: -1 means “None”
+        return -1
+    if t == "bool":  return False
+    if t == "int":   return int(spec.get("min", 0))
+    if t == "float": return float(spec.get("min", 0.0))
+    if t == "market_inflow":
+        return {"community_studio": 0, "home_studio": 0, "no_access": 0}
+    if t == "json":  return {}
+    return ""
 
-def _push_preset_to_widgets(preset: dict, *, prefix: str):
+def _clamp_num_for_push(val, lo, hi, typ):
+    try:
+        if typ == int:
+            return int(min(max(val, lo), hi))
+        else:
+            return float(min(max(val, lo), hi))
+    except Exception:
+        return lo
+
+def _push_preset_to_widgets(preset: dict, *, prefix: str, keys: list):
     """
-    For each key in preset, set st.session_state[f"{prefix}_{key}"] so widgets
-    jump to the new values. Special-case MARKET_POOLS_INFLOW to set its 3 child sliders.
+    Push preset values into st.session_state for all widgets in `keys`
+    using the given `prefix` (must match render_param_controls’ wid_key).
+    Handles special types and fills defaults when preset lacks a key.
     """
-    for k, v in preset.items():
-        # Special case: nested market inflow -> push child keys too
-        if k == "MARKET_POOLS_INFLOW" and isinstance(v, dict):
-            norm = _normalize_market_inflow(v)
+    for k in keys:
+        spec = PARAM_SPECS.get(k, {})
+        raw = preset.get(k, None)
+
+        # Fill defaults when missing/None
+        if raw is None:
+            raw = _default_from_spec_for_push(k, spec)
+
+        t = spec.get("type")
+
+        if t == "bool":
+            st.session_state[f"{prefix}_{k}"] = bool(raw)
+
+        elif t == "int":
+            lo = int(spec.get("min", 0)); hi = int(spec.get("max", 100))
+            val = _clamp_num_for_push(raw, lo, hi, int)
+            st.session_state[f"{prefix}_{k}"] = int(val)
+
+        elif t == "float":
+            lo = float(spec.get("min", 0.0)); hi = float(spec.get("max", 1.0))
+            val = _clamp_num_for_push(raw, lo, hi, float)
+            st.session_state[f"{prefix}_{k}"] = float(val)
+
+        elif t == "market_inflow":
+            cur = raw if isinstance(raw, dict) else {}
+            cur = {
+                "community_studio": int(max(0, cur.get("community_studio", 0))),
+                "home_studio":      int(max(0, cur.get("home_studio", 0))),
+                "no_access":        int(max(0, cur.get("no_access", 0))),
+            }
+            # set the compound value (if your code reads it)
+            st.session_state[f"{prefix}_{k}"] = cur
+            # set the three sub‑slider keys that are actually rendered
             base = f"{prefix}_{k}"
-            st.session_state[base] = norm
-            st.session_state[f"{base}_c"] = int(norm["community_studio"])
-            st.session_state[f"{base}_h"] = int(norm["home_studio"])
-            st.session_state[f"{base}_n"] = int(norm["no_access"])
-            continue
+            st.session_state[f"{base}_c"] = cur["community_studio"]
+            st.session_state[f"{base}_h"] = cur["home_studio"]
+            st.session_state[f"{base}_n"] = cur["no_access"]
 
-        # Everything else: primitives / small dicts
-        if isinstance(v, (int, float, bool, str, dict)) or v is None:
-            st.session_state[f"{prefix}_{k}"] = v
+        else:
+            # text/json fallback
+            st.session_state[f"{prefix}_{k}"] = raw
+
             
 # ---------- small helpers ----------
 def _normalize_market_inflow(d: dict) -> dict:
@@ -626,15 +675,15 @@ with st.sidebar:
     
     # If preset changed, push values into widgets for ALL groups you render
     if scen_sel != st.session_state["last_scen_sel"]:
-        _push_preset_to_widgets(env,   prefix="env_income")
-        _push_preset_to_widgets(env,   prefix="env_exp")
-        _push_preset_to_widgets(env,   prefix="env_macro")
+        _push_preset_to_widgets(env,   prefix="env_income", keys=GROUPS["Income"])
+        _push_preset_to_widgets(env,   prefix="env_exp",    keys=GROUPS["Expenses"])
+        _push_preset_to_widgets(env,   prefix="env_macro",  keys=GROUPS["Macro"])
         st.session_state["last_scen_sel"] = scen_sel
     
     if strat_sel != st.session_state["last_strat_sel"]:
-        _push_preset_to_widgets(strat, prefix="strat_income")
-        _push_preset_to_widgets(strat, prefix="strat_exp")
-        _push_preset_to_widgets(strat, prefix="strat_macro")
+        _push_preset_to_widgets(strat, prefix="strat_income", keys=GROUPS["Income"])
+        _push_preset_to_widgets(strat, prefix="strat_exp",    keys=GROUPS["Expenses"])
+        _push_preset_to_widgets(strat, prefix="strat_macro",  keys=GROUPS["Macro"])
         st.session_state["last_strat_sel"] = strat_sel
         
     # render all known fields dynamically

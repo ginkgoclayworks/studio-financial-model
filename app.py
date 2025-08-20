@@ -57,7 +57,7 @@ PARAM_SPECS = {
     "CLASS_CONV_LAG_MO":      {"type": "int",   "min": 0, "max": 12, "step": 1, "label": "Class conv lag (mo)"},
         # In PARAM_SPECS (near the other Strategy/Income items)
     "MEMBER_CAP": {
-        "type": "int", "min": 10, "max": 200, "step": 1, "label": "Member cap (hard limit)"
+        "type": "int", "min": -1, "max": 500, "step": 1, "label": "Member cap (hard limit)"
     },
     "EXPANSION_THRESHOLD": {
         "type": "int", "min": 0, "max": 200, "step": 1, "label": "Expansion threshold (members)"
@@ -214,11 +214,16 @@ def build_overrides(env: dict, strat: dict) -> dict:
     }]
 
     # ---- Capacity mapping (UI → simulator) ----
-    cap_val = None
-    if "MEMBER_CAP" in strat:
-        cap_val = strat["MEMBER_CAP"]
-    elif "MEMBER_CAP" in env:
-        cap_val = env["MEMBER_CAP"]
+    cap_val = strat.get("MEMBER_CAP", env.get("MEMBER_CAP", None))
+    try:
+        cap_val = int(cap_val) if cap_val is not None else None
+    except Exception:
+        cap_val = None
+    
+    if cap_val is not None and cap_val >= 0:
+        ov["HARD_CAP"] = cap_val         # simulator sees a real hard cap
+    else:
+        ov.pop("HARD_CAP", None)     
 
     if cap_val is not None:
         try:

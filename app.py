@@ -23,6 +23,8 @@ import seaborn as sns  # for heatmaps
 # Your adapter: must expose run_original_once(script_path, overrides_dict)
 from final_batch_adapter import run_original_once
 
+import copy
+
 
 # put this near the top of app.py (after imports)
 PARAM_SPECS = {
@@ -91,7 +93,26 @@ def _update_from(src, dst, keys):
             dst[k] = src[k]
 
 
+def _push_preset_to_widgets(preset: dict, *, prefix: str):
+    """
+    For each key in preset, set st.session_state[f"{prefix}_{key}"] so widgets
+    jump to the new values. Special-case MARKET_POOLS_INFLOW to set its 3 child sliders.
+    """
+    for k, v in preset.items():
+        # Special case: nested market inflow -> push child keys too
+        if k == "MARKET_POOLS_INFLOW" and isinstance(v, dict):
+            norm = _normalize_market_inflow(v)
+            base = f"{prefix}_{k}"
+            st.session_state[base] = norm
+            st.session_state[f"{base}_c"] = int(norm["community_studio"])
+            st.session_state[f"{base}_h"] = int(norm["home_studio"])
+            st.session_state[f"{base}_n"] = int(norm["no_access"])
+            continue
 
+        # Everything else: primitives / small dicts
+        if isinstance(v, (int, float, bool, str, dict)) or v is None:
+            st.session_state[f"{prefix}_{k}"] = v
+            
 # ---------- small helpers ----------
 def _normalize_market_inflow(d: dict) -> dict:
     # Keep only the three known pools; coerce to non-negative ints.
@@ -185,6 +206,12 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
 
         # get current value; if missing or None, choose a default
         v = params.get(k, None)
+        state_key = f"{prefix}_{k}"
+        if state_key in st.session_state:
+            v = st.session_state[state_key]
+        else:
+            v = params.get(k, _default_from_spec(spec, key=k))
+            
         if v is None:
             v = _default_from_spec(spec, key=k)
 
@@ -212,11 +239,21 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
             out[k] = float(st.slider(label, min_value=lo, max_value=hi, step=step, value=v_f, key=wid_key))
 
         elif t == "market_inflow":
+            base = f"{wid_key}"
+            # Start from preset or current params, normalize
             cur = _normalize_market_inflow(v if isinstance(v, dict) else {})
-            c = st.slider("Community studio inflow", 0, 50, cur["community_studio"], key=f"{wid_key}_c")
-            h = st.slider("Home studio inflow",      0, 50, cur["home_studio"],      key=f"{wid_key}_h")
-            n = st.slider("No access inflow",        0, 50, cur["no_access"],        key=f"{wid_key}_n")
+            # If preset has been pushed, prefer the session_state child keys
+            c_def = st.session_state.get(f"{base}_c", cur["community_studio"])
+            h_def = st.session_state.get(f"{base}_h", cur["home_studio"])
+            n_def = st.session_state.get(f"{base}_n", cur["no_access"])
+        
+            c = st.slider("Community studio inflow", 0, 50, int(c_def), key=f"{base}_c")
+            h = st.slider("Home studio inflow",      0, 50, int(h_def), key=f"{base}_h")
+            n = st.slider("No access inflow",        0, 50, int(n_def), key=f"{base}_n")
+        
             out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
+            # Keep a synced parent copy too (useful if you inspect session_state later)
+            st.session_state[base] = out[k]
 
     # (no inner expanders; called inside parent expander)
     return out
@@ -444,6 +481,9 @@ STRATEGIES = [
     {"name":"II_staged_Base",     "RENT":3500, "OWNER_DRAW":1000},
 ]
 
+
+
+
 # Sidebar controls
 with st.sidebar:
     st.header("Configuration")
@@ -455,9 +495,29 @@ with st.sidebar:
     strat_sel = st.selectbox("Strategy preset", strat_names, index=0)
     seed      = 42
 
-    # start from the chosen preset (deep copy via JSON)
-    env   = json.loads(json.dumps(next(s for s in SCENARIOS  if s["name"] == scen_sel)))
+   # After scen_sel / strat_sel are created:
+    if "last_scen_sel" not in st.session_state:
+        st.session_state["last_scen_sel"] = scen_sel
+    if "last_strat_sel" not in st.session_state:
+        st.session_state["last_strat_sel"] = strat_sel
+    
+    # Deep copies of the chosen presets
+    env  = json.loads(json.dumps(next(s for s in SCENARIOS  if s["name"] == scen_sel)))
     strat = json.loads(json.dumps(next(s for s in STRATEGIES if s["name"] == strat_sel)))
+    
+    # If preset changed, push values into widgets for ALL groups you render
+    if scen_sel != st.session_state["last_scen_sel"]:
+        _push_preset_to_widgets(env,   prefix="env_income")
+        _push_preset_to_widgets(env,   prefix="env_exp")
+        _push_preset_to_widgets(env,   prefix="env_macro")
+        st.session_state["last_scen_sel"] = scen_sel
+    
+    if strat_sel != st.session_state["last_strat_sel"]:
+        _push_preset_to_widgets(strat, prefix="strat_income")
+        _push_preset_to_widgets(strat, prefix="strat_exp")
+        _push_preset_to_widgets(strat, prefix="strat_macro")
+        st.session_state["last_strat_sel"] = strat_sel
+        
     # render all known fields dynamically
     # --- Grouped controls ---
     with st.expander("Income", expanded=True):

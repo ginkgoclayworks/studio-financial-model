@@ -55,10 +55,35 @@ PARAM_SPECS = {
     "CLASS_CONV_LAG_MO":      {"type": "int",   "min": 0, "max": 12, "step": 1, "label": "Class conv lag (mo)"},
 }
     
-    
-
-
 SCRIPT = "modular_simulator.py"   # your core simulator
+
+# --- Group definitions ---
+GROUPS = {
+    "Income": [
+        "REF_PRICE", "PRICE_ELASTICITY", "WOM_RATE", "LEAD_TO_JOIN_RATE", "MAX_ONBOARD_PER_MONTH",
+        # classes
+        "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH", "CLASS_CAP_PER_COHORT",
+        "CLASS_PRICE", "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
+        # events are controlled by discrete UI below
+    ],
+    "Expenses": [
+        "RENT", "OWNER_DRAW", "MARKETING_SPEND", "CAC"
+    ],
+    "Macro": [
+        "DOWNTURN_PROB_PER_MONTH", "DOWNTURN_JOIN_MULT", "DOWNTURN_CHURN_MULT",
+        "MARKET_POOLS_INFLOW", "grant_amount", "grant_month"
+    ],
+}
+
+def _subset(d, keys):
+    return {k: d[k] for k in keys if k in d}
+
+def _update_from(src, dst, keys):
+    for k in keys:
+        if k in src:
+            dst[k] = src[k]
+
+
 
 # ---------- small helpers ----------
 def _normalize_market_inflow(d: dict) -> dict:
@@ -121,7 +146,8 @@ def _normalize_env(env: dict) -> dict:
 def render_param_controls(title: str, params: dict, *, group_keys: Optional[List[str]] = None, prefix: str = "") -> dict:
     """
     Render Streamlit inputs for any keys in `params` using PARAM_SPECS.
-    Unknown keys fall back to a generic text/number box.
+    NOTE: This version does NOT create an expander; it assumes you're already
+    inside a parent container/expander and just prints a bold section label.
     Returns a **new dict** with edited values.
     """
     def _as_int(v, spec):
@@ -141,80 +167,81 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
             return float(spec.get("min", 0.0))
 
     out = dict(params)
-    with st.expander(title, expanded=True):
-        for k, v in params.items():
-            spec = PARAM_SPECS.get(k)
-            label = spec["label"] if spec and "label" in spec else k
-            wid_key = f"{prefix}_{k}"
 
-            if spec is None:
-                # best-effort fallback with None safety
-                if isinstance(v, bool):
-                    out[k] = st.checkbox(label, value=bool(v) if v is not None else False, key=wid_key)
-                elif isinstance(v, (int, np.integer)) or (v is None):
-                    out[k] = st.number_input(label, value=int(v) if v is not None else 0, key=wid_key)
-                elif isinstance(v, (float, np.floating)):
-                    out[k] = float(st.number_input(label, value=float(v), key=wid_key))
-                elif isinstance(v, dict):
-                    try:
-                        default_txt = json.dumps(v if v is not None else {}, indent=2)
-                    except Exception:
-                        default_txt = "{}"
-                    out[k] = json.loads(st.text_area(label, value=default_txt, key=wid_key))
-                else:
-                    out[k] = st.text_input(label, value="" if v is None else str(v), key=wid_key)
-                continue
+    # Section label only (no inner expander!)
+    st.markdown(f"**{title}**")
 
-            t = spec["type"]
-            if t == "bool":
+    for k, v in params.items():
+        spec = PARAM_SPECS.get(k)
+        label = spec["label"] if spec and "label" in spec else k
+        wid_key = f"{prefix}_{k}"
+
+        if spec is None:
+            # best-effort fallback with None safety
+            if isinstance(v, bool):
                 out[k] = st.checkbox(label, value=bool(v) if v is not None else False, key=wid_key)
-
-            elif t == "int":
-                val = _as_int(v, spec)
-                out[k] = int(st.slider(
-                    label,
-                    min_value=int(spec["min"]),
-                    max_value=int(spec["max"]),
-                    step=int(spec["step"]),
-                    value=val,
-                    key=wid_key,
-                ))
-
-            elif t == "float":
-                val = _as_float(v, spec)
-                out[k] = float(st.slider(
-                    label,
-                    min_value=float(spec["min"]),
-                    max_value=float(spec["max"]),
-                    step=float(spec["step"]),
-                    value=val,
-                    key=wid_key,
-                ))
-                
-            elif t == "market_inflow":
-                # Render three explicit sliders. Start from current values or sensible defaults.
-                cur = v if isinstance(v, dict) else {}
-                cur = _normalize_market_inflow(cur)
-                c = st.slider("Community studio inflow", 0, 50, cur["community_studio"], key=f"{wid_key}_c")
-                h = st.slider("Home studio inflow",      0, 50, cur["home_studio"],      key=f"{wid_key}_h")
-                n = st.slider("No access inflow",        0, 50, cur["no_access"],        key=f"{wid_key}_n")
-                out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
-                
-            elif t == "json":
-                default = json.dumps(v, indent=2) if isinstance(v, dict) else (v if isinstance(v, str) else "{}")
-                txt = st.text_area(label, value=default, key=wid_key, height=120)
+            elif isinstance(v, (int, np.integer)) or (v is None):
+                out[k] = st.number_input(label, value=int(v) if v is not None else 0, key=wid_key)
+            elif isinstance(v, (float, np.floating)):
+                out[k] = float(st.number_input(label, value=float(v), key=wid_key))
+            elif isinstance(v, dict):
                 try:
-                    out[k] = json.loads(txt)
+                    default_txt = json.dumps(v if v is not None else {}, indent=2)
                 except Exception:
-                    st.warning(f"{k}: invalid JSON; keeping previous value")
-                    out[k] = v
-
+                    default_txt = "{}"
+                out[k] = json.loads(st.text_area(label, value=default_txt, key=wid_key))
             else:
                 out[k] = st.text_input(label, value="" if v is None else str(v), key=wid_key)
+            continue
 
-            pass
-        
-        return out
+        t = spec["type"]
+        if t == "bool":
+            out[k] = st.checkbox(label, value=bool(v) if v is not None else False, key=wid_key)
+
+        elif t == "int":
+            val = _as_int(v, spec)
+            out[k] = int(st.slider(
+                label,
+                min_value=int(spec["min"]),
+                max_value=int(spec["max"]),
+                step=int(spec["step"]),
+                value=val,
+                key=wid_key,
+            ))
+
+        elif t == "float":
+            val = _as_float(v, spec)
+            out[k] = float(st.slider(
+                label,
+                min_value=float(spec["min"]),
+                max_value=float(spec["max"]),
+                step=float(spec["step"]),
+                value=val,
+                key=wid_key,
+            ))
+
+        elif t == "market_inflow":
+            # Render three explicit sliders. Start from current values or sensible defaults.
+            cur = v if isinstance(v, dict) else {}
+            cur = _normalize_market_inflow(cur)
+            c = st.slider("Community studio inflow", 0, 50, cur["community_studio"], key=f"{wid_key}_c")
+            h = st.slider("Home studio inflow",      0, 50, cur["home_studio"],      key=f"{wid_key}_h")
+            n = st.slider("No access inflow",        0, 50, cur["no_access"],        key=f"{wid_key}_n")
+            out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
+
+        elif t == "json":
+            default = json.dumps(v, indent=2) if isinstance(v, dict) else (v if isinstance(v, str) else "{}")
+            txt = st.text_area(label, value=default, key=wid_key, height=120)
+            try:
+                out[k] = json.loads(txt)
+            except Exception:
+                st.warning(f"{k}: invalid JSON; keeping previous value")
+                out[k] = v
+
+        else:
+            out[k] = st.text_input(label, value="" if v is None else str(v), key=wid_key)
+
+    return out
 
 
 # ---- capture all plt.show() calls from your modular_simulator without touching it
@@ -455,21 +482,31 @@ with st.sidebar:
     env   = json.loads(json.dumps(next(s for s in SCENARIOS  if s["name"] == scen_sel)))
     strat = json.loads(json.dumps(next(s for s in STRATEGIES if s["name"] == strat_sel)))
     # render all known fields dynamically
-    env   = render_param_controls("Scenario parameters", env,   prefix="env")
-    strat = render_param_controls("Strategy parameters", strat, prefix="strat")
-
-    # --- Discrete Events controls ---
-    with st.expander("Events (discrete controls)", expanded=True):
-        events_fixed_ui = st.selectbox(
-            "Events per month (fixed)", [0, 1, 2, 3, 4], index=0
-        )
-        ticket_choice_ui = st.selectbox(
-            "Event ticket price ($)", [50, 75, 100, 125], index=2
-        )
+    # --- Grouped controls ---
+    with st.expander("Income", expanded=True):
+        env_income   = render_param_controls("Income — Scenario (market/capacity inputs)", _subset(env, GROUPS["Income"]),  prefix="env_income")
+        strat_income = render_param_controls("Income — Strategy (pricing, classes)",       _subset(strat, GROUPS["Income"]), prefix="strat_income")
     
-    # if not strat.get("EVENTS_ENABLED", False):
-    #     events_fixed_ui = 0
+    with st.expander("Expenses", expanded=True):
+        env_exp   = render_param_controls("Expenses — Scenario", _subset(env, GROUPS["Expenses"]),   prefix="env_exp")
+        strat_exp = render_param_controls("Expenses — Strategy", _subset(strat, GROUPS["Expenses"]), prefix="strat_exp")
     
+    with st.expander("Macro", expanded=True):
+        env_macro   = render_param_controls("Macro — Scenario", _subset(env, GROUPS["Macro"]),   prefix="env_macro")
+        strat_macro = render_param_controls("Macro — Strategy", _subset(strat, GROUPS["Macro"]), prefix="strat_macro")
+    
+    # Merge edits back
+    for part in (env_income, env_exp, env_macro):
+        _update_from(part, env, part.keys())
+    for part in (strat_income, strat_exp, strat_macro):
+        _update_from(part, strat, part.keys())
+    
+    # --- Events (discrete) lives with Income ---
+    with st.expander("Events (discrete)", expanded=True):
+        events_fixed_ui   = st.selectbox("Events per month (fixed)", [0, 1, 2, 3, 4], index=0)
+        ticket_choice_ui  = st.selectbox("Event ticket price ($)",  [50, 75, 100, 125], index=2)
+    
+    # Map discrete choices directly (0 == disabled)
     strat["BASE_EVENTS_PER_MONTH_LAMBDA"] = float(events_fixed_ui)
     strat["EVENTS_MAX_PER_MONTH"]         = int(events_fixed_ui)
     strat["TICKET_PRICE"]                 = int(ticket_choice_ui)

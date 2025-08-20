@@ -117,6 +117,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 import matplotlib as mpl
+from collections import OrderedDict
 
 from types import SimpleNamespace
 from contextlib import contextmanager
@@ -505,30 +506,47 @@ def _to_serializable(x):
         pass
     return x
 
-EFFECTIVE_CONFIG = {
-    "MONTHS": MONTHS,
-    "N_SIMULATIONS": N_SIMULATIONS,
-    "PRICE": PRICE if 'PRICE' in globals() else None,
-    "PRICE_ELASTICITY": PRICE_ELASTICITY if 'PRICE_ELASTICITY' in globals() else None,
-    "RENT_SCENARIOS": _to_serializable(RENT_SCENARIOS) if 'RENT_SCENARIOS' in globals() else None,
-    "OWNER_DRAW_SCENARIOS": _to_serializable(OWNER_DRAW_SCENARIOS) if 'OWNER_DRAW_SCENARIOS' in globals() else None,
-    "DOWNTURN_PROB_PER_MONTH": DOWNTURN_PROB_PER_MONTH if 'DOWNTURN_PROB_PER_MONTH' in globals() else None,
-    "CAPACITY_SOFT_CAP": CAPACITY_SOFT_CAP if 'CAPACITY_SOFT_CAP' in globals() else None,
-    # add more as needed
-}
+# ---- EFFECTIVE CONFIG ECHO (place near the end, after overrides/globals are set) ----
 
-# Write a per-run JSON echo next to the outputs
+def _g(name, default=None):
+    return globals().get(name, default)
+
+def _ser(x):
+    # ensure numpy / arrays are JSONable
+    try:
+        return _to_serializable(x)
+    except Exception:
+        return x
+
+EFFECTIVE_CONFIG = OrderedDict({
+    "MONTHS": _g("MONTHS"),
+    "N_SIMULATIONS": _g("N_SIMULATIONS"),
+    "PRICE": _g("PRICE"),
+    "PRICE_ELASTICITY": _g("PRICE_ELASTICITY"),
+    "RENT_SCENARIOS": _ser(_g("RENT_SCENARIOS")),
+    "OWNER_DRAW_SCENARIOS": _ser(_g("OWNER_DRAW_SCENARIOS")),
+    # Macro / growth levers
+    "DOWNTURN_PROB_PER_MONTH": _g("DOWNTURN_PROB_PER_MONTH"),
+    "DOWNTURN_JOIN_MULT": _g("DOWNTURN_JOIN_MULT"),
+    "DOWNTURN_CHURN_MULT": _g("DOWNTURN_CHURN_MULT"),
+    "MARKET_POOLS_INFLOW": _ser(_g("MARKET_POOLS_INFLOW")),
+    "WOM_Q": _g("WOM_Q"),
+    "AWARENESS_RAMP_MONTHS": _g("AWARENESS_RAMP_MONTHS"),
+    # Capacity / limits (use one naming scheme consistently)
+    "HARD_CAP": _g("HARD_CAP"),
+    "CAPACITY_SOFT_CAP": _g("CAPACITY_SOFT_CAP"),
+})
+
+# Write once, after fully assembled
 try:
     out_dir = Path("runs") / datetime.now().strftime("%Y%m%d_%H%M%S_effective")
     out_dir.mkdir(parents=True, exist_ok=True)
     with open(out_dir / "effective_config.json", "w") as f:
-        json.dump(EFFECTIVE_CONFIG, f, indent=2)
-except Exception as _:
+        json.dump(EFFECTIVE_CONFIG, f, indent=2, default=_to_serializable)
+except Exception:
     pass
 
 print("[EFFECTIVE_CONFIG]", json.dumps(EFFECTIVE_CONFIG, default=_to_serializable))
-
-
 # =============================================================================
 # Helpers
 # =============================================================================

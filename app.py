@@ -1,13 +1,13 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Aug 19 07:59:18 2025
+# #!/usr/bin/env python3
+# # -*- coding: utf-8 -*-
+# """
+# Created on Tue Aug 19 07:59:18 2025
 
-@author: harshadghodke
+# @author: harshadghodke
 
 
-Streamlit app for GCWS simulator
-"""
+# Streamlit app for GCWS simulator
+# """
 
 import io, json, re, zipfile
 from pathlib import Path
@@ -314,6 +314,7 @@ def build_overrides(env: dict, strat: dict) -> dict:
 
     # ----- Expansion threshold (optional)
     thr_raw = env.get("EXPANSION_THRESHOLD", None)
+    
     try:
         thr_val = int(thr_raw) if thr_raw is not None else None
     except (TypeError, ValueError):
@@ -630,8 +631,8 @@ def summarize_cell(df: pd.DataFrame) -> Tuple[dict, pd.DataFrame]:
     T = int(df[month_col].max())
     last = df[df[month_col] == T]
     cash_q = (last.groupby([env_col, strat_col])[cash_col]
-                 .quantile([0.10, 0.50, 0.90]).unstack().reset_index()
-                 .rename(columns={0.10:"cash_q10", 0.50:"cash_med", 0.90:"cash_q90"}))
+                  .quantile([0.10, 0.50, 0.90]).unstack().reset_index()
+                  .rename(columns={0.10:"cash_q10", 0.50:"cash_med", 0.90:"cash_q90"}))
 
     m12 = 12 if T >= 12 else T
     # DSCR may be missing in very early months, handle gracefully
@@ -765,7 +766,7 @@ with st.sidebar:
     strat_sel = st.selectbox("Strategy preset", strat_names, index=0)
     seed      = 42
 
-   # After scen_sel / strat_sel are created:
+    # After scen_sel / strat_sel are created:
     if "last_scen_sel" not in st.session_state:
         st.session_state["last_scen_sel"] = scen_sel
     if "last_strat_sel" not in st.session_state:
@@ -795,9 +796,9 @@ with st.sidebar:
             _subset(env, GROUPS["Income"]),
             group_keys=GROUPS["Income"],
             prefix="env_income",
-         )
+          )
         strat_income = render_param_controls("Income — Strategy (pricing, classes)",
-         _subset(strat, GROUPS["Income"]),
+          _subset(strat, GROUPS["Income"]),
             group_keys=GROUPS["Income"],
             prefix="strat_income",
         )
@@ -818,7 +819,7 @@ with st.sidebar:
     with st.expander("Macro", expanded=True):
         env_macro   = render_param_controls(
             "Macro — Scenario",
-           _subset(env, GROUPS["Macro"]),
+            _subset(env, GROUPS["Macro"]),
             group_keys=GROUPS["Macro"],
             prefix="env_macro",
         )
@@ -917,7 +918,7 @@ with tab_run:
             for fname, data in images:
                 zf.writestr(fname, data)
         st.download_button("Download plots (zip)", data=buf.getvalue(),
-                           file_name=f"{slug(env['name'])}__{slug(strat['name'])}_plots.zip")
+                            file_name=f"{slug(env['name'])}__{slug(strat['name'])}_plots.zip")
 
         st.markdown("#### Raw results (first 250 rows)")
         st.dataframe(df_cell.head(250))
@@ -949,7 +950,7 @@ with tab_matrix:
         st.markdown("##### Survival probability")
         pv = (matrix.pivot(index="environment", columns="strategy", values="survival_prob")
                     .reindex(index=sorted(matrix["environment"].unique()),
-                             columns=sorted(matrix["strategy"].unique())))
+                              columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(6, 4))
         sns.heatmap(pv, annot=True, fmt=".2f", cmap="Blues", vmin=0, vmax=1, ax=ax,
                     cbar_kws={"label": "probability"})
@@ -978,5 +979,7 @@ with tab_matrix:
         st.pyplot(fig)
 
         st.download_button("Download matrix CSV",
-                           data=matrix.to_csv(index=False).encode("utf-8"),
-                           file_name="matrix_summary.csv", mime="text/csv")
+                            data=matrix.to_csv(index=False).encode("utf-8"),
+                            file_name="matrix_summary.csv", mime="text/csv")
+
+

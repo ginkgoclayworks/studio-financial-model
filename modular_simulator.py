@@ -441,7 +441,7 @@ PRICE_ELASTICITY = 0.6
 BASELINE_JOIN_RATE = 0.013
 REFERRAL_RATE_PER_MEMBER = 0.06
 REFERRAL_CONV = 0.22
-MAX_MEMBERS = 75
+MAX_MEMBERS = 77
 UTILIZATION_CHURN_UPLIFT = 0.25
 
 # -------------------------------------------------------------------------

@@ -145,92 +145,56 @@ def _normalize_env(env: dict) -> dict:
 
 def render_param_controls(title: str, params: dict, *, group_keys: Optional[List[str]] = None, prefix: str = "") -> dict:
     """
-    Render Streamlit inputs for any keys in `params` using PARAM_SPECS.
-    NOTE: This version does NOT create an expander; it assumes you're already
-    inside a parent container/expander and just prints a bold section label.
-    Returns a **new dict** with edited values.
+    Render Streamlit inputs for keys in `params` or explicit `group_keys`.
+    If a key is missing in `params`, use a sensible default from PARAM_SPECS.
     """
-    def _as_int(v, spec):
-        if v is None:
-            return int(spec.get("min", 0))
-        try:
-            return int(v)
-        except Exception:
-            return int(spec.get("min", 0))
-
-    def _as_float(v, spec):
-        if v is None:
-            return float(spec.get("min", 0.0))
-        try:
-            return float(v)
-        except Exception:
-            return float(spec.get("min", 0.0))
+    def _default_from_spec(spec):
+        t = spec.get("type") if spec else None
+        if t == "bool":  return False
+        if t == "int":   return int(spec.get("min", 0))
+        if t == "float": return float(spec.get("min", 0.0))
+        if t == "market_inflow":
+            return {"community_studio": 0, "home_studio": 0, "no_access": 0}
+        if t == "json":  return {}
+        return ""
 
     out = dict(params)
-
-    # Section label only (no inner expander!)
     st.markdown(f"**{title}**")
 
-    for k, v in params.items():
+    keys = group_keys if group_keys else list(params.keys())
+    for k in keys:
         spec = PARAM_SPECS.get(k)
+        v = params.get(k, _default_from_spec(spec))
         label = spec["label"] if spec and "label" in spec else k
         wid_key = f"{prefix}_{k}"
 
-        if spec is None:
-            # best-effort fallback with None safety
-            if isinstance(v, bool):
-                out[k] = st.checkbox(label, value=bool(v) if v is not None else False, key=wid_key)
-            elif isinstance(v, (int, np.integer)) or (v is None):
-                out[k] = st.number_input(label, value=int(v) if v is not None else 0, key=wid_key)
-            elif isinstance(v, (float, np.floating)):
-                out[k] = float(st.number_input(label, value=float(v), key=wid_key))
-            elif isinstance(v, dict):
-                try:
-                    default_txt = json.dumps(v if v is not None else {}, indent=2)
-                except Exception:
-                    default_txt = "{}"
-                out[k] = json.loads(st.text_area(label, value=default_txt, key=wid_key))
-            else:
-                out[k] = st.text_input(label, value="" if v is None else str(v), key=wid_key)
-            continue
-
-        t = spec["type"]
+        t = spec["type"] if spec else None
         if t == "bool":
-            out[k] = st.checkbox(label, value=bool(v) if v is not None else False, key=wid_key)
+            out[k] = st.checkbox(label, value=bool(v), key=wid_key)
 
         elif t == "int":
-            val = _as_int(v, spec)
-            out[k] = int(st.slider(
-                label,
-                min_value=int(spec["min"]),
-                max_value=int(spec["max"]),
-                step=int(spec["step"]),
-                value=val,
-                key=wid_key,
-            ))
+            out[k] = int(st.slider(label,
+                                   min_value=int(spec["min"]),
+                                   max_value=int(spec["max"]),
+                                   step=int(spec["step"]),
+                                   value=int(v), key=wid_key))
 
         elif t == "float":
-            val = _as_float(v, spec)
-            out[k] = float(st.slider(
-                label,
-                min_value=float(spec["min"]),
-                max_value=float(spec["max"]),
-                step=float(spec["step"]),
-                value=val,
-                key=wid_key,
-            ))
+            out[k] = float(st.slider(label,
+                                     min_value=float(spec["min"]),
+                                     max_value=float(spec["max"]),
+                                     step=float(spec["step"]),
+                                     value=float(v), key=wid_key))
 
         elif t == "market_inflow":
-            # Render three explicit sliders. Start from current values or sensible defaults.
-            cur = v if isinstance(v, dict) else {}
-            cur = _normalize_market_inflow(cur)
+            cur = _normalize_market_inflow(v if isinstance(v, dict) else {})
             c = st.slider("Community studio inflow", 0, 50, cur["community_studio"], key=f"{wid_key}_c")
             h = st.slider("Home studio inflow",      0, 50, cur["home_studio"],      key=f"{wid_key}_h")
             n = st.slider("No access inflow",        0, 50, cur["no_access"],        key=f"{wid_key}_n")
             out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
 
         elif t == "json":
-            default = json.dumps(v, indent=2) if isinstance(v, dict) else (v if isinstance(v, str) else "{}")
+            default = json.dumps(v, indent=2) if isinstance(v, dict) else "{}"
             txt = st.text_area(label, value=default, key=wid_key, height=120)
             try:
                 out[k] = json.loads(txt)
@@ -239,10 +203,10 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
                 out[k] = v
 
         else:
+            # Fallback
             out[k] = st.text_input(label, value="" if v is None else str(v), key=wid_key)
 
     return out
-
 
 # ---- capture all plt.show() calls from your modular_simulator without touching it
 class FigureCapture:
@@ -484,16 +448,43 @@ with st.sidebar:
     # render all known fields dynamically
     # --- Grouped controls ---
     with st.expander("Income", expanded=True):
-        env_income   = render_param_controls("Income — Scenario (market/capacity inputs)", _subset(env, GROUPS["Income"]),  prefix="env_income")
-        strat_income = render_param_controls("Income — Strategy (pricing, classes)",       _subset(strat, GROUPS["Income"]), prefix="strat_income")
-    
+        env_income   = render_param_controls("Income — Scenario (market/capacity inputs)",
+            _subset(env, GROUPS["Income"]),
+            group_keys=GROUPS["Income"],
+            prefix="env_income",
+         )
+        strat_income = render_param_controls("Income — Strategy (pricing, classes)",
+         _subset(strat, GROUPS["Income"]),
+            group_keys=GROUPS["Income"],
+            prefix="strat_income",
+        )
     with st.expander("Expenses", expanded=True):
-        env_exp   = render_param_controls("Expenses — Scenario", _subset(env, GROUPS["Expenses"]),   prefix="env_exp")
-        strat_exp = render_param_controls("Expenses — Strategy", _subset(strat, GROUPS["Expenses"]), prefix="strat_exp")
-    
+        env_exp   = render_param_controls(
+            "Expenses — Scenario",
+            _subset(env, GROUPS["Expenses"]),
+            group_keys=GROUPS["Expenses"],
+            prefix="env_exp",
+        )
+        strat_exp = render_param_controls(
+            "Expenses — Strategy",
+            _subset(strat, GROUPS["Expenses"]),
+            group_keys=GROUPS["Expenses"],
+            prefix="strat_exp",
+        )
+        
     with st.expander("Macro", expanded=True):
-        env_macro   = render_param_controls("Macro — Scenario", _subset(env, GROUPS["Macro"]),   prefix="env_macro")
-        strat_macro = render_param_controls("Macro — Strategy", _subset(strat, GROUPS["Macro"]), prefix="strat_macro")
+        env_macro   = render_param_controls(
+            "Macro — Scenario",
+           _subset(env, GROUPS["Macro"]),
+            group_keys=GROUPS["Macro"],
+            prefix="env_macro",
+        )
+        strat_macro = render_param_controls(
+            "Macro — Strategy",
+            _subset(strat, GROUPS["Macro"]),
+            group_keys=GROUPS["Macro"],
+            prefix="strat_macro",
+        )
     
     # Merge edits back
     for part in (env_income, env_exp, env_macro):

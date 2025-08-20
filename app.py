@@ -298,7 +298,7 @@ def build_overrides(env: dict, strat: dict) -> dict:
 
     # ----- Capacity mapping (UI → simulator)
     # UI contract: MEMBER_CAP > 0 => enforce hard cap; 0/None => no override (use internal station bottlenecks)
-    cap_raw = strat.get("MEMBER_CAP", env.get("MEMBER_CAP", None))
+    cap_raw = env.get("MEMBER_CAP", None)
     try:
         cap_val = int(cap_raw) if cap_raw is not None else None
     except (TypeError, ValueError):
@@ -313,7 +313,7 @@ def build_overrides(env: dict, strat: dict) -> dict:
     ov.pop("MEMBER_CAP", None)
 
     # ----- Expansion threshold (optional)
-    thr_raw = strat.get("EXPANSION_THRESHOLD", env.get("EXPANSION_THRESHOLD", None))
+    thr_raw = env.get("EXPANSION_THRESHOLD", None)
     try:
         thr_val = int(thr_raw) if thr_raw is not None else None
     except (TypeError, ValueError):

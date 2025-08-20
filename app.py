@@ -113,6 +113,21 @@ def _clamp_num_for_push(val, lo, hi, typ):
     except Exception:
         return lo
 
+def _canon(o):
+    def _default(x):
+        import numpy as np
+        if isinstance(x, (np.integer,)):
+            return int(x)
+        if isinstance(x, (np.floating,)):
+            return float(x)
+        if isinstance(x, (np.ndarray,)):
+            return x.tolist()
+        raise TypeError
+    return json.dumps(o, sort_keys=True, separators=(",", ":"), default=_default)
+
+def _make_cache_key(env: dict, strat: dict, seed: int) -> str:
+    return f"v4|{_canon(env)}|{_canon(strat)}|{seed}"
+
 def _push_preset_to_widgets(preset: dict, *, prefix: str, keys: list):
     """
     Push preset values into st.session_state for all widgets in `keys`
@@ -229,6 +244,10 @@ def build_overrides(env: dict, strat: dict) -> dict:
             ov["OWNER_DRAW_SCENARIOS"] = [float(strat["OWNER_DRAW"])]
         except Exception:
             pass
+    # ----- Alias UI keys to simulator keys -----
+    if "WOM_RATE" in ov and "WOM_Q" not in ov:
+        ov["WOM_Q"] = float(ov.pop("WOM_RATE"))
+    
 
     # ----- Scenario configs: grant + capex timing
     gm = env.get("grant_month", None)
@@ -276,12 +295,21 @@ def build_overrides(env: dict, strat: dict) -> dict:
 
 def _normalize_env(env: dict) -> dict:
     env = dict(env)
+
+    # normalize grant month
     gm = env.get("grant_month", None)
     if isinstance(gm, (int, np.integer)) and gm < 0:
         env["grant_month"] = None
-    # normalize market inflow
+
+    # normalize market inflow (dict of pools → ints)
     if isinstance(env.get("MARKET_POOLS_INFLOW"), dict):
         env["MARKET_POOLS_INFLOW"] = _normalize_market_inflow(env["MARKET_POOLS_INFLOW"])
+
+    # ensure numeric types for macro knobs if present
+    for k in ["DOWNTURN_PROB_PER_MONTH", "WOM_Q", "AWARENESS_RAMP_MONTHS"]:
+        if k in env and env[k] is not None:
+            env[k] = float(env[k])
+
     return env
 
 def render_param_controls(title: str, params: dict, *, group_keys: Optional[List[str]] = None, prefix: str = "") -> dict:
@@ -465,7 +493,7 @@ class FigureCapture:
 
 # ---------- caching ----------
 @st.cache_data(show_spinner=False)
-def run_cell_cached(env: dict, strat: dict, seed: int):
+def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: str):
     ov = build_overrides(env, strat)
     ov["RANDOM_SEED"] = seed
     title_suffix = f"{env['name']} | {strat['name']}"
@@ -476,12 +504,9 @@ def run_cell_cached(env: dict, strat: dict, seed: int):
     df_cell = df_cell.copy()
     df_cell["environment"] = env["name"]
     df_cell["strategy"]    = strat["name"]
-    # ✅ ensure we can group even if simulator didn’t emit simulation_id
     if "simulation_id" not in df_cell.columns:
         df_cell["simulation_id"] = 0
-
     return df_cell, eff, cap.images, cap.manifest
-
 # ---------- column detection & timings (robust) ----------
 def pick_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     for c in candidates:
@@ -804,8 +829,8 @@ with tab_run:
     if run_btn:
         with st.spinner("Running simulator…"):
             env_norm = _normalize_env(env)
-            df_cell, eff, images, manifest = run_cell_cached(env_norm, strat, seed)
-            row_dict, timings = summarize_cell(df_cell)
+            cache_key = _make_cache_key(env_norm, strat, seed)
+            df_cell, eff, images, manifest = run_cell_cached(env_norm, strat, seed, cache_key)
             
         st.subheader(f"KPIs — {env['name']} | {strat['name']}")
         kpi = row_dict

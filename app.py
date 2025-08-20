@@ -53,26 +53,33 @@ PARAM_SPECS = {
     "CLASS_PRICE":            {"type": "int",   "min": 0, "max": 1000, "step": 10, "label": "Class price"},
     "CLASS_CONV_RATE":        {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Class→Member conv"},
     "CLASS_CONV_LAG_MO":      {"type": "int",   "min": 0, "max": 12, "step": 1, "label": "Class conv lag (mo)"},
+        # In PARAM_SPECS (near the other Strategy/Income items)
+    "MEMBER_CAP": {
+        "type": "int", "min": 10, "max": 200, "step": 1, "label": "Member cap (hard limit)"
+    },
+    "EXPANSION_THRESHOLD": {
+        "type": "int", "min": 0, "max": 200, "step": 1, "label": "Expansion threshold (members)"
+    },
 }
     
 SCRIPT = "modular_simulator.py"   # your core simulator
 
 # --- Group definitions ---
+
 GROUPS = {
     "Income": [
-        "REF_PRICE", "PRICE_ELASTICITY", "WOM_RATE", "LEAD_TO_JOIN_RATE", "MAX_ONBOARD_PER_MONTH",
-        # classes
-        "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH", "CLASS_CAP_PER_COHORT",
-        "CLASS_PRICE", "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
+        "REF_PRICE", "PRICE_ELASTICITY", "WOM_RATE",
+        "LEAD_TO_JOIN_RATE", "MAX_ONBOARD_PER_MONTH",
+        "MEMBER_CAP", "EXPANSION_THRESHOLD",             # ← new
+        "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH",
+        "CLASS_CAP_PER_COHORT", "CLASS_PRICE",
+        "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
         # events are controlled by discrete UI below
     ],
-    "Expenses": [
-        "RENT", "OWNER_DRAW", "MARKETING_SPEND", "CAC"
-    ],
-    "Macro": [
-        "DOWNTURN_PROB_PER_MONTH", "DOWNTURN_JOIN_MULT", "DOWNTURN_CHURN_MULT",
-        "MARKET_POOLS_INFLOW", "grant_amount", "grant_month"
-    ],
+    "Expenses": ["RENT", "OWNER_DRAW", "MARKETING_SPEND", "CAC"],
+    "Macro": ["DOWNTURN_PROB_PER_MONTH", "DOWNTURN_JOIN_MULT",
+              "DOWNTURN_CHURN_MULT", "MARKET_POOLS_INFLOW",
+              "grant_amount", "grant_month"],
 }
 
 def _subset(d, keys):

@@ -693,11 +693,9 @@ SCENARIOS = [
         "DOWNTURN_CHURN_MULT": 1.50,
         "MARKET_POOLS_INFLOW": {"community_studio": 2, "home_studio": 1, "no_access": 1},
         "grant_amount": 0.0, "grant_month": None,
-
         "WOM_RATE": 0.02,
         "LEAD_TO_JOIN_RATE": 0.15,
         "MAX_ONBOARD_PER_MONTH": 8,
-
         "MEMBER_CAP": 86,
         "EXPANSION_THRESHOLD": 25,
     },
@@ -708,12 +706,10 @@ SCENARIOS = [
         "DOWNTURN_CHURN_MULT": 1.20,
         "MARKET_POOLS_INFLOW": {"community_studio": 3, "home_studio": 1, "no_access": 2},
         "grant_amount": 25000, "grant_month": 4,
-
         "WOM_RATE": 0.025,
         "LEAD_TO_JOIN_RATE": 0.18,
         "MAX_ONBOARD_PER_MONTH": 9,
-
-        "MEMBER_CAP": 92,
+        "MEMBER_CAP": 94,
         "EXPANSION_THRESHOLD": 22,
     },
     {
@@ -723,11 +719,9 @@ SCENARIOS = [
         "DOWNTURN_CHURN_MULT": 0.85,
         "MARKET_POOLS_INFLOW": {"community_studio": 6, "home_studio": 3, "no_access": 4},
         "grant_amount": 0.0, "grant_month": None,
-
         "WOM_RATE": 0.04,
         "LEAD_TO_JOIN_RATE": 0.25,
         "MAX_ONBOARD_PER_MONTH": 12,
-
         "MEMBER_CAP": 100,
         "EXPANSION_THRESHOLD": 18,
     },
@@ -738,7 +732,6 @@ SCENARIOS = [
         "DOWNTURN_CHURN_MULT": 1.90,
         "MARKET_POOLS_INFLOW": {"community_studio": 1, "home_studio": 0, "no_access": 1},
         "grant_amount": 0.0, "grant_month": None,
-
         "WOM_RATE": 0.01,
         "LEAD_TO_JOIN_RATE": 0.10,
         "MAX_ONBOARD_PER_MONTH": 6,

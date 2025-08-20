@@ -743,7 +743,7 @@ SCENARIOS = [
         "LEAD_TO_JOIN_RATE": 0.10,
         "MAX_ONBOARD_PER_MONTH": 6,
 
-        "MEMBER_CAP": 75,
+        "MEMBER_CAP": 81,
         "EXPANSION_THRESHOLD": 30,
     },
 ]

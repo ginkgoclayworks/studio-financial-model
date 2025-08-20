@@ -188,59 +188,89 @@ def sanitize_text(s: str) -> str:
     return re.sub(r"[\u2010-\u2015\u2212\u00AD\u200B\uFEFF\u202F]", "-", s)
 
 def build_overrides(env: dict, strat: dict) -> dict:
-    """Use ONLY globals your simulator already knows about."""
-    ov = {}
-    # copy env (except meta)
-    for k, v in env.items():
-        if k not in {"name", "grant_month", "grant_amount"}:
-            ov[k] = v
-    # copy strat (except meta)
-    for k, v in strat.items():
-        if k != "name":
+    """Assemble the overrides payload for modular_simulator.py.
+
+    Rules:
+      - Copy env/strat values except meta fields.
+      - Add singletons for sweepable values (RENT/OWNER_DRAW) so the core code
+        that expects *_SCENARIOS keeps working.
+      - Pass grant + capex timing through SCENARIO_CONFIGS.
+      - UI capacity mapping: MEMBER_CAP (UI) -> HARD_CAP (sim). Only if > 0.
+      - Forward EXPANSION_THRESHOLD when provided (>= 0).
+      - Remove UI-only keys and any None/NaN values.
+    """
+    import math
+    ov: dict = {}
+
+    META_SKIP = {"name", "grant_month", "grant_amount"}  # kept only in SCENARIO_CONFIGS
+
+    def _merge_clean(src: dict):
+        for k, v in (src or {}).items():
+            if k in META_SKIP:
+                continue
+            # Drop Nones/NaNs so we don't clobber core defaults
+            if v is None:
+                continue
+            if isinstance(v, float) and math.isnan(v):
+                continue
             ov[k] = v
 
-    # singletons for sweeps
+    _merge_clean(env)
+    _merge_clean(strat)
+
+    # ----- Singletons for sweeps (keep core code paths intact)
     if "RENT" in strat:
-        ov["RENT_SCENARIOS"] = np.array([float(strat["RENT"])], dtype=float)
+        try:
+            ov["RENT_SCENARIOS"] = np.array([float(strat["RENT"])], dtype=float)
+        except Exception:
+            pass
     if "OWNER_DRAW" in strat:
-        ov["OWNER_DRAW_SCENARIOS"] = [float(strat["OWNER_DRAW"])]
+        try:
+            ov["OWNER_DRAW_SCENARIOS"] = [float(strat["OWNER_DRAW"])]
+        except Exception:
+            pass
 
-    # pass grant + capex timing through SCENARIO_CONFIGS
+    # ----- Scenario configs: grant + capex timing
+    gm = env.get("grant_month", None)
+    # support UI convention: -1 means "no grant"
+    if isinstance(gm, (int, np.integer)) and gm < 0:
+        gm = None
+    sc_name = env.get("name", "Scenario")
+    capex_timing = "all" if ("all_upfront" in str(strat.get("name", ""))) else "staged"
     ov["SCENARIO_CONFIGS"] = [{
-        "name": env.get("name", "Scenario"),
-        "capex_timing": "all" if ("all_upfront" in strat.get("name","")) else "staged",
-        "grant_amount": env.get("grant_amount", 0.0),
-        "grant_month": env.get("grant_month", None),
+        "name": sc_name,
+        "capex_timing": capex_timing,
+        "grant_amount": float(env.get("grant_amount", 0.0) or 0.0),
+        "grant_month": gm,
     }]
 
-    # ---- Capacity mapping (UI → simulator) ----
-    cap_val = strat.get("MEMBER_CAP", env.get("MEMBER_CAP", None))
+    # ----- Capacity mapping (UI → simulator)
+    # UI contract: MEMBER_CAP > 0 => enforce hard cap; 0/None => no override (use internal station bottlenecks)
+    cap_raw = strat.get("MEMBER_CAP", env.get("MEMBER_CAP", None))
     try:
-        cap_val = int(cap_val) if cap_val is not None else None
-    except Exception:
+        cap_val = int(cap_raw) if cap_raw is not None else None
+    except (TypeError, ValueError):
         cap_val = None
-    
-    if cap_val is not None and cap_val >= 0:
-        ov["HARD_CAP"] = cap_val         # simulator sees a real hard cap
+
+    if cap_val is not None and cap_val > 0:
+        ov["HARD_CAP"] = cap_val
     else:
-        ov.pop("HARD_CAP", None)     
+        ov.pop("HARD_CAP", None)  # ensure we don't accidentally pin capacity
 
-    if cap_val is not None:
-        try:
-            cap_i = int(cap_val)
-        except Exception:
-            cap_i = int(float(cap_val))  # last resort
-        ov["HARD_CAP"]   = cap_i     # simulator key (used by plots)
-        ov["MEMBER_CAP"] = cap_i     # keep UI name too (harmless / future-proof)
+    # Don't leak UI-only field
+    ov.pop("MEMBER_CAP", None)
 
-    # Optional: expansion threshold pass-through (same name both sides here)
-    if "EXPANSION_THRESHOLD" in strat or "EXPANSION_THRESHOLD" in env:
-        try:
-            ov["EXPANSION_THRESHOLD"] = int(
-                strat.get("EXPANSION_THRESHOLD", env.get("EXPANSION_THRESHOLD", 0))
-            )
-        except Exception:
-            ov["EXPANSION_THRESHOLD"] = 0
+    # ----- Expansion threshold (optional)
+    thr_raw = strat.get("EXPANSION_THRESHOLD", env.get("EXPANSION_THRESHOLD", None))
+    try:
+        thr_val = int(thr_raw) if thr_raw is not None else None
+    except (TypeError, ValueError):
+        thr_val = None
+
+    if thr_val is not None and thr_val >= 0:
+        ov["EXPANSION_THRESHOLD"] = thr_val
+    else:
+        ov.pop("EXPANSION_THRESHOLD", None)
 
     return ov
 

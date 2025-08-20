@@ -72,16 +72,15 @@ GROUPS = {
     "Income": [
         "REF_PRICE", "PRICE_ELASTICITY", "WOM_RATE",
         "LEAD_TO_JOIN_RATE", "MAX_ONBOARD_PER_MONTH",
-        "MEMBER_CAP", "EXPANSION_THRESHOLD",             # ← new
         "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH",
         "CLASS_CAP_PER_COHORT", "CLASS_PRICE",
         "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
-        # events are controlled by discrete UI below
     ],
     "Expenses": ["RENT", "OWNER_DRAW", "MARKETING_SPEND", "CAC"],
     "Macro": ["DOWNTURN_PROB_PER_MONTH", "DOWNTURN_JOIN_MULT",
               "DOWNTURN_CHURN_MULT", "MARKET_POOLS_INFLOW",
               "grant_amount", "grant_month"],
+    "Capacity": ["MEMBER_CAP", "EXPANSION_THRESHOLD"],  # ← new group
 }
 
 
@@ -829,6 +828,15 @@ with st.sidebar:
             group_keys=GROUPS["Macro"],
             prefix="strat_macro",
         )
+    
+    with st.expander("Capacity (scenario)", expanded=True):
+        env_cap = render_param_controls(
+            "Capacity — Scenario",
+            _subset(env, GROUPS["Capacity"]),
+            group_keys=GROUPS["Capacity"],
+            prefix="env_cap",
+        )
+        _update_from(env_cap, env, env_cap.keys())
     
     # Merge edits back
     for part in (env_income, env_exp, env_macro):

@@ -153,10 +153,13 @@ def _normalize_env(env: dict) -> dict:
 def render_param_controls(title: str, params: dict, *, group_keys: Optional[List[str]] = None, prefix: str = "") -> dict:
     """
     Render Streamlit inputs for keys in `params` or explicit `group_keys`.
-    If a key is missing in `params`, use a sensible default from PARAM_SPECS.
+    If a key is missing or is None, use a sensible default from PARAM_SPECS.
     """
-    def _default_from_spec(spec):
+    def _default_from_spec(spec, key=None):
         t = spec.get("type") if spec else None
+        # special sentinel: grant_month uses -1 to mean "None"
+        if key == "grant_month":
+            return -1
         if t == "bool":  return False
         if t == "int":   return int(spec.get("min", 0))
         if t == "float": return float(spec.get("min", 0.0))
@@ -165,33 +168,48 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
         if t == "json":  return {}
         return ""
 
+    def _clamp_num(val, lo, hi):
+        try:
+            return min(max(val, lo), hi)
+        except Exception:
+            return lo
+
     out = dict(params)
     st.markdown(f"**{title}**")
 
     keys = group_keys if group_keys else list(params.keys())
     for k in keys:
         spec = PARAM_SPECS.get(k)
-        v = params.get(k, _default_from_spec(spec))
         label = spec["label"] if spec and "label" in spec else k
         wid_key = f"{prefix}_{k}"
 
+        # get current value; if missing or None, choose a default
+        v = params.get(k, None)
+        if v is None:
+            v = _default_from_spec(spec, key=k)
+
         t = spec["type"] if spec else None
+
         if t == "bool":
             out[k] = st.checkbox(label, value=bool(v), key=wid_key)
 
         elif t == "int":
-            out[k] = int(st.slider(label,
-                                   min_value=int(spec["min"]),
-                                   max_value=int(spec["max"]),
-                                   step=int(spec["step"]),
-                                   value=int(v), key=wid_key))
+            lo, hi, step = int(spec["min"]), int(spec["max"]), int(spec["step"])
+            try:
+                v_int = int(v)
+            except Exception:
+                v_int = _default_from_spec(spec, key=k)
+            v_int = _clamp_num(v_int, lo, hi)
+            out[k] = int(st.slider(label, min_value=lo, max_value=hi, step=step, value=v_int, key=wid_key))
 
         elif t == "float":
-            out[k] = float(st.slider(label,
-                                     min_value=float(spec["min"]),
-                                     max_value=float(spec["max"]),
-                                     step=float(spec["step"]),
-                                     value=float(v), key=wid_key))
+            lo, hi, step = float(spec["min"]), float(spec["max"]), float(spec["step"])
+            try:
+                v_f = float(v)
+            except Exception:
+                v_f = _default_from_spec(spec, key=k)
+            v_f = _clamp_num(v_f, lo, hi)
+            out[k] = float(st.slider(label, min_value=lo, max_value=hi, step=step, value=v_f, key=wid_key))
 
         elif t == "market_inflow":
             cur = _normalize_market_inflow(v if isinstance(v, dict) else {})
@@ -200,19 +218,7 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
             n = st.slider("No access inflow",        0, 50, cur["no_access"],        key=f"{wid_key}_n")
             out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
 
-        elif t == "json":
-            default = json.dumps(v, indent=2) if isinstance(v, dict) else "{}"
-            txt = st.text_area(label, value=default, key=wid_key, height=120)
-            try:
-                out[k] = json.loads(txt)
-            except Exception:
-                st.warning(f"{k}: invalid JSON; keeping previous value")
-                out[k] = v
-
-        else:
-            # Fallback
-            out[k] = st.text_input(label, value="" if v is None else str(v), key=wid_key)
-
+    # (no inner expanders; called inside parent expander)
     return out
 
 # ---- capture all plt.show() calls from your modular_simulator without touching it

@@ -84,6 +84,40 @@ GROUPS = {
               "grant_amount", "grant_month"],
 }
 
+
+def compute_kpis_from_cell(df_cell: pd.DataFrame) -> dict:
+    """
+    Compute lender-style KPIs from a single cell's simulation dataframe.
+    Assumes columns: month, simulation_id, cash; optionally dscr, active_members.
+    """
+    out = {}
+    if df_cell.empty:
+        return out
+
+    # Horizon row per simulation
+    last_month = int(df_cell["month"].max())
+    end = df_cell[df_cell["month"] == last_month]
+
+    # Survival: share of sims whose min cash never dipped below 0
+    if {"simulation_id", "cash"}.issubset(df_cell.columns):
+        min_cash_by_sim = df_cell.groupby("simulation_id")["cash"].min()
+        out["survival_prob"] = float((min_cash_by_sim >= 0).mean())
+        out["cash_q10"] = float(end["cash"].quantile(0.10))
+        out["cash_med"] = float(end["cash"].quantile(0.50))
+        out["cash_q90"] = float(end["cash"].quantile(0.90))
+
+    # DSCR at horizon (if present)
+    if "dscr" in end.columns:
+        out["dscr_q10"] = float(end["dscr"].quantile(0.10))
+        out["dscr_med"] = float(end["dscr"].quantile(0.50))
+        out["dscr_q90"] = float(end["dscr"].quantile(0.90))
+
+    # Members at horizon (optional, handy for display)
+    if "active_members" in end.columns:
+        out["members_med"] = float(end["active_members"].median())
+
+    return out
+
 def _subset(d, keys):
     return {k: d[k] for k in keys if k in d}
 
@@ -493,8 +527,9 @@ class FigureCapture:
 
 # ---------- caching ----------
 @st.cache_data(show_spinner=False)
-def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: str):
-    ov = build_overrides(env, strat)
+def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: Optional[str] = None):
+    if cache_key is None:
+        cache_key = _make_cache_key(env, strat, seed)  # participate in hash    ov = build_overrides(env, strat)
     ov["RANDOM_SEED"] = seed
     title_suffix = f"{env['name']} | {strat['name']}"
     with FigureCapture(title_suffix) as cap:
@@ -833,13 +868,27 @@ with tab_run:
             df_cell, eff, images, manifest = run_cell_cached(env_norm, strat, seed, cache_key)
             
         st.subheader(f"KPIs — {env['name']} | {strat['name']}")
-        kpi = row_dict
-        dscr_med = kpi.get("dscr_med", np.nan)
+
+        # Core cash/dscr from cell
+        kpi_cell = compute_kpis_from_cell(df_cell)
+        
+        # Timing/breakeven from summarize_cell
+        row_dict, _tim = summarize_cell(df_cell)
+        
+        surv        = kpi_cell.get("survival_prob", np.nan)
+        cash_q10    = kpi_cell.get("cash_q10", np.nan)
+        cash_med    = kpi_cell.get("cash_med", np.nan)
+        dscr_med    = kpi_cell.get("dscr_med", np.nan)
+        t_breakeven = row_dict.get("median_time_to_breakeven_months", np.nan)
+        
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Survival prob @ horizon", f"{kpi['survival_prob']:.2f}")
-        col2.metric("Cash p10 → p50 ($k)", f"{kpi['cash_q10']/1e3:,.0f} → {kpi['cash_med']/1e3:,.0f}")
-        col3.metric("DSCR @ M12 (p50)", f"{dscr_med:.2f}" if not np.isnan(dscr_med) else "NA")
-        col4.metric("Breakeven (median, months)", f"{kpi['median_time_to_breakeven_months']:.0f}" if not np.isnan(kpi['median_time_to_breakeven_months']) else "NA")
+        col1.metric("Survival prob @ horizon", f"{surv:.2f}" if np.isfinite(surv) else "NA")
+        col2.metric("Cash p10 → p50 ($k)",
+                    f"{(cash_q10/1e3):,.0f} → {(cash_med/1e3):,.0f}"
+                    if np.isfinite(cash_q10) and np.isfinite(cash_med) else "NA")
+        col3.metric("DSCR @ M12 (p50)", f"{dscr_med:.2f}" if np.isfinite(dscr_med) else "NA")
+        col4.metric("Breakeven (median, months)",
+                    f"{t_breakeven:.0f}" if np.isfinite(t_breakeven) else "NA")
 
         st.markdown("#### Captured charts")
         for fname, data in images:
@@ -873,9 +922,8 @@ with tab_matrix:
                     S2["TICKET_PRICE"]                 = int(ticket_choice_ui)
             
                     E_norm = _normalize_env(E)
-                    df_cell, eff, _imgs, _man = run_cell_cached(
-                        E_norm, S2, 42 + 1000*(i*len(STRATEGIES)+j)
-                    )
+                    seed_ = 42 + 1000*(i*len(STRATEGIES)+j)
+                    df_cell, eff, _imgs, _man = run_cell_cached(E_norm, S2, seed_, _make_cache_key(E_norm, S2, seed_))
                     row_dict, _ = summarize_cell(df_cell)
                     row_dict["environment"] = E["name"]
                     row_dict["strategy"] = S2["name"]

@@ -69,18 +69,20 @@ SCRIPT = "modular_simulator.py"   # your core simulator
 # --- Group definitions ---
 
 GROUPS = {
-    "Income": [
-        "REF_PRICE", "PRICE_ELASTICITY", "WOM_RATE",
-        "LEAD_TO_JOIN_RATE", "MAX_ONBOARD_PER_MONTH",
-        "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH",
-        "CLASS_CAP_PER_COHORT", "CLASS_PRICE",
-        "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
-    ],
-    "Expenses": ["RENT", "OWNER_DRAW", "MARKETING_SPEND", "CAC"],
-    "Macro": ["DOWNTURN_PROB_PER_MONTH", "DOWNTURN_JOIN_MULT",
-              "DOWNTURN_CHURN_MULT", "MARKET_POOLS_INFLOW",
-              "grant_amount", "grant_month"],
-    "Capacity": ["MEMBER_CAP", "EXPANSION_THRESHOLD"],  # ← new group
+    # Scenario-owned
+    "Income_env":   ["WOM_RATE", "LEAD_TO_JOIN_RATE", "MAX_ONBOARD_PER_MONTH"],
+    "Expenses_env": ["MARKETING_SPEND", "CAC"],
+    "Macro_env":    ["DOWNTURN_PROB_PER_MONTH", "DOWNTURN_JOIN_MULT",
+                     "DOWNTURN_CHURN_MULT", "MARKET_POOLS_INFLOW",
+                     "grant_amount", "grant_month"],
+    "Capacity_env": ["MEMBER_CAP", "EXPANSION_THRESHOLD"],
+
+    # Strategy-owned
+    "Income_strat": ["REF_PRICE", "PRICE_ELASTICITY",
+                     "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH",
+                     "CLASS_CAP_PER_COHORT", "CLASS_PRICE",
+                     "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO"],
+    "Expenses_strat": ["RENT", "OWNER_DRAW"],
 }
 
 
@@ -785,57 +787,48 @@ with st.sidebar:
     # render all known fields dynamically
     # --- Grouped controls ---
     with st.expander("Income", expanded=True):
-        env_income   = render_param_controls("Income — Scenario (market/capacity inputs)",
-            _subset(env, GROUPS["Income"]),
-            group_keys=GROUPS["Income"],
-            prefix="env_income",
-          )
-        strat_income = render_param_controls("Income — Strategy (pricing, classes)",
-          _subset(strat, GROUPS["Income"]),
-            group_keys=GROUPS["Income"],
-            prefix="strat_income",
+        env_income = render_param_controls(
+            "Income — Scenario (market/capacity inputs)",
+            _subset(env, GROUPS["Income_env"]),
+            group_keys=GROUPS["Income_env"], prefix="env_income"
         )
+        strat_income = render_param_controls(
+            "Income — Strategy (pricing, classes)",
+            _subset(strat, GROUPS["Income_strat"]),
+            group_keys=GROUPS["Income_strat"], prefix="strat_income"
+        )
+    
     with st.expander("Expenses", expanded=True):
-        env_exp   = render_param_controls(
+        env_exp = render_param_controls(
             "Expenses — Scenario",
-            _subset(env, GROUPS["Expenses"]),
-            group_keys=GROUPS["Expenses"],
-            prefix="env_exp",
+            _subset(env, GROUPS["Expenses_env"]),
+            group_keys=GROUPS["Expenses_env"], prefix="env_exp"
         )
         strat_exp = render_param_controls(
             "Expenses — Strategy",
-            _subset(strat, GROUPS["Expenses"]),
-            group_keys=GROUPS["Expenses"],
-            prefix="strat_exp",
+            _subset(strat, GROUPS["Expenses_strat"]),
+            group_keys=GROUPS["Expenses_strat"], prefix="strat_exp"
         )
-        
+    
     with st.expander("Macro", expanded=True):
-        env_macro   = render_param_controls(
+        env_macro = render_param_controls(
             "Macro — Scenario",
-            _subset(env, GROUPS["Macro"]),
-            group_keys=GROUPS["Macro"],
-            prefix="env_macro",
+            _subset(env, GROUPS["Macro_env"]),
+            group_keys=GROUPS["Macro_env"], prefix="env_macro"
         )
-        strat_macro = render_param_controls(
-            "Macro — Strategy",
-            _subset(strat, GROUPS["Macro"]),
-            group_keys=GROUPS["Macro"],
-            prefix="strat_macro",
-        )
+        # remove the Macro — Strategy block (there are no strategy-owned macro keys)
     
     with st.expander("Capacity (scenario)", expanded=True):
         env_cap = render_param_controls(
             "Capacity — Scenario",
-            _subset(env, GROUPS["Capacity"]),
-            group_keys=GROUPS["Capacity"],
-            prefix="env_cap",
+            _subset(env, GROUPS["Capacity_env"]),
+            group_keys=GROUPS["Capacity_env"], prefix="env_cap"
         )
-        _update_from(env_cap, env, env_cap.keys())
     
     # Merge edits back
-    for part in (env_income, env_exp, env_macro):
+    for part in (env_income, env_exp, env_macro, env_cap):
         _update_from(part, env, part.keys())
-    for part in (strat_income, strat_exp, strat_macro):
+    for part in (strat_income, strat_exp):
         _update_from(part, strat, part.keys())
     
     # --- Events (discrete) lives with Income ---

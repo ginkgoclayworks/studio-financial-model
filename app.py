@@ -63,7 +63,122 @@ PARAM_SPECS = {
         "type": "int", "min": 0, "max": 200, "step": 1, "label": "Expansion threshold (members)"
     },
 }
+
     
+# --- ENVIRONMENT (Scenario) ---
+
+PARAM_SPECS.update({
+    "DOWNTURN_PROB_PER_MONTH": {
+        # existing: type/min/max/step/label ...
+        "desc": "Chance the local economy is rough this month. 0 = great conditions; higher = harder to acquire/retain members.",
+        "rec": (0.05, 0.25)
+    },
+    "DOWNTURN_JOIN_MULT": {
+        "desc": "How much downturns reduce new joins. 1.0 = no change; 0.6 means 40% fewer joins in a bad month.",
+        "rec": (0.6, 1.1)
+    },
+    "DOWNTURN_CHURN_MULT": {
+        "desc": "How much downturns increase member churn. 1.0 = no change; 1.5 = 50% higher churn when the economy dips.",
+        "rec": (1.0, 1.8)
+    },
+    "MARKET_POOLS_INFLOW": {
+        "desc": "Rough monthly counts of potential joiners by pool: community studio users, home studio users, and people with no access.",
+        "rec": (0, 10)  # per sub-slider guideline (each pool)
+    },
+    "grant_amount": {
+        "desc": "One-time grant dollars injected into cash.",
+        "rec": (0, 50000)
+    },
+    "grant_month": {
+        "desc": "When the grant arrives (−1 = no grant). Month 0 is the start of operations.",
+        "rec": (0, 12)
+    },
+    "PRICE_ELASTICITY": {
+        "desc": "Sensitivity of joins to price. 0 = insensitive; higher values mean price changes move demand more.",
+        "rec": (0.1, 0.6)
+    },
+    "REF_PRICE": {
+        "desc": "Anchor price used for modeling price sensitivity (does not force your actual price; it shapes elasticity math).",
+        "rec": (120, 220)
+    },
+    "WOM_RATE": {
+        "desc": "Word-of-mouth strength. Approx fraction of members who generate a qualified lead each month.",
+        "rec": (0.01, 0.06)
+    },
+    "MARKETING_SPEND": {
+        "desc": "Monthly paid marketing budget (ads, sponsorships, flyers).",
+        "rec": (0, 3000)
+    },
+    "CAC": {
+        "desc": "Cost to acquire one qualified lead through paid channels.",
+        "rec": (75, 250)
+    },
+    "LEAD_TO_JOIN_RATE": {
+        "desc": "Share of qualified leads that become paying members.",
+        "rec": (0.10, 0.35)
+    },
+    "MAX_ONBOARD_PER_MONTH": {
+        "desc": "Operational limit on new member onboarding per month (paperwork, training, shelf setup).",
+        "rec": (6, 20)
+    },
+    "MEMBER_CAP": {
+        "desc": "Hard cap on total active members (0 or blank = let the simulator’s internal station bottlenecks govern).",
+        "rec": (70, 110)
+    },
+    "EXPANSION_THRESHOLD": {
+        "desc": "Member count at which you trigger an expansion (e.g., add wheels/racks/kiln).",
+        "rec": (18, 30)
+    },
+})
+
+# --- STRATEGY (Per-plan dials) ---
+
+PARAM_SPECS.update({
+    "RENT": {
+        "desc": "Monthly base rent for the space (excludes utilities and insurance).",
+        "rec": (2500, 5500)
+    },
+    "OWNER_DRAW": {
+        "desc": "Cash you pay yourself each month from the business.",
+        "rec": (0, 1500)
+    },
+    "BASE_EVENTS_PER_MONTH_LAMBDA": {
+        "desc": "Average number of public events per month (Poisson-like). 0 disables events.",
+        "rec": (0, 4)
+    },
+    "EVENTS_MAX_PER_MONTH": {
+        "desc": "Upper bound on events you’re willing to host in any month (ops limit).",
+        "rec": (0, 6)
+    },
+    "TICKET_PRICE": {
+        "desc": "Ticket price for public events (make-a-mug, paint-your-own, etc.).",
+        "rec": (55, 110)
+    },
+    "CLASSES_ENABLED": {
+        "desc": "Enable/disable course cohorts (recurring multi-week classes).",
+        "rec": (0, 1)  # boolean; tooltip only
+    },
+    "CLASS_COHORTS_PER_MONTH": {
+        "desc": "How many new class groups you start each month.",
+        "rec": (0, 4)
+    },
+    "CLASS_CAP_PER_COHORT": {
+        "desc": "Seats per cohort (max class size you can teach well).",
+        "rec": (6, 14)
+    },
+    "CLASS_PRICE": {
+        "desc": "Tuition per seat for a full cohort (entire multi-week course).",
+        "rec": (200, 600)
+    },
+    "CLASS_CONV_RATE": {
+        "desc": "Share of class participants who become ongoing members afterwards.",
+        "rec": (0.05, 0.25)
+    },
+    "CLASS_CONV_LAG_MO": {
+        "desc": "Delay between finishing a class and joining as a member (in months).",
+        "rec": (0, 2)
+    },
+})
 SCRIPT = "modular_simulator.py"   # your core simulator
 
 # --- Group definitions ---
@@ -348,6 +463,36 @@ def _normalize_env(env: dict) -> dict:
 
     return env
 
+def _help_text(spec: dict) -> str:
+    """Build hover tooltip from spec['desc'] and spec['rec']."""
+    if not spec:
+        return ""
+    desc = spec.get("desc")
+    rec  = spec.get("rec")
+    parts = []
+    if desc:
+        parts.append(str(desc))
+    if rec and isinstance(rec, (list, tuple)) and len(rec) == 2:
+        parts.append(f"Recommended range: {rec[0]}–{rec[1]}")
+    return "  \n".join(parts)  # newlines become multi-line tooltips
+
+
+def _hint_if_out_of_rec(val, spec):
+    """Show a small caption if current value is outside recommended range."""
+    try:
+        show = st.session_state.get("_show_hints", True)
+        if not show or not spec:
+            return
+        rec = spec.get("rec")
+        if not (isinstance(rec, (list, tuple)) and len(rec) == 2):
+            return
+        lo, hi = float(rec[0]), float(rec[1])
+        fv = float(val)
+        if fv < lo or fv > hi:
+            st.caption(f"⚠️ Outside the typical range ({lo}–{hi}). Sanity-check this choice.")
+    except Exception:
+        pass
+
 def render_param_controls(title: str, params: dict, *, group_keys: Optional[List[str]] = None, prefix: str = "") -> dict:
     """
     Render Streamlit inputs for keys in `params` or explicit `group_keys`.
@@ -395,7 +540,7 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
         t = spec["type"] if spec else None
 
         if t == "bool":
-            out[k] = st.checkbox(label, value=bool(v), key=wid_key)
+            out[k] = st.checkbox(label, value=bool(v), key=wid_key, help=_help_text(spec))
 
         elif t == "int":
             lo = int(spec.get("min", 0)); hi = int(spec.get("max", 100))
@@ -408,15 +553,17 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
         
             try:
                 out[k] = int(st.slider(
-                    label, min_value=lo, max_value=hi, step=step,
-                    value=int(v_int), key=wid_key
+                    label, min_value=lo, max_value=hi, step=step, value=int(v_int),
+                    key=wid_key, help=_help_text(spec)
                 ))
+                _hint_if_out_of_rec(out[k], spec)
             except Exception:
                 # use a distinct key to avoid duplicate registration
                 out[k] = int(st.number_input(
-                    label, min_value=lo, max_value=hi, step=step,
-                    value=int(v_int), key=f"{wid_key}__ni"
+                    label, min_value=lo, max_value=hi, step=step, value=int(v_int),
+                    key=f"{wid_key}__ni", help=_help_text(spec)
                 ))
+                _hint_if_out_of_rec(out[k], spec)
         
         elif t == "float":
             lo = float(spec.get("min", 0.0)); hi = float(spec.get("max", 1.0))
@@ -429,14 +576,16 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
         
             try:
                 out[k] = float(st.slider(
-                    label, min_value=lo, max_value=hi, step=step,
-                    value=float(v_f), key=wid_key
+                    label, min_value=lo, max_value=hi, step=step, value=float(v_f),
+                    key=wid_key, help=_help_text(spec)
                 ))
+                _hint_if_out_of_rec(out[k], spec)
             except Exception:
                 out[k] = float(st.number_input(
-                    label, min_value=lo, max_value=hi, step=step,
-                    value=float(v_f), key=f"{wid_key}__ni"
+                    label, min_value=lo, max_value=hi, step=step, value=float(v_f),
+                    key=f"{wid_key}__ni", help=_help_text(spec)
                 ))
+                _hint_if_out_of_rec(out[k], spec)
 
         elif t == "market_inflow":
             base = f"{wid_key}"
@@ -447,9 +596,13 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
             h_def = st.session_state.get(f"{base}_h", cur["home_studio"])
             n_def = st.session_state.get(f"{base}_n", cur["no_access"])
         
-            c = st.slider("Community studio inflow", 0, 50, int(c_def), key=f"{base}_c")
-            h = st.slider("Home studio inflow",      0, 50, int(h_def), key=f"{base}_h")
-            n = st.slider("No access inflow",        0, 50, int(n_def), key=f"{base}_n")
+            help_txt = _help_text(spec)
+            c = st.slider("Community studio inflow", 0, 50, int(c_def), key=f"{base}_c", help=help_txt)
+            h = st.slider("Home studio inflow",      0, 50, int(h_def), key=f"{base}_h", help=help_txt)
+            n = st.slider("No access inflow",        0, 50, int(n_def), key=f"{base}_n", help=help_txt)
+            out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
+            # (optional) minimal hint for each:
+            _hint_if_out_of_rec(c, spec); _hint_if_out_of_rec(h, spec); _hint_if_out_of_rec(n, spec)
         
             out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
             # Keep a synced parent copy too (useful if you inspect session_state later)
@@ -748,11 +901,14 @@ STRATEGIES = [
 ]
 
 
-
-
 # Sidebar controls
 with st.sidebar:
     st.header("Configuration")
+    st.caption("Hover over any label for a short explanation.")
+    st.session_state["_show_hints"] = st.toggle(
+        "Show hints", value=True,
+        help="If on, the app shows a small note when a value is outside its typical range."
+    )
 
     scen_names  = [s["name"] for s in SCENARIOS]
     strat_names = [s["name"] for s in STRATEGIES]

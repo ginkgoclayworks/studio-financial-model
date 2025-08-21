@@ -947,14 +947,24 @@ def _core_simulation_and_reports():
     
                         # Create new members (keep archetype mix; NO geometric duration now)
                         # Cap joins so we never exceed MAX_MEMBERS
+                        # Cap joins so we never exceed MAX_MEMBERS
                         joins = min(joins, MAX_MEMBERS - len(active_members))
-                        for _ in range(joins):
-                            archetype = rng.choice(list(MEMBER_ARCHETYPES.keys()), p=[v["prob"] for v in MEMBER_ARCHETYPES.values()])
+                        
+                        # Tag class converts for provenance (first N new members this month)
+                        n_from_class = int(locals().get("class_joins_now", 0) or 0)
+                        
+                        for i in range(int(joins)):
+                            archetype = rng.choice(
+                                list(MEMBER_ARCHETYPES.keys()),
+                                p=[v["prob"] for v in MEMBER_ARCHETYPES.values()]
+                            )
                             active_members.append({
                                 "type": archetype,
                                 "start_month": month,
                                 "monthly_fee": MEMBER_ARCHETYPES[archetype]["monthly_fee"],
-                                "clay_bags": MEMBER_ARCHETYPES[archetype]["clay_bags"]
+                                "clay_bags": MEMBER_ARCHETYPES[archetype]["clay_bags"],
+                                # NEW: record source to enable later analytics/retention tweaks
+                                "src": "class" if i < n_from_class else "other",
                             })
     
                         # Tenure-based churn with utilization uplift near/over capacity (+ seasonality)
@@ -1762,9 +1772,19 @@ def _core_simulation_and_reports():
                                     joins = MAX_ONBOARDINGS_PER_MONTH
     
                                 # Add members
-                                for _ in range(joins):
-                                    arch = rng.choice(list(MEMBER_ARCHETYPES.keys()), p=[v["prob"] for v in MEMBER_ARCHETYPES.values()])
-                                    active_members.append({"type": arch, "start_month": month, "monthly_fee": MEMBER_ARCHETYPES[arch]["monthly_fee"], "clay_bags": MEMBER_ARCHETYPES[arch]["clay_bags"]})
+                                n_from_class = int(locals().get("class_joins_now", 0) or 0)
+                                for i in range(int(joins)):
+                                    arch = rng.choice(
+                                        list(MEMBER_ARCHETYPES.keys()),
+                                        p=[v["prob"] for v in MEMBER_ARCHETYPES.values()]
+                                    )
+                                    active_members.append({
+                                        "type": arch,
+                                        "start_month": month,
+                                        "monthly_fee": MEMBER_ARCHETYPES[arch]["monthly_fee"],
+                                        "clay_bags": MEMBER_ARCHETYPES[arch]["clay_bags"],
+                                        "src": "class" if i < n_from_class else "other",
+                                    })
     
                                 # Churn
                                 kept = []

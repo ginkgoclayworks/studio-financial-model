@@ -792,7 +792,11 @@ def _core_simulation_and_reports():
                         if CLASSES_ENABLED and 'pending_class_conversions' in locals():
                             class_joins_now = int(pending_class_conversions.pop(month, 0))
                             # gate by available supply and MAX_ONBOARDINGS_PER_MONTH later
-                                    
+                        
+                        
+                        
+                        
+                        
                         # Replenish pools each month  <-- ADD THESE LINES
                         for _k, _v in MARKET_POOLS_INFLOW.items():
                             remaining_pool[_k] += int(_v)
@@ -1416,13 +1420,21 @@ def _core_simulation_and_reports():
                 ax = axes[0, j]
                 df_sub = df_rent[df_rent["owner_draw"] == od].copy()
     
-                rev_components = ["revenue_membership", "revenue_firing", "revenue_clay", "revenue_events", "revenue_workshops_net", "revenue_designated_studios"]
+                rev_components = [
+                    "revenue_membership",
+                    "revenue_firing",
+                    "revenue_clay",
+                    "revenue_events",
+                    "revenue_workshops_net",
+                    "revenue_designated_studios",
+                    "revenue_classes",  # NEW: classes (net)
+                ]
                 df_sub["total_revenue"] = df_sub[rev_components].sum(axis=1)
                 df_sub["total_opex_cash"] = df_sub["total_revenue"] - df_sub["net_cash_flow"]
-    
+
                 g_rev = df_sub.groupby("month")[rev_components].median()
                 g_ops = df_sub.groupby("month")[["total_revenue", "total_opex_cash", "net_cash_flow"]].median()
-    
+
                 ax.stackplot(
                     g_rev.index,
                     g_rev["revenue_membership"],
@@ -1431,7 +1443,14 @@ def _core_simulation_and_reports():
                     g_rev["revenue_events"],
                     g_rev["revenue_workshops_net"],
                     g_rev["revenue_designated_studios"],
-                    labels=["Membership", "Firing Fees", "Clay Sales", "Events", "Workshops (net)", "Designated Studios"],alpha=0.9)
+                    g_rev["revenue_classes"],  # NEW
+                    labels=[
+                        "Membership", "Firing Fees", "Clay", "Events",
+                        "Workshops (net)", "Designated Studios", "Classes (net)"  # NEW
+                    ],
+                    alpha=0.9,
+                )
+                
                 ax.plot(g_ops.index, g_ops["total_opex_cash"], linewidth=2.0, label="Total OpEx (cash)")
                 ax.plot(g_ops.index, g_ops["net_cash_flow"], linestyle="--", linewidth=1.5, label="Net Cash Flow")
     
@@ -2036,6 +2055,7 @@ def _core_simulation_and_reports():
         # --- Common aggregates
         months = np.arange(1, cfg["month"].max() + 1)
         # Revenue components and totals
+        # Revenue components and totals
         rev_cols = [
             "revenue_membership",
             "revenue_firing",
@@ -2043,6 +2063,7 @@ def _core_simulation_and_reports():
             "revenue_events",
             "revenue_workshops_net",
             "revenue_designated_studios",
+            "revenue_classes",  # NEW: classes (net)
         ]
         cfg["rev_total"] = cfg[rev_cols].sum(axis=1)
         cfg["opex_cash"] = cfg["rev_total"] - cfg["net_cash_flow"]
@@ -2150,9 +2171,14 @@ def _core_simulation_and_reports():
             g_rev["revenue_events"],
             g_rev["revenue_workshops_net"],
             g_rev["revenue_designated_studios"],
-            labels=["Membership", "Firing", "Clay", "Events", "Workshops (net)", "Designated studios"],
+            g_rev["revenue_classes"],  # NEW
+            labels=[
+                "Membership", "Firing", "Clay", "Events",
+                "Workshops (net)", "Designated studios", "Classes (net)"  # NEW
+            ],
             alpha=0.9,
         )
+        
         plt.plot(g_ops.index, g_ops["opex_cash"], linewidth=2.0, label="Total OpEx (cash)")
         plt.plot(g_ops.index, g_ops["net_cash_flow"], linestyle="--", linewidth=1.5, label="Net cash flow")
         plt.title("Revenue Composition vs Cash OpEx")

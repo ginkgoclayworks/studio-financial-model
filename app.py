@@ -10,9 +10,7 @@
 # """
 
 import io, json, re, zipfile
-from pathlib import Path
 from typing import Optional, List, Tuple
-
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -23,7 +21,6 @@ import seaborn as sns  # for heatmaps
 # Your adapter: must expose run_original_once(script_path, overrides_dict)
 from final_batch_adapter import run_original_once
 
-import copy
 
 
 # put this near the top of app.py (after imports)
@@ -64,12 +61,8 @@ PARAM_SPECS = {
     },
 }
 
-    
-# --- ENVIRONMENT (Scenario) ---
-
-PARAM_SPECS.update({
+ENV_SPEC_META = {
     "DOWNTURN_PROB_PER_MONTH": {
-        # existing: type/min/max/step/label ...
         "desc": "Chance the local economy is rough this month. 0 = great conditions; higher = harder to acquire/retain members.",
         "rec": (0.05, 0.25)
     },
@@ -83,7 +76,7 @@ PARAM_SPECS.update({
     },
     "MARKET_POOLS_INFLOW": {
         "desc": "Rough monthly counts of potential joiners by pool: community studio users, home studio users, and people with no access.",
-        "rec": (0, 10)  # per sub-slider guideline (each pool)
+        "rec": (0, 10)
     },
     "grant_amount": {
         "desc": "One-time grant dollars injected into cash.",
@@ -129,11 +122,15 @@ PARAM_SPECS.update({
         "desc": "Member count at which you trigger an expansion (e.g., add wheels/racks/kiln).",
         "rec": (18, 30)
     },
-})
+}
 
-# --- STRATEGY (Per-plan dials) ---
+for key, meta in ENV_SPEC_META.items():
+    if key not in PARAM_SPECS:
+        raise KeyError(f"PARAM_SPECS missing base spec for {key} (needs type/min/max/etc).")
+    PARAM_SPECS[key].update(meta)    
 
-PARAM_SPECS.update({
+    
+STRAT_SPEC_META = {
     "RENT": {
         "desc": "Monthly base rent for the space (excludes utilities and insurance).",
         "rec": (2500, 5500)
@@ -156,7 +153,7 @@ PARAM_SPECS.update({
     },
     "CLASSES_ENABLED": {
         "desc": "Enable/disable course cohorts (recurring multi-week classes).",
-        "rec": (0, 1)  # boolean; tooltip only
+        "rec": (0, 1)
     },
     "CLASS_COHORTS_PER_MONTH": {
         "desc": "How many new class groups you start each month.",
@@ -178,7 +175,14 @@ PARAM_SPECS.update({
         "desc": "Delay between finishing a class and joining as a member (in months).",
         "rec": (0, 2)
     },
-})
+}
+
+for key, meta in STRAT_SPEC_META.items():
+    if key not in PARAM_SPECS:
+        raise KeyError(f"PARAM_SPECS missing base spec for {key} (needs type/min/max/etc).")
+    PARAM_SPECS[key].update(meta)
+    
+
 SCRIPT = "modular_simulator.py"   # your core simulator
 
 # --- Group definitions ---
@@ -348,9 +352,6 @@ def slug(s: str) -> str:
     s = re.sub(r"\s+", "-", s)
     s = re.sub(r"[^a-z0-9._-]+", "", s)
     return s[:80]
-
-def sanitize_text(s: str) -> str:
-    return re.sub(r"[\u2010-\u2015\u2212\u00AD\u200B\uFEFF\u202F]", "-", s)
 
 def build_overrides(env: dict, strat: dict) -> dict:
     """Assemble the overrides payload for modular_simulator.py.
@@ -589,9 +590,7 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
 
         elif t == "market_inflow":
             base = f"{wid_key}"
-            # Start from preset or current params, normalize
             cur = _normalize_market_inflow(v if isinstance(v, dict) else {})
-            # If preset has been pushed, prefer the session_state child keys
             c_def = st.session_state.get(f"{base}_c", cur["community_studio"])
             h_def = st.session_state.get(f"{base}_h", cur["home_studio"])
             n_def = st.session_state.get(f"{base}_n", cur["no_access"])
@@ -600,12 +599,11 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
             c = st.slider("Community studio inflow", 0, 50, int(c_def), key=f"{base}_c", help=help_txt)
             h = st.slider("Home studio inflow",      0, 50, int(h_def), key=f"{base}_h", help=help_txt)
             n = st.slider("No access inflow",        0, 50, int(n_def), key=f"{base}_n", help=help_txt)
-            out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
-            # (optional) minimal hint for each:
-            _hint_if_out_of_rec(c, spec); _hint_if_out_of_rec(h, spec); _hint_if_out_of_rec(n, spec)
         
             out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
-            # Keep a synced parent copy too (useful if you inspect session_state later)
+            _hint_if_out_of_rec(c, spec); _hint_if_out_of_rec(h, spec); _hint_if_out_of_rec(n, spec)
+        
+            # Keep a synced parent copy too (optional)
             st.session_state[base] = out[k]
 
     # (no inner expanders; called inside parent expander)
@@ -929,15 +927,16 @@ with st.sidebar:
     
     # If preset changed, push values into widgets for ALL groups you render
     if scen_sel != st.session_state["last_scen_sel"]:
-        _push_preset_to_widgets(env,   prefix="env_income", keys=GROUPS["Income"])
-        _push_preset_to_widgets(env,   prefix="env_exp",    keys=GROUPS["Expenses"])
-        _push_preset_to_widgets(env,   prefix="env_macro",  keys=GROUPS["Macro"])
+        _push_preset_to_widgets(env,   prefix="env_income", keys=GROUPS["Income_env"])
+        _push_preset_to_widgets(env,   prefix="env_exp",    keys=GROUPS["Expenses_env"])
+        _push_preset_to_widgets(env,   prefix="env_macro",  keys=GROUPS["Macro_env"])
+        _push_preset_to_widgets(env,   prefix="env_cap",    keys=GROUPS["Capacity_env"])
         st.session_state["last_scen_sel"] = scen_sel
     
     if strat_sel != st.session_state["last_strat_sel"]:
-        _push_preset_to_widgets(strat, prefix="strat_income", keys=GROUPS["Income"])
-        _push_preset_to_widgets(strat, prefix="strat_exp",    keys=GROUPS["Expenses"])
-        _push_preset_to_widgets(strat, prefix="strat_macro",  keys=GROUPS["Macro"])
+        _push_preset_to_widgets(strat, prefix="strat_income", keys=GROUPS["Income_strat"])
+        _push_preset_to_widgets(strat, prefix="strat_exp",    keys=GROUPS["Expenses_strat"])
+        # (no strat_macro — you removed that panel)
         st.session_state["last_strat_sel"] = strat_sel
         
     # render all known fields dynamically

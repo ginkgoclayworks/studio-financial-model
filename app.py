@@ -213,6 +213,7 @@ GROUPS = {
                      "CLASS_CAP_PER_COHORT", "CLASS_PRICE",
                      "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
                      "USE_SEMESTER_SCHEDULE", "CLASSES_PER_SEMESTER"],
+    "Expenses_strat": ["RENT", "OWNER_DRAW"],   # ← this must exist
 }
 
 def compute_kpis_from_cell(df_cell: pd.DataFrame) -> dict:

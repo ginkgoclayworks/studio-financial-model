@@ -59,6 +59,17 @@ PARAM_SPECS = {
     "EXPANSION_THRESHOLD": {
         "type": "int", "min": 0, "max": 200, "step": 1, "label": "Expansion threshold (members)"
     },
+    # --- Semester schedule controls (Strategy) ---
+    "USE_SEMESTER_SCHEDULE": {
+        "type": "bool", "label": "Use semester schedule",
+        "desc": "If on, cohorts only start in semester months (sim will ignore flat cohorts/month).",
+        "rec": (0, 1)
+    },
+    "CLASSES_PER_SEMESTER": {
+        "type": "int", "min": 1, "max": 6, "step": 1, "label": "Classes per semester",
+        "desc": "How many cohorts begin at each semester start.",
+        "rec": (2, 2)
+    },
 }
 
 ENV_SPEC_META = {
@@ -200,10 +211,9 @@ GROUPS = {
     "Income_strat": ["REF_PRICE", "PRICE_ELASTICITY",
                      "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH",
                      "CLASS_CAP_PER_COHORT", "CLASS_PRICE",
-                     "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO"],
-    "Expenses_strat": ["RENT", "OWNER_DRAW"],
+                     "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
+                     "USE_SEMESTER_SCHEDULE", "CLASSES_PER_SEMESTER"],
 }
-
 
 def compute_kpis_from_cell(df_cell: pd.DataFrame) -> dict:
     """
@@ -894,8 +904,10 @@ SCENARIOS = [
     },
 ]
 STRATEGIES = [
-    {"name":"I_all_upfront_Base", "RENT":3500, "OWNER_DRAW":1000},
-    {"name":"II_staged_Base",     "RENT":3500, "OWNER_DRAW":1000},
+    {"name":"I_all_upfront_Base", "RENT":3500, "OWNER_DRAW":1000,
+     "USE_SEMESTER_SCHEDULE": True, "CLASSES_PER_SEMESTER": 2},
+    {"name":"II_staged_Base",     "RENT":3500, "OWNER_DRAW":1000,
+     "USE_SEMESTER_SCHEDULE": True, "CLASSES_PER_SEMESTER": 2},
 ]
 
 

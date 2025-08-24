@@ -857,6 +857,8 @@ def summarize_cell(df: pd.DataFrame) -> Tuple[dict, pd.DataFrame]:
         df = df.sort_values([env_col, strat_col, sim_col, month_col]).copy()
         df["_fallback_cf"] = df.groupby([env_col, strat_col, sim_col])[cash_col].diff().fillna(0.0)
         cf_col = "_fallback_cf"
+    
+    breakeven_k = 3   # sustain window for breakeven (months)
 
     # ---- timings (build explicitly to avoid pandas .apply quirks) ----
     def _first_cash_negative(g: pd.DataFrame) -> float:
@@ -878,7 +880,7 @@ def summarize_cell(df: pd.DataFrame) -> Tuple[dict, pd.DataFrame]:
             strat_col: strat,
             sim_col: sim,
             "t_insolvency": _first_cash_negative(g),
-            "t_breakeven":  _first_sustained_ge_zero(g, k=3),
+            "t_breakeven":  _first_sustained_ge_zero(g, k=breakeven_k),
             "min_cash": float(g[cash_col].min()),
         })
     timings = pd.DataFrame(rows, columns=[env_col, strat_col, sim_col, "t_insolvency", "t_breakeven", "min_cash"])
@@ -924,6 +926,8 @@ def summarize_cell(df: pd.DataFrame) -> Tuple[dict, pd.DataFrame]:
                     .merge(cash_q, on=[env_col, strat_col], how="left")
                     .merge(dscr_q, on=[env_col, strat_col], how="left")
                     .merge(tim_summary, on=[env_col, strat_col], how="left"))
+    matrix_row["breakeven_signal"] = cf_col     
+    matrix_row["breakeven_k"] = breakeven_k
 
     # return a dict-like row (first row) and the timings table
     return matrix_row.iloc[0].to_dict(), timings
@@ -1336,8 +1340,9 @@ with tab_run:
                     if np.isfinite(cash_q10) and np.isfinite(cash_med) else "NA")
         col3.metric("DSCR @ M12 (p50)", f"{dscr_med:.2f}" if np.isfinite(dscr_med) else "NA")
         col4.metric("Breakeven (median, months)",
-                    f"{t_breakeven:.0f}" if np.isfinite(t_breakeven) else "NA")
-
+                     f"{t_breakeven:.0f}" if np.isfinite(t_breakeven) else "NA")
+        st.caption(f"Breakeven signal = {row_dict.get('breakeven_signal','cfads')} "
+                    f"(k={int(row_dict.get('breakeven_k',3))} months)")
         st.markdown("#### Captured charts")
         for fname, data in images:
             st.image(data, caption=fname, use_container_width=True)
@@ -1438,10 +1443,18 @@ with tab_matrix:
         st.pyplot(fig)
 
         # 3) Median cash at horizon
-        st.markdown("##### Median cash at horizon ($k)")
-        pv = (matrix.pivot(index="environment", columns="strategy", values="cash_med")
+        # 4) Median time to breakeven (months)
+        st.markdown("##### Median time to breakeven (months)")
+        sig = (matrix["breakeven_signal"].dropna().mode()[0]
+               if "breakeven_signal" in matrix.columns and not matrix["breakeven_signal"].dropna().empty
+               else "cfads")
+        bk  = (int(matrix["breakeven_k"].dropna().mode()[0])
+               if "breakeven_k" in matrix.columns and not matrix["breakeven_k"].dropna().empty
+               else 3)
+        st.caption(f"Breakeven signal = {sig} (k={bk} months)")
+        pv = (matrix.pivot(index="environment", columns="strategy", values="median_time_to_breakeven_months")
                       .reindex(index=sorted(matrix["environment"].unique()),
-                               columns=sorted(matrix["strategy"].unique()))) / 1000.0
+                               columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(6, 4))
         sns.heatmap(pv, annot=True, fmt=".0f", cmap="YlOrBr", ax=ax, cbar_kws={"label":"$ thousands"})
         ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Median cash at horizon ($k)")

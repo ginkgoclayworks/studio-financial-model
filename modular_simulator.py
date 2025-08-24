@@ -779,7 +779,8 @@ def _core_simulation_and_reports():
                     stream["workshop_revenue"] = np.zeros(MONTHS)
                     stream["joins_from_workshops"] = np.zeros(MONTHS, dtype=int)
                     # Precompute monthly workshops using UI-configured knobs
-                    apply_workshops(stream, globals(), MONTHS)
+                    if bool(globals().get("WORKSHOPS_ENABLED", False)):
+                            apply_workshops(stream, globals(), MONTHS)
                     
                     # >>> END workshops
                     
@@ -948,9 +949,12 @@ def _core_simulation_and_reports():
     
                         # Total joins this month (respect onboarding ops cap, if any)
                         joins = (
-                            joins_no_access + joins_home + joins_comm_studio
-                            + int(stream.get("joins_from_workshops", np.zeros(MONTHS))[month])
-                        )
+                             joins_no_access + joins_home + joins_comm_studio
+                             + (
+                                 int(stream.get("joins_from_workshops", np.zeros(MONTHS))[month])
+                                 if globals().get("WORKSHOPS_ENABLED", False) else 0
+                             )
+                         )
                         
                         # --- referral loop (Poisson) ---
                         referral_joins = rng.poisson(REFERRAL_RATE_PER_MEMBER * len(active_members) * REFERRAL_CONV)
@@ -993,11 +997,12 @@ def _core_simulation_and_reports():
     
                         # final join count including class conversions
                         joins = (
-                            class_joins_now
-                            + (joins_no_access + joins_home + joins_comm_studio)
-                            + baseline_joins
-                            + referral_joins
-                        )
+                             class_joins_now
+                             + (joins_no_access + joins_home + joins_comm_studio)
+                             + baseline_joins
+                             + referral_joins
+                             + (int(stream["joins_from_workshops"][month]) if globals().get("WORKSHOPS_ENABLED", False) else 0)
+                         )
                         joins += int(stream["joins_from_workshops"][month])
     
                      # If onboarding capped, roll back proportionally across ALL sources (incl baseline & referrals)
@@ -1223,7 +1228,10 @@ def _core_simulation_and_reports():
                             
                         total_revenue = (
                             revenue_membership + revenue_clay + revenue_firing + revenue_events
-                            + float(stream.get("workshop_revenue", np.zeros(MONTHS))[month])
+                            + (
+                                float(stream.get("workshop_revenue", np.zeros(MONTHS))[month])
+                                if globals().get("WORKSHOPS_ENABLED", False) else 0.0
+                            )
                             + revenue_designated_studios
                             + (0.0 if not CLASSES_ENABLED else revenue_classes)
                         )
@@ -1871,12 +1879,13 @@ def _core_simulation_and_reports():
                             grant_month = scen_cfg["grant_month"]; grant_amount = scen_cfg["grant_amount"]
                             min_cash = float("inf")
                             
-                            # --- Workshops state (mirror main sim loop) ---
-                            # Ensures stream["workshop_revenue"] exists for this loop.
+                                 +    # --- Workshops state (mirror main sim loop) ---
+                            # Build only when enabled; otherwise keep zero series.
                             stream = {}
                             stream["workshop_revenue"] = np.zeros(MONTHS)
                             stream["joins_from_workshops"] = np.zeros(MONTHS, dtype=int)
-                            apply_workshops(stream, globals(), MONTHS)
+                            if bool(globals().get("WORKSHOPS_ENABLED", False)):
+                                apply_workshops(stream, globals(), MONTHS)
     
                             for month in range(MONTHS):
                                 seasonal = SEASONALITY_WEIGHTS_NORM[month % 12]
@@ -2011,7 +2020,10 @@ def _core_simulation_and_reports():
                                     + revenue_clay
                                     + revenue_firing
                                     + revenue_events
-                                    + float(stream.get("workshop_revenue", np.zeros(MONTHS))[month])
+                                    + (
+                                            float(stream.get("workshop_revenue", np.zeros(MONTHS))[month])
+                                            if globals().get("WORKSHOPS_ENABLED", False) else 0.0
+                                        )
                                     + revenue_designated_studios
                                     + (0.0 if not CLASSES_ENABLED else revenue_classes)
                                 )

@@ -205,6 +205,32 @@ def _get_downturn_prob(cfg):
         print(f"[nowcast] error: {e.__class__.__name__}: {e} → using 0.15")
         return 0.15, "fallback(0.15)"
 
+def apply_workshops(stream, cfg, T):
+    """Monthly workshops: revenue, variable cost, optional conversion to members."""
+    if not bool(cfg.get("WORKSHOPS_ENABLED", False)):
+        return
+
+    wpm   = float(cfg.get("WORKSHOPS_PER_MONTH", 0.0))
+    avg_n = int(cfg.get("WORKSHOP_AVG_ATTENDANCE", 0))
+    fee   = float(cfg.get("WORKSHOP_FEE", 0.0))
+    var_c = float(cfg.get("WORKSHOP_COST_PER_EVENT", 0.0))
+    conv  = float(cfg.get("WORKSHOP_CONV_RATE", 0.0))
+    lag   = int(cfg.get("WORKSHOP_CONV_LAG_MO", 1))
+
+    # Expected counts per month (you can add Poisson noise if desired)
+    events_pm = wpm
+    attendees_pm = int(round(events_pm * avg_n))
+    gross_rev_pm = attendees_pm * fee
+    var_cost_pm = events_pm * var_c
+    net_rev_pm = gross_rev_pm - var_cost_pm
+    conv_joins_pm = int(round(attendees_pm * conv))
+
+    for t in range(T):
+        # revenue
+        stream["workshop_revenue"][t] += net_rev_pm
+        # conversions (bounded by horizon)
+        conv_t = min(T-1, t + lag)
+        stream["joins_from_workshops"][conv_t] += conv_joins_pm
 
 # =============================================================================
 # Tunable Parameters
@@ -216,7 +242,6 @@ def _get_downturn_prob(cfg):
 MONTHS = 60
 N_SIMULATIONS = 100
 RANDOM_SEED = 42
-
 
 # -------------------------------------------------------------------------
 # Financing & Loans
@@ -255,6 +280,7 @@ STAFF_COST_PER_MONTH = 2500.0
 CLASS_TERM_MONTHS = 3                # e.g., 12-week terms → switch window every 3 months
 CS_UNLOCK_FRACTION_PER_TERM = 0.25   # share of remaining CS pool that becomes eligible each window
 MAX_ONBOARDINGS_PER_MONTH = None     # set an int (e.g., 6/10/12) to hard-cap monthly new members
+
 
 # -------------------------------------------------------------------------
 # Rent & Draw Scenarios
@@ -493,8 +519,6 @@ SCENARIO_CONFIGS = [
     {"name": "III_all_upfront_grant25k_m4", "capex_timing": "all",    "grant_amount": 25_000, "grant_month": 4},
     {"name": "IV_staged_grant15k_m9",       "capex_timing": "staged", "grant_amount": 15_000, "grant_month": 9},
 ]
-
-
 
 
 def _to_serializable(x):
@@ -741,6 +765,16 @@ def _core_simulation_and_reports():
                     pending_class_conversions = {}   # {target_month: count}
                     # >>> END classes
                     
+                    # >>> BEGIN workshops: per-simulation state
+                    stream = {}
+                    stream["workshop_revenue"] = np.zeros(MONTHS)
+                    stream["joins_from_workshops"] = np.zeros(MONTHS, dtype=int)
+                    # Precompute monthly workshops using UI-configured knobs
+                    apply_workshops(stream, globals(), MONTHS)
+                    workshop_conv_queue = np.zeros(MONTHS, dtype=int)
+                    
+                    # >>> END workshops
+                    
                     # --- Tax/state trackers (reset each simulation) ---
                     se_ss_wage_base_used_ytd = 0.0        # for SE Social Security cap (sole/partnership)
                     se_tax_payable_accum = 0.0            # accrued SE tax (sole/partnership)
@@ -847,7 +881,10 @@ def _core_simulation_and_reports():
                         cs_eligible                   -= joins_comm_studio
     
                         # Total joins this month (respect onboarding ops cap, if any)
-                        joins = joins_no_access + joins_home + joins_comm_studio
+                        joins = (
+                            joins_no_access + joins_home + joins_comm_studio
+                            + int(stream.get("joins_from_workshops", np.zeros(MONTHS))[month])
+                        )
                         
                         # --- referral loop (Poisson) ---
                         referral_joins = rng.poisson(REFERRAL_RATE_PER_MEMBER * len(active_members) * REFERRAL_CONV)
@@ -895,6 +932,7 @@ def _core_simulation_and_reports():
                             + baseline_joins
                             + referral_joins
                         )
+                        joins += int(workshop_conv_queue[month])
     
                      # If onboarding capped, roll back proportionally across ALL sources (incl baseline & referrals)
                         if MAX_ONBOARDINGS_PER_MONTH is not None and joins > MAX_ONBOARDINGS_PER_MONTH:
@@ -1036,12 +1074,22 @@ def _core_simulation_and_reports():
                         revenue_events = max(0.0, revenue_events_gross - events_cost_materials - events_cost_labor)
     
     
-                        # Workshops — probabilistic monthly (hardened: never negative net)
-                        workshop_attendees = 0
-                        gross_ws = 0.0
-                        cost_ws = 0.0
-                        net_ws = 0.0
-    
+                        # --- Workshops revenue (monthly) ---
+                        events_pm = float(globals().get("WORKSHOPS_PER_MONTH", 0.0))
+                        avg_att   = int(globals().get("WORKSHOP_AVG_ATTENDANCE", 0))
+                        fee       = float(globals().get("WORKSHOP_FEE", 0.0))
+                        var_cost  = float(globals().get("WORKSHOP_COST_PER_EVENT", 0.0))
+                        
+                        attendees_pm = int(round(events_pm * avg_att))
+                        gross_ws = attendees_pm * fee
+                        cost_ws  = events_pm * var_cost
+                        net_ws   = max(0.0, gross_ws - cost_ws)   # ← keep using this in total_revenue later
+                        conv_rate = float(globals().get("WORKSHOP_CONV_RATE", 0.0))
+                        conv_lag  = int(globals().get("WORKSHOP_CONV_LAG_MO", 1))
+                        conv_joins = int(round(attendees_pm * conv_rate))
+                        target_m = min(MONTHS - 1, month + conv_lag)
+                        workshop_conv_queue[target_m] += conv_joins
+                        
                         if rng.random() < WORKSHOP_PROB_PER_MONTH:
                             # Stochastic fill 75–100% of max to avoid unrealistic zero or always-full months
                             fill = rng.uniform(0.75, 1.00)
@@ -1131,7 +1179,12 @@ def _core_simulation_and_reports():
                         if ENTITY_TYPE == "s_corp":
                             total_opex_cash += employee_withholding
                             
-                        total_revenue = (revenue_membership + revenue_clay + revenue_firing + revenue_events + net_ws + revenue_designated_studios + (0.0 if not CLASSES_ENABLED else revenue_classes))
+                        total_revenue = (
+                            revenue_membership + revenue_clay + revenue_firing + revenue_events
+                            + stream["workshop_revenue"][month]
+                            + revenue_designated_studios
+                            + (0.0 if not CLASSES_ENABLED else revenue_classes)
+                        )
     
                         # ---------- Operating profit (pre-tax) ----------
                         op_profit = total_revenue - total_opex_profit
@@ -1847,22 +1900,8 @@ def _core_simulation_and_reports():
                                 # Designated artist studios (stochastic monthly occupancy)
                                 ds_occupied = int(rng.binomial(DESIGNATED_STUDIO_COUNT, DESIGNATED_STUDIO_BASE_OCCUPANCY)) if DESIGNATED_STUDIO_COUNT > 0 else 0
                                 revenue_designated_studios = ds_occupied * DESIGNATED_STUDIO_PRICE
-                                
-                                # Expert workshops (probabilistic, once per month)
-                                # Workshops — probabilistic monthly (hardened: never negative net)
-                                workshop_attendees = 0
-                                gross_ws = 0.0
-                                cost_ws = 0.0
-                                net_ws = 0.0
-    
-                                if rng.random() < WORKSHOP_PROB_PER_MONTH:
-                                    # Stochastic fill 75–100% of max
-                                    fill = rng.uniform(0.75, 1.00)
-                                    workshop_attendees = int(round(WORKSHOP_MAX_ATTENDEES * fill))
-    
-                                    gross_ws = workshop_attendees * WORKSHOP_TICKET_PRICE * WORKSHOP_REVENUE_SHARE
-                                    cost_ws  = WORKSHOP_GUEST_FEE + (workshop_attendees * WORKSHOP_MATERIAL_COST_PER_PERSON) + WORKSHOP_OTHER_COSTS
-                                    net_ws = max(0.0, gross_ws - cost_ws)
+                                # Workshops revenue — use precomputed values from stream
+                                net_ws = stream["workshop_revenue"][month]
     
                                 total_revenue = (revenue_membership + revenue_clay + revenue_firing + revenue_events + net_ws + revenue_designated_studios + (0.0 if not CLASSES_ENABLED else revenue_classes))
     

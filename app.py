@@ -1323,14 +1323,15 @@ with tab_run:
         else:
             T = 0
         m_for_dscr = 12 if T >= 12 else T
-
+        m_for_dscr2 = 60 if T >= 60 else T
+        
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Survival prob @ horizon", f"{surv:.2f}" if np.isfinite(surv) else "NA")
         col2.metric("Cash p10 → p50 ($k)",
                     f"{(cash_q10/1e3):,.0f} → {(cash_med/1e3):,.0f}"
                     if np.isfinite(cash_q10) and np.isfinite(cash_med) else "NA")
         col3.metric(f"DSCR @ M{m_for_dscr} (p50)", f"{dscr_med:.2f}" if np.isfinite(dscr_med) else "NA")
-        col4.metric("Breakeven (median, months)",
+        col4.metric("Breakeven (CFADS, k =  3, median, months)",
                     f"{t_breakeven:.0f}" if np.isfinite(t_breakeven) else "NA")
         
         col1, col2, col3, col4 = st.columns(4)
@@ -1338,9 +1339,11 @@ with tab_run:
         col2.metric("Cash p10 → p50 ($k)",
                     f"{(cash_q10/1e3):,.0f} → {(cash_med/1e3):,.0f}"
                     if np.isfinite(cash_q10) and np.isfinite(cash_med) else "NA")
-        col3.metric("DSCR @ M12 (p50)", f"{dscr_med:.2f}" if np.isfinite(dscr_med) else "NA")
-        col4.metric("Breakeven (median, months)",
-                     f"{t_breakeven:.0f}" if np.isfinite(t_breakeven) else "NA")
+        dscr_at_m2 = df_cell[df_cell[month_col] == m_for_dscr2]["dscr"] if "dscr" in df_cell.columns else pd.Series([], dtype=float)
+        dscr_med_m2 = float(dscr_at_m2.median()) if dscr_at_m2.size else np.nan
+        col3.metric(f"DSCR @ M{m_for_dscr2} (p50)", f"{dscr_med_m2:.2f}" if np.isfinite(dscr_med_m2) else "NA")
+        col4.metric("Breakeven (cfads, k=3 months)", f"{t_breakeven:.0f}" if np.isfinite(t_breakeven) else "NA")
+        
         st.caption(f"Breakeven signal = {row_dict.get('breakeven_signal','cfads')} "
                     f"(k={int(row_dict.get('breakeven_k',3))} months)")
         st.markdown("#### Captured charts")

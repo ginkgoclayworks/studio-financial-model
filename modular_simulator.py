@@ -1181,7 +1181,7 @@ def _core_simulation_and_reports():
                             
                         total_revenue = (
                             revenue_membership + revenue_clay + revenue_firing + revenue_events
-                            + stream["workshop_revenue"][month]
+                            + float(stream.get("workshop_revenue", np.zeros(MONTHS))[month])
                             + revenue_designated_studios
                             + (0.0 if not CLASSES_ENABLED else revenue_classes)
                         )
@@ -1828,6 +1828,13 @@ def _core_simulation_and_reports():
                             expansion_triggered = False
                             grant_month = scen_cfg["grant_month"]; grant_amount = scen_cfg["grant_amount"]
                             min_cash = float("inf")
+                            
+                            # --- Workshops state (mirror main sim loop) ---
+                            # Ensures stream["workshop_revenue"] exists for this loop.
+                            stream = {}
+                            stream["workshop_revenue"] = np.zeros(MONTHS)
+                            stream["joins_from_workshops"] = np.zeros(MONTHS, dtype=int)
+                            apply_workshops(stream, globals(), MONTHS)
     
                             for month in range(MONTHS):
                                 seasonal = SEASONALITY_WEIGHTS_NORM[month % 12]
@@ -1922,15 +1929,19 @@ def _core_simulation_and_reports():
     
                                 revenue_events = max(0.0, revenue_events_gross - events_cost_materials - events_cost_labor)
                                 
-                                net_ws = 0.0
-                                
                                 # Designated artist studios (stochastic monthly occupancy)
                                 ds_occupied = int(rng.binomial(DESIGNATED_STUDIO_COUNT, DESIGNATED_STUDIO_BASE_OCCUPANCY)) if DESIGNATED_STUDIO_COUNT > 0 else 0
                                 revenue_designated_studios = ds_occupied * DESIGNATED_STUDIO_PRICE
-                                # Workshops revenue — use precomputed values from stream
-                                net_ws = stream["workshop_revenue"][month]
-    
-                                total_revenue = (revenue_membership + revenue_clay + revenue_firing + revenue_events + net_ws + revenue_designated_studios + (0.0 if not CLASSES_ENABLED else revenue_classes))
+                                # Workshops revenue — use precomputed values from stream    
+                                total_revenue = (
+                                    revenue_membership
+                                    + revenue_clay
+                                    + revenue_firing
+                                    + revenue_events
+                                    + float(stream.get("workshop_revenue", np.zeros(MONTHS))[month])
+                                    + revenue_designated_studios
+                                    + (0.0 if not CLASSES_ENABLED else revenue_classes)
+                                )
     
                                 variable_clay_cost = (total_clay_lbs / 25) * WHOLESALE_CLAY_COST_PER_BAG
                                 water_cost = (total_clay_lbs / 25) * GALLONS_PER_BAG_CLAY * WATER_COST_PER_GALLON

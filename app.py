@@ -1249,11 +1249,7 @@ with st.sidebar:
                 min_value=0.0, max_value=0.5, value=0.10, step=0.01,
                 help="Fraction of attendees who later become members. Example: 0.10 means 10% convert."
             )
-            ws_conv_lag = st.slider(
-                "Conversion lag (months)",
-                min_value=0, max_value=6, value=1, step=1,
-                help="Delay between the workshop and when new members from that workshop actually join."
-            )
+            
     
         with colB:
             ws_fee = st.slider(
@@ -1265,6 +1261,11 @@ with st.sidebar:
                 "Variable cost per workshop ($)",
                 min_value=0, max_value=1000, value=50, step=10,
                 help="Your per‑event costs (guest instructor honorarium, space share, snacks, etc.)."
+            )
+            ws_conv_lag = st.slider(
+                "Conversion lag (months)",
+                min_value=0, max_value=6, value=1, step=1,
+                help="Delay between the workshop and when new members from that workshop actually join."
             )
     
         # --- Live preview of what these inputs imply (only a UI hint; simulator is authoritative) ---

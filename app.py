@@ -835,11 +835,17 @@ def summarize_cell(df: pd.DataFrame) -> Tuple[dict, pd.DataFrame]:
     sim_col = "simulation_id"
 
     # Month column: allow a few aliases just in case
+    # Early exit if df is empty
+    if df.empty:
+        return {}, pd.DataFrame()
+    
+    # Month column: allow a few aliases just in case
     month_col = "month" if "month" in df.columns else (
         "Month" if "Month" in df.columns else "t"
     )
     if month_col not in df.columns:
-        raise RuntimeError("Could not find a month column among ['month','Month','t'].")
+        # Be tolerant: return empty aggregates instead of raising
+        return {}, pd.DataFrame()
 
     # pick columns (fall back to Δcash for CF)
     cash_col = pick_col(df, ["cash_balance","cash","ending_cash"])
@@ -1307,8 +1313,11 @@ with tab_run:
         t_breakeven = row_dict.get("median_time_to_breakeven_months", np.nan)
 
         # Figure out which month we actually have DSCR for (M12 or horizon if T<12)
-        T = int(df_cell["month"].max() if "month" in df_cell.columns else
-                (df_cell["Month"].max() if "Month" in df_cell.columns else df_cell["t"].max()))
+        if not df_cell.empty and any(c in df_cell.columns for c in ("month", "Month", "t")):
+            month_col = "month" if "month" in df_cell.columns else ("Month" if "Month" in df_cell.columns else "t")
+            T = int(df_cell[month_col].max())
+        else:
+            T = 0
         m_for_dscr = 12 if T >= 12 else T
 
         col1, col2, col3, col4 = st.columns(4)

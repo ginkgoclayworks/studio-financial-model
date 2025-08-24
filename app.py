@@ -34,7 +34,7 @@ PARAM_SPECS = {
     "grant_month":            {"type": "int",   "min": -1, "max": 36, "step": 1, "label": "Grant month (None=-1)"},
     # Optional future levers:
     "PRICE_ELASTICITY":       {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Price elasticity ε"},
-    "REF_PRICE":              {"type": "int",   "min": 50, "max": 500, "step": 10, "label": "Membership price"},
+    "REF_PRICE":              {"type": "int",   "min": 50, "max": 500, "step": 10, "label": "Reference price for elasticity calculation"},
     "WOM_RATE":               {"type": "float", "min": 0.0, "max": 0.2, "step": 0.005, "label": "Word-of-mouth rate"},
     "MARKETING_SPEND":        {"type": "int",   "min": 0, "max": 20_000, "step": 500, "label": "Marketing spend / mo"},
     "CAC":                    {"type": "int",   "min": 50, "max": 2000, "step": 10, "label": "CAC ($/lead)"},
@@ -71,6 +71,23 @@ PARAM_SPECS = {
         "rec": (2, 2)
     },
 }
+    
+PARAM_SPECS.update({
+    "PRICE": {"type": "int", "min": 100, "max": 300, "step": 5, "label": "Membership fee ($/mo)"},
+})
+
+PARAM_SPECS.update({
+    # Workshops (monthly; lightweight upskilling)
+    "WORKSHOPS_ENABLED": {"type":"bool", "label":"Enable workshops (monthly)", "default": True},
+    "WORKSHOPS_PER_MONTH": {"type":"float", "min":0.0, "max":12.0, "step":0.5, "default": 2.0, "label":"Workshops per month"},
+    "WORKSHOP_AVG_ATTENDANCE": {"type":"int", "min":1, "max":40, "step":1, "default": 10, "label":"Avg attendees per workshop"},
+    "WORKSHOP_FEE": {"type":"float", "min":0.0, "max":500.0, "step":5.0, "default": 85.0, "label":"Workshop fee per attendee"},
+    "WORKSHOP_CONV_RATE": {"type":"float", "min":0.0, "max":1.0, "step":0.05, "default": 0.10, "label":"Attendee→Member conversion"},
+    "WORKSHOP_CONV_LAG_MO": {"type":"int", "min":0, "max":12, "step":1, "default": 1, "label":"Conversion lag (months)"},
+    # Optional cost model
+    "WORKSHOP_COST_PER_EVENT": {"type":"float", "min":0.0, "max":1000.0, "step":5.0, "default": 50.0, "label":"Variable cost per workshop", "help":"Supplies, instructor stipend, etc."},
+})
+
 
 ENV_SPEC_META = {
     "DOWNTURN_PROB_PER_MONTH": {
@@ -186,6 +203,10 @@ STRAT_SPEC_META = {
         "desc": "Delay between finishing a class and joining as a member (in months).",
         "rec": (0, 2)
     },
+    "PRICE": {
+        "desc": "Actual monthly membership fee charged to members (drives revenue).",
+        "rec": (120, 220)
+    },
 }
 
 for key, meta in STRAT_SPEC_META.items():
@@ -198,44 +219,107 @@ SCRIPT = "modular_simulator.py"   # your core simulator
 
 # --- Group definitions ---
 
-GROUPS = {
-    # Scenario-owned
-    "Income_env":   ["WOM_RATE", "LEAD_TO_JOIN_RATE", "MAX_ONBOARD_PER_MONTH"],
-    "Expenses_env": ["MARKETING_SPEND", "CAC"],
-    "Macro_env":    ["DOWNTURN_PROB_PER_MONTH", "DOWNTURN_JOIN_MULT",
-                     "DOWNTURN_CHURN_MULT", "MARKET_POOLS_INFLOW",
-                     "grant_amount", "grant_month"],
-    "Capacity_env": ["MEMBER_CAP", "EXPANSION_THRESHOLD"],
+# GROUPS = {
+#     # Scenario-owned
+#     "Income_env":   ["WOM_RATE", "LEAD_TO_JOIN_RATE", "MAX_ONBOARD_PER_MONTH"],
+#     "Expenses_env": ["MARKETING_SPEND", "CAC"],
+#     "Macro_env":    ["DOWNTURN_PROB_PER_MONTH", "DOWNTURN_JOIN_MULT",
+#                       "DOWNTURN_CHURN_MULT", "MARKET_POOLS_INFLOW",
+#                       "grant_amount", "grant_month"],
+#     "Capacity_env": ["MEMBER_CAP", "EXPANSION_THRESHOLD"],
 
-    # Strategy-owned
-    "Income_strat": ["REF_PRICE", "PRICE_ELASTICITY",
-                     "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH",
-                     "CLASS_CAP_PER_COHORT", "CLASS_PRICE",
-                     "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
-                     "USE_SEMESTER_SCHEDULE", "CLASSES_PER_SEMESTER"],
-    "Expenses_strat": ["RENT", "OWNER_DRAW"],   # ← this must exist
+#     # Strategy-owned
+#     "Income_strat": ["PRICE", "REF_PRICE", "PRICE_ELASTICITY",
+#                       "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH",
+#                       "CLASS_CAP_PER_COHORT", "CLASS_PRICE",
+#                       "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
+#                       "USE_SEMESTER_SCHEDULE", "CLASSES_PER_SEMESTER", "WORKSHOPS_ENABLED", "WORKSHOPS_PER_MONTH",
+#     "WORKSHOP_AVG_ATTENDANCE", "WORKSHOP_FEE",
+#     "WORKSHOP_CONV_RATE", "WORKSHOP_CONV_LAG_MO",
+#     "WORKSHOP_COST_PER_EVENT",],
+#     "Expenses_strat": ["RENT", "OWNER_DRAW"],   # ← this must exist
+# }
+
+# === Group definitions (use only keys that exist in your app.py) ===
+GROUPS = {
+    # Macro conditions
+    "macro": [
+        "DOWNTURN_PROB_PER_MONTH", "DOWNTURN_JOIN_MULT", "DOWNTURN_CHURN_MULT",
+    ],
+
+    # Growth & demand generation
+    "growth": [
+        "WOM_RATE", "LEAD_TO_JOIN_RATE", "MARKET_POOLS_INFLOW",
+        "MARKETING_SPEND", "CAC",
+    ],
+
+    # Capacity & operations
+    "capacity": [
+        "MEMBER_CAP", "EXPANSION_THRESHOLD", "MAX_ONBOARD_PER_MONTH",
+    ],
+
+    # Pricing (core price + elasticity)
+    "pricing": [
+        "PRICE", "REF_PRICE", "PRICE_ELASTICITY",
+    ],
+
+    # Workshops (single-source model you already have)
+    "workshops": [
+        "WORKSHOPS_ENABLED", "WORKSHOPS_PER_MONTH", "WORKSHOP_AVG_ATTENDANCE",
+        "WORKSHOP_FEE", "WORKSHOP_COST_PER_EVENT", "WORKSHOP_CONV_RATE", "WORKSHOP_CONV_LAG_MO",
+    ],
+
+    # Beginner classes (only the keys present in your spec)
+    "classes": [
+        "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH", "CLASS_CAP_PER_COHORT",
+        "CLASS_PRICE", "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
+    ],
+
+    # Events (keys present in your spec)
+    "events": [
+        "BASE_EVENTS_PER_MONTH_LAMBDA", "EVENTS_MAX_PER_MONTH", "TICKET_PRICE",
+    ],
+
+    # Finance & grants
+    "finance": [
+        "RENT", "OWNER_DRAW", "grant_amount", "grant_month",
+    ],
 }
+
 
 def compute_kpis_from_cell(df_cell: pd.DataFrame) -> dict:
     """
     Compute lender-style KPIs from a single cell's simulation dataframe.
-    Assumes columns: month, simulation_id, cash; optionally dscr, active_members.
+    Tolerates cash column aliases and missing DSCR.
     """
     out = {}
     if df_cell.empty:
         return out
 
+    # Resolve columns
+    month_col = "month" if "month" in df_cell.columns else ("Month" if "Month" in df_cell.columns else "t")
+    if month_col not in df_cell.columns:
+        return out
+
+    cash_col = pick_col(df_cell, ["cash_balance", "cash", "ending_cash"])
+    if cash_col is None:
+        return out
+
     # Horizon row per simulation
-    last_month = int(df_cell["month"].max())
-    end = df_cell[df_cell["month"] == last_month]
+    last_month = int(df_cell[month_col].max())
+    end = df_cell[df_cell[month_col] == last_month]
 
     # Survival: share of sims whose min cash never dipped below 0
-    if {"simulation_id", "cash"}.issubset(df_cell.columns):
-        min_cash_by_sim = df_cell.groupby("simulation_id")["cash"].min()
-        out["survival_prob"] = float((min_cash_by_sim >= 0).mean())
-        out["cash_q10"] = float(end["cash"].quantile(0.10))
-        out["cash_med"] = float(end["cash"].quantile(0.50))
-        out["cash_q90"] = float(end["cash"].quantile(0.90))
+    sim_col = "simulation_id" if "simulation_id" in df_cell.columns else None
+    if sim_col:
+        min_cash_by_sim = df_cell.groupby(sim_col)[cash_col].min()
+    else:
+        min_cash_by_sim = pd.Series([float(df_cell[cash_col].min())])
+
+    out["survival_prob"] = float((min_cash_by_sim >= 0).mean())
+    out["cash_q10"] = float(end[cash_col].quantile(0.10))
+    out["cash_med"] = float(end[cash_col].quantile(0.50))
+    out["cash_q90"] = float(end[cash_col].quantile(0.90))
 
     # DSCR at horizon (if present)
     if "dscr" in end.columns:
@@ -243,7 +327,7 @@ def compute_kpis_from_cell(df_cell: pd.DataFrame) -> dict:
         out["dscr_med"] = float(end["dscr"].quantile(0.50))
         out["dscr_q90"] = float(end["dscr"].quantile(0.90))
 
-    # Members at horizon (optional, handy for display)
+    # Members at horizon (optional)
     if "active_members" in end.columns:
         out["members_med"] = float(end["active_members"].median())
 
@@ -258,9 +342,15 @@ def _update_from(src, dst, keys):
             dst[k] = src[k]
 
 def _default_from_spec_for_push(key: str, spec: dict):
-    t = (spec or {}).get("type")
-    if key == "grant_month":          # sentinel: -1 means “None”
+    if not spec:
+        return ""
+    # Special sentinel
+    if key == "grant_month":
         return -1
+    # Respect explicit default if provided
+    if "default" in spec:
+        return spec["default"]
+    t = spec.get("type")
     if t == "bool":  return False
     if t == "int":   return int(spec.get("min", 0))
     if t == "float": return float(spec.get("min", 0.0))
@@ -372,7 +462,7 @@ def build_overrides(env: dict, strat: dict) -> dict:
       - Add singletons for sweepable values (RENT/OWNER_DRAW) so the core code
         that expects *_SCENARIOS keeps working.
       - Pass grant + capex timing through SCENARIO_CONFIGS.
-      - UI capacity mapping: MEMBER_CAP (UI) -> HARD_CAP (sim). Only if > 0.
+      - UI capacity mapping: MEMBER_CAP (UI) -> MAX_MEMBERS (sim). Only if > 0.
       - Forward EXPANSION_THRESHOLD when provided (>= 0).
       - Remove UI-only keys and any None/NaN values.
     """
@@ -410,6 +500,17 @@ def build_overrides(env: dict, strat: dict) -> dict:
     if "WOM_RATE" in ov and "WOM_Q" not in ov:
         ov["WOM_Q"] = float(ov.pop("WOM_RATE"))
     
+    if "MAX_ONBOARD_PER_MONTH" in ov and "MAX_ONBOARDINGS_PER_MONTH" not in ov:
+        try:
+            ov["MAX_ONBOARDINGS_PER_MONTH"] = int(ov.pop("MAX_ONBOARD_PER_MONTH"))
+        except Exception:
+            ov.pop("MAX_ONBOARD_PER_MONTH", None)
+    
+    if "LEAD_TO_JOIN_RATE" in ov and "BASELINE_JOIN_RATE" not in ov:
+        try:
+            ov["BASELINE_JOIN_RATE"] = float(ov.pop("LEAD_TO_JOIN_RATE"))
+        except Exception:
+            ov.pop("LEAD_TO_JOIN_RATE", None)
 
     # ----- Scenario configs: grant + capex timing
     gm = env.get("grant_month", None)
@@ -453,6 +554,21 @@ def build_overrides(env: dict, strat: dict) -> dict:
         ov["EXPANSION_THRESHOLD"] = thr_val
     else:
         ov.pop("EXPANSION_THRESHOLD", None)
+    
+    # --- Back-compat: map legacy monthly class knobs to workshops if workshops unset ---
+    if "WORKSHOPS_PER_MONTH" not in ov and "CLASS_COHORTS_PER_MONTH" in ov:
+        ov["WORKSHOPS_PER_MONTH"] = float(ov.get("CLASS_COHORTS_PER_MONTH", 0.0))
+    if "WORKSHOP_AVG_ATTENDANCE" not in ov and "CLASS_CAP_PER_COHORT" in ov:
+        ov["WORKSHOP_AVG_ATTENDANCE"] = int(ov.get("CLASS_CAP_PER_COHORT", 0))
+    if "WORKSHOP_FEE" not in ov and "CLASS_PRICE" in ov:
+        ov["WORKSHOP_FEE"] = float(ov.get("CLASS_PRICE", 0.0))
+    if "WORKSHOP_CONV_RATE" not in ov and "CLASS_CONV_RATE" in ov:
+        ov["WORKSHOP_CONV_RATE"] = float(ov.get("CLASS_CONV_RATE", 0.0))
+    if "WORKSHOP_CONV_LAG_MO" not in ov and "CLASS_CONV_LAG_MO" in ov:
+        ov["WORKSHOP_CONV_LAG_MO"] = int(ov.get("CLASS_CONV_LAG_MO", 1))
+    # sensible default if missing:
+    ov.setdefault("WORKSHOPS_ENABLED", True)
+    ov.setdefault("WORKSHOP_COST_PER_EVENT", 50.0)
 
     return ov
 
@@ -511,10 +627,13 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
     If a key is missing or is None, use a sensible default from PARAM_SPECS.
     """
     def _default_from_spec(spec, key=None):
-        t = spec.get("type") if spec else None
-        # special sentinel: grant_month uses -1 to mean "None"
+        if not spec:
+            return ""
         if key == "grant_month":
             return -1
+        if "default" in spec:
+            return spec["default"]
+        t = spec.get("type")
         if t == "bool":  return False
         if t == "int":   return int(spec.get("min", 0))
         if t == "float": return float(spec.get("min", 0.0))
@@ -702,7 +821,11 @@ def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: Optional[str] 
 
     title_suffix = f"{env['name']} | {strat['name']}"
     with FigureCapture(title_suffix) as cap:
-        res = run_original_once(SCRIPT, ov)
+        try:
+            res = run_original_once(SCRIPT, ov)
+        except Exception as e:
+            st.error(f"Simulation failed: {e}")
+            return pd.DataFrame(), None, [], []
 
     df_cell, eff = (res if isinstance(res, tuple) else (res, None))
 
@@ -905,9 +1028,9 @@ SCENARIOS = [
     },
 ]
 STRATEGIES = [
-    {"name":"I_all_upfront_Base", "RENT":3500, "OWNER_DRAW":1000,
+    {"name":"I_all_upfront_Base", "RENT":4000, "OWNER_DRAW":2000, "PRICE": 185,
      "USE_SEMESTER_SCHEDULE": True, "CLASSES_PER_SEMESTER": 2},
-    {"name":"II_staged_Base",     "RENT":3500, "OWNER_DRAW":1000,
+    {"name":"II_staged_Base",     "RENT":4000, "OWNER_DRAW":2000, "PRICE": 185,
      "USE_SEMESTER_SCHEDULE": True, "CLASSES_PER_SEMESTER": 2},
 ]
 
@@ -995,76 +1118,190 @@ with st.sidebar:
     env  = json.loads(json.dumps(next(s for s in SCENARIOS  if s["name"] == scen_sel)))
     strat = json.loads(json.dumps(next(s for s in STRATEGIES if s["name"] == strat_sel)))
     
+    # # If preset changed, push values into widgets for ALL groups you render
+    # if scen_sel != st.session_state["last_scen_sel"]:
+    #     _push_preset_to_widgets(env,   prefix="env_income", keys=GROUPS["Income_env"])
+    #     _push_preset_to_widgets(env,   prefix="env_exp",    keys=GROUPS["Expenses_env"])
+    #     _push_preset_to_widgets(env,   prefix="env_macro",  keys=GROUPS["Macro_env"])
+    #     _push_preset_to_widgets(env,   prefix="env_cap",    keys=GROUPS["Capacity_env"])
+    #     st.session_state["last_scen_sel"] = scen_sel
+    
+    # if strat_sel != st.session_state["last_strat_sel"]:
+    #     _push_preset_to_widgets(strat, prefix="strat_income", keys=GROUPS["Income_strat"])
+    #     _push_preset_to_widgets(strat, prefix="strat_exp",    keys=GROUPS["Expenses_strat"])
+    #     # (no strat_macro — you removed that panel)
+    #     st.session_state["last_strat_sel"] = strat_sel
     # If preset changed, push values into widgets for ALL groups you render
     if scen_sel != st.session_state["last_scen_sel"]:
-        _push_preset_to_widgets(env,   prefix="env_income", keys=GROUPS["Income_env"])
-        _push_preset_to_widgets(env,   prefix="env_exp",    keys=GROUPS["Expenses_env"])
-        _push_preset_to_widgets(env,   prefix="env_macro",  keys=GROUPS["Macro_env"])
-        _push_preset_to_widgets(env,   prefix="env_cap",    keys=GROUPS["Capacity_env"])
+        _push_preset_to_widgets(env,   prefix="env_macro",    keys=GROUPS["macro"])
+        _push_preset_to_widgets(env,   prefix="env_growth",   keys=GROUPS["growth"])
+        _push_preset_to_widgets(env,   prefix="env_capacity", keys=GROUPS["capacity"])
+        _push_preset_to_widgets(env,   prefix="env_finance",  keys=["grant_amount", "grant_month"])
         st.session_state["last_scen_sel"] = scen_sel
     
     if strat_sel != st.session_state["last_strat_sel"]:
-        _push_preset_to_widgets(strat, prefix="strat_income", keys=GROUPS["Income_strat"])
-        _push_preset_to_widgets(strat, prefix="strat_exp",    keys=GROUPS["Expenses_strat"])
-        # (no strat_macro — you removed that panel)
+        _push_preset_to_widgets(strat, prefix="strat_pricing",   keys=GROUPS["pricing"])
+        _push_preset_to_widgets(strat, prefix="strat_workshops", keys=GROUPS["workshops"])
+        _push_preset_to_widgets(strat, prefix="strat_classes",   keys=GROUPS["classes"])
+        _push_preset_to_widgets(strat, prefix="strat_events",    keys=GROUPS["events"])
+        _push_preset_to_widgets(strat, prefix="strat_finance",   keys=["RENT", "OWNER_DRAW"])
         st.session_state["last_strat_sel"] = strat_sel
         
     # render all known fields dynamically
-    # --- Grouped controls ---
-    with st.expander("Income", expanded=True):
-        env_income = render_param_controls(
-            "Income — Scenario (market/capacity inputs)",
-            _subset(env, GROUPS["Income_env"]),
-            group_keys=GROUPS["Income_env"], prefix="env_income"
-        )
-        strat_income = render_param_controls(
-            "Income — Strategy (pricing, classes)",
-            _subset(strat, GROUPS["Income_strat"]),
-            group_keys=GROUPS["Income_strat"], prefix="strat_income"
-        )
+    # # --- Grouped controls ---
+    # with st.expander("Income", expanded=True):
+    #     env_income = render_param_controls(
+    #         "Income — Scenario (market/capacity inputs)",
+    #         _subset(env, GROUPS["Income_env"]),
+    #         group_keys=GROUPS["Income_env"], prefix="env_income"
+    #     )
+    #     strat_income = render_param_controls(
+    #         "Income — Strategy (pricing, classes)",
+    #         _subset(strat, GROUPS["Income_strat"]),
+    #         group_keys=GROUPS["Income_strat"], prefix="strat_income"
+    #     )
     
-    with st.expander("Expenses", expanded=True):
-        env_exp = render_param_controls(
-            "Expenses — Scenario",
-            _subset(env, GROUPS["Expenses_env"]),
-            group_keys=GROUPS["Expenses_env"], prefix="env_exp"
-        )
-        strat_exp = render_param_controls(
-            "Expenses — Strategy",
-            _subset(strat, GROUPS["Expenses_strat"]),
-            group_keys=GROUPS["Expenses_strat"], prefix="strat_exp"
-        )
+    # with st.expander("Expenses", expanded=True):
+    #     env_exp = render_param_controls(
+    #         "Expenses — Scenario",
+    #         _subset(env, GROUPS["Expenses_env"]),
+    #         group_keys=GROUPS["Expenses_env"], prefix="env_exp"
+    #     )
+    #     strat_exp = render_param_controls(
+    #         "Expenses — Strategy",
+    #         _subset(strat, GROUPS["Expenses_strat"]),
+    #         group_keys=GROUPS["Expenses_strat"], prefix="strat_exp"
+    #     )
     
-    with st.expander("Macro", expanded=True):
+    # with st.expander("Macro", expanded=True):
+    #     env_macro = render_param_controls(
+    #         "Macro — Scenario",
+    #         _subset(env, GROUPS["Macro_env"]),
+    #         group_keys=GROUPS["Macro_env"], prefix="env_macro"
+    #     )
+    #     # remove the Macro — Strategy block (there are no strategy-owned macro keys)
+    
+    # with st.expander("Capacity (scenario)", expanded=True):
+    #     env_cap = render_param_controls(
+    #         "Capacity — Scenario",
+    #         _subset(env, GROUPS["Capacity_env"]),
+    #         group_keys=GROUPS["Capacity_env"], prefix="env_cap"
+    #     )
+    # === Render inside expanders (no new variables; uses your existing render helper) ===
+   
+    # === ENV-DRIVEN GROUPS (use env) ===
+    with st.expander("Macro Conditions", expanded=False):
         env_macro = render_param_controls(
-            "Macro — Scenario",
-            _subset(env, GROUPS["Macro_env"]),
-            group_keys=GROUPS["Macro_env"], prefix="env_macro"
+            "Macro Conditions", _subset(env, GROUPS["macro"]),
+            group_keys=GROUPS["macro"], prefix="env_macro"
         )
-        # remove the Macro — Strategy block (there are no strategy-owned macro keys)
     
-    with st.expander("Capacity (scenario)", expanded=True):
-        env_cap = render_param_controls(
-            "Capacity — Scenario",
-            _subset(env, GROUPS["Capacity_env"]),
-            group_keys=GROUPS["Capacity_env"], prefix="env_cap"
+    with st.expander("Growth & Demand", expanded=True):
+        env_growth = render_param_controls(
+            "Growth & Demand", _subset(env, GROUPS["growth"]),
+            group_keys=GROUPS["growth"], prefix="env_growth"
         )
+    
+    with st.expander("Capacity & Ops", expanded=True):
+        env_capacity = render_param_controls(
+            "Capacity & Ops", _subset(env, GROUPS["capacity"]),
+            group_keys=GROUPS["capacity"], prefix="env_capacity"
+        )
+    
+    with st.expander("Finance & Grants (Scenario)", expanded=False):
+        env_finance = render_param_controls(
+            "Finance & Grants (Scenario)", _subset(env, ["grant_amount", "grant_month"]),
+            group_keys=["grant_amount", "grant_month"], prefix="env_finance"
+        )
+    
+    # === STRATEGY-DRIVEN GROUPS (use strat) ===
+    with st.expander("Pricing", expanded=False):
+        strat_pricing = render_param_controls(
+            "Pricing", _subset(strat, GROUPS["pricing"]),
+            group_keys=GROUPS["pricing"], prefix="strat_pricing"
+        )
+    
+    with st.expander("Workshops", expanded=False):
+        strat_workshops = render_param_controls(
+            "Workshops", _subset(strat, GROUPS["workshops"]),
+            group_keys=GROUPS["workshops"], prefix="strat_workshops"
+        )
+        st.caption("Adds workshop net revenue each month; some attendees convert to members after the lag.")
+        try:
+            if bool(strat_workshops.get("WORKSHOPS_ENABLED", False)):
+                wpm   = float(strat_workshops.get("WORKSHOPS_PER_MONTH", 0))
+                avg_n = float(strat_workshops.get("WORKSHOP_AVG_ATTENDANCE", 0))
+                fee   = float(strat_workshops.get("WORKSHOP_FEE", 0))
+                cost  = float(strat_workshops.get("WORKSHOP_COST_PER_EVENT", 0))
+                conv  = float(strat_workshops.get("WORKSHOP_CONV_RATE", 0))
+                lag   = int(strat_workshops.get("WORKSHOP_CONV_LAG_MO", 1))
+                attendees = int(round(wpm * avg_n))
+                net_rev   = int(round(attendees * fee - wpm * cost))
+                converts  = int(round(attendees * conv))
+                st.markdown(
+                    f"• ≈ **{attendees}** attendees/mo → net ≈ **${net_rev:,}**; "
+                    f"**{converts}** new members after **{lag}** mo"
+                )
+        except Exception:
+            pass
+    
+    with st.expander("Beginner Classes", expanded=False):
+        strat_classes = render_param_controls(
+            "Beginner Classes", _subset(strat, GROUPS["classes"]),
+            group_keys=GROUPS["classes"], prefix="strat_classes"
+        )
+        st.caption("Adds class net revenue now; converts a fraction of students into members after a delay.")
+        try:
+            if bool(strat_classes.get("CLASSES_ENABLED", False)):
+                coh   = float(strat_classes.get("CLASS_COHORTS_PER_MONTH", 0))
+                cap   = float(strat_classes.get("CLASS_CAP_PER_COHORT", 0))
+                price = float(strat_classes.get("CLASS_PRICE", 0))
+                conv  = float(strat_classes.get("CLASS_CONV_RATE", 0))
+                lag   = int(strat_classes.get("CLASS_CONV_LAG_MO", 1))
+                students = int(round(coh * cap))
+                gross    = int(round(students * price))
+                converts = int(round(students * conv))
+                st.markdown(
+                    f"• ≈ **{students}** students/mo → gross ≈ **${gross:,}**; "
+                    f"**{converts}** new members after **{lag}** mo"
+                )
+        except Exception:
+            pass
+    
+    with st.expander("Events (PYOP / Corporate)", expanded=False):
+        strat_events = render_param_controls(
+            "Events", _subset(strat, GROUPS["events"]),
+            group_keys=GROUPS["events"], prefix="strat_events"
+        )
+    
+    with st.expander("Finance & Grants (Strategy)", expanded=False):
+        strat_finance = render_param_controls(
+            "Finance & Grants (Strategy)", _subset(strat, ["RENT", "OWNER_DRAW"]),
+            group_keys=["RENT", "OWNER_DRAW"], prefix="strat_finance"
+        )
+   
     
     # Merge edits back
-    for part in (env_income, env_exp, env_macro, env_cap):
+    # for part in (env_income, env_exp, env_macro, env_cap):
+    #     _update_from(part, env, part.keys())
+    # for part in (strat_income, strat_exp):
+    #     _update_from(part, strat, part.keys())
+    # Merge edits back
+    for part in (env_macro, env_growth, env_capacity, env_finance):
         _update_from(part, env, part.keys())
-    for part in (strat_income, strat_exp):
+    
+    for part in (strat_pricing, strat_workshops, strat_classes, strat_events, strat_finance):
         _update_from(part, strat, part.keys())
     
-    # --- Events (discrete) lives with Income ---
-    with st.expander("Events (discrete)", expanded=True):
-        events_fixed_ui   = st.selectbox("Events per month (fixed)", [0, 1, 2, 3, 4], index=0)
-        ticket_choice_ui  = st.selectbox("Event ticket price ($)",  [50, 75, 100, 125], index=2)
+    # # --- Events (discrete) lives with Income ---
+    # with st.expander("Events (discrete)", expanded=True):
+    #     events_fixed_ui   = st.selectbox("Events per month (fixed)", [0, 1, 2, 3, 4], index=0)
+    #     ticket_choice_ui  = st.selectbox("Event ticket price ($)",  [50, 75, 100, 125], index=2)
     
-    # Map discrete choices directly (0 == disabled)
-    strat["BASE_EVENTS_PER_MONTH_LAMBDA"] = float(events_fixed_ui)
-    strat["EVENTS_MAX_PER_MONTH"]         = int(events_fixed_ui)
-    strat["TICKET_PRICE"]                 = int(ticket_choice_ui)
+    # # Map discrete choices directly (0 == disabled)
+    # strat["BASE_EVENTS_PER_MONTH_LAMBDA"] = float(events_fixed_ui)
+    # strat["EVENTS_MAX_PER_MONTH"]         = int(events_fixed_ui)
+    # strat["TICKET_PRICE"]                 = int(ticket_choice_ui)
 
     # Preset save/load
     st.markdown("---")
@@ -1084,6 +1321,10 @@ with st.sidebar:
 
     run_btn = st.button("Run simulation", type="primary")
 
+    if st.sidebar.button("Clear cache"):
+        run_cell_cached.clear()  # Streamlit 1.25+: .clear() on the function
+        st.sidebar.success("Cache cleared.")
+
 # Tabs
 tab_run, tab_matrix = st.tabs(["Single run", "Matrix heatmaps"])
 
@@ -1094,7 +1335,7 @@ with tab_run:
             env_norm = _normalize_env(env)
             cache_key = _make_cache_key(env_norm, strat, seed)
             df_cell, eff, images, manifest = run_cell_cached(env_norm, strat, seed, cache_key)
-            
+        
         st.subheader(f"KPIs — {env['name']} | {strat['name']}")
 
         # Core cash/dscr from cell
@@ -1108,6 +1349,23 @@ with tab_run:
         cash_med    = kpi_cell.get("cash_med", np.nan)
         dscr_med    = kpi_cell.get("dscr_med", np.nan)
         t_breakeven = row_dict.get("median_time_to_breakeven_months", np.nan)
+        
+        dscr_med    = kpi_cell.get("dscr_med", np.nan)
+        t_breakeven = row_dict.get("median_time_to_breakeven_months", np.nan)
+
+        # Figure out which month we actually have DSCR for (M12 or horizon if T<12)
+        T = int(df_cell["month"].max() if "month" in df_cell.columns else
+                (df_cell["Month"].max() if "Month" in df_cell.columns else df_cell["t"].max()))
+        m_for_dscr = 12 if T >= 12 else T
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Survival prob @ horizon", f"{surv:.2f}" if np.isfinite(surv) else "NA")
+        col2.metric("Cash p10 → p50 ($k)",
+                    f"{(cash_q10/1e3):,.0f} → {(cash_med/1e3):,.0f}"
+                    if np.isfinite(cash_q10) and np.isfinite(cash_med) else "NA")
+        col3.metric(f"DSCR @ M{m_for_dscr} (p50)", f"{dscr_med:.2f}" if np.isfinite(dscr_med) else "NA")
+        col4.metric("Breakeven (median, months)",
+                    f"{t_breakeven:.0f}" if np.isfinite(t_breakeven) else "NA")
         
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Survival prob @ horizon", f"{surv:.2f}" if np.isfinite(surv) else "NA")
@@ -1139,58 +1397,116 @@ with tab_matrix:
     st.caption("Runs all presets in SCENARIOS × STRATEGIES with independent seeds.")
     if st.button("Build matrix"):
         with st.spinner("Running matrix…"):
-            rows = []
+            runs = []        # keep raw dfs so we can recompute DSCR at a uniform month
+            horizons = []    # track each run's horizon (max month)
+
             for i, E in enumerate(SCENARIOS):
                 for j, S in enumerate(STRATEGIES):
-                    # Copy the preset and apply the same discrete Events mapping
                     S2 = json.loads(json.dumps(S))  # deep copy
-                    efixed = int(events_fixed_ui)   # 0..4 from UI; 0 == disabled
-                    S2["BASE_EVENTS_PER_MONTH_LAMBDA"] = float(efixed)
-                    S2["EVENTS_MAX_PER_MONTH"]         = int(efixed)
-                    S2["TICKET_PRICE"]                 = int(ticket_choice_ui)
-            
+
                     E_norm = _normalize_env(E)
                     seed_ = 42 + 1000*(i*len(STRATEGIES)+j)
-                    df_cell, eff, _imgs, _man = run_cell_cached(E_norm, S2, seed_, _make_cache_key(E_norm, S2, seed_))
+
+                    df_cell, eff, _imgs, _man = run_cell_cached(
+                        E_norm, S2, seed_, _make_cache_key(E_norm, S2, seed_)
+                    )
+
+                    # summarize (for survival, cash, timings, etc.)
                     row_dict, _ = summarize_cell(df_cell)
-                    row_dict["environment"] = E["name"]
-                    row_dict["strategy"] = S2["name"]
-                    rows.append(row_dict)
+
+                    # detect horizon T robustly
+                    month_col = "month" if "month" in df_cell.columns else (
+                        "Month" if "Month" in df_cell.columns else "t"
+                    )
+                    T = int(df_cell[month_col].max())
+                    horizons.append(T)
+
+                    runs.append({
+                        "env": E["name"],
+                        "strat": S2["name"],
+                        "df": df_cell,
+                        "summary": row_dict,  # includes dscr_med at that run's own Mmin(12,T)
+                        "T": T,
+                        "month_col": month_col,
+                    })
+
+            # Choose a single month for DSCR across ALL cells: min(12, shortest horizon)
+            global_horizon = min(horizons) if horizons else 0
+            m_for_dscr = 12 if global_horizon >= 12 else global_horizon
+
+            # Build the matrix rows, overriding dscr_med with DSCR@M{m_for_dscr} uniformly
+            rows = []
+            for r in runs:
+                d = dict(r["summary"])  # copy the summarize_cell metrics
+                d["environment"] = r["env"]
+                d["strategy"] = r["strat"]
+
+                # Recompute dscr_med at the uniform month (if DSCR exists and month is available)
+                df = r["df"]
+                mc = r["month_col"]
+                if "dscr" in df.columns and m_for_dscr > 0:
+                    dscr_at_m = df[df[mc] == m_for_dscr]["dscr"]
+                    d["dscr_med"] = float(dscr_at_m.median()) if not dscr_at_m.empty else np.nan
+                else:
+                    d["dscr_med"] = np.nan
+
+                rows.append(d)
+
             matrix = pd.DataFrame(rows)
 
+        # 1) Survival probability
         st.markdown("##### Survival probability")
         pv = (matrix.pivot(index="environment", columns="strategy", values="survival_prob")
-                    .reindex(index=sorted(matrix["environment"].unique()),
-                              columns=sorted(matrix["strategy"].unique())))
+                      .reindex(index=sorted(matrix["environment"].unique()),
+                               columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(6, 4))
         sns.heatmap(pv, annot=True, fmt=".2f", cmap="Blues", vmin=0, vmax=1, ax=ax,
                     cbar_kws={"label": "probability"})
-        ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Survival probability (pre‑grant)")
+        ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Survival probability (horizon)")
         st.pyplot(fig)
 
+        # 2) DSCR at a uniform month across all cells
+        st.markdown(f"##### Median DSCR @ M{m_for_dscr}")
+        pv = (matrix.pivot(index="environment", columns="strategy", values="dscr_med")
+                      .reindex(index=sorted(matrix["environment"].unique()),
+                               columns=sorted(matrix["strategy"].unique())))
+        fig, ax = plt.subplots(figsize=(6, 4))
+        sns.heatmap(pv, annot=True, fmt=".2f", cmap="Purples", ax=ax, cbar_kws={"label":"ratio"})
+        ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title(f"Median DSCR @ M{m_for_dscr}")
+        st.pyplot(fig)
+
+        # 3) Median cash at horizon
         st.markdown("##### Median cash at horizon ($k)")
-        pv = (matrix.pivot(index="environment", columns="strategy", values="cash_med")/1000.0)
+        pv = (matrix.pivot(index="environment", columns="strategy", values="cash_med")
+                      .reindex(index=sorted(matrix["environment"].unique()),
+                               columns=sorted(matrix["strategy"].unique()))) / 1000.0
         fig, ax = plt.subplots(figsize=(6, 4))
         sns.heatmap(pv, annot=True, fmt=".0f", cmap="YlOrBr", ax=ax, cbar_kws={"label":"$ thousands"})
         ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Median cash at horizon ($k)")
         st.pyplot(fig)
 
+        # 4) Median time to breakeven (months)
         st.markdown("##### Median time to breakeven (months)")
-        pv = matrix.pivot(index="environment", columns="strategy", values="median_time_to_breakeven_months")
+        pv = (matrix.pivot(index="environment", columns="strategy", values="median_time_to_breakeven_months")
+                      .reindex(index=sorted(matrix["environment"].unique()),
+                               columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(6, 4))
         sns.heatmap(pv, annot=True, fmt=".0f", cmap="Greens", ax=ax, cbar_kws={"label":"months"})
         ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Median time to breakeven (months)")
         st.pyplot(fig)
 
+        # 5) Median time to insolvency (months)
         st.markdown("##### Median time to insolvency (months)")
-        pv = matrix.pivot(index="environment", columns="strategy", values="median_time_to_insolvency_months")
+        pv = (matrix.pivot(index="environment", columns="strategy", values="median_time_to_insolvency_months")
+                      .reindex(index=sorted(matrix["environment"].unique()),
+                               columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(6, 4))
         sns.heatmap(pv, annot=True, fmt=".0f", cmap="Reds", ax=ax, cbar_kws={"label":"months"})
         ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Median time to insolvency (months)")
         st.pyplot(fig)
 
         st.download_button("Download matrix CSV",
-                            data=matrix.to_csv(index=False).encode("utf-8"),
-                            file_name="matrix_summary.csv", mime="text/csv")
+                           data=matrix.to_csv(index=False).encode("utf-8"),
+                           file_name="matrix_summary.csv", mime="text/csv")
 
 

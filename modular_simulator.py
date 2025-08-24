@@ -852,16 +852,6 @@ def _core_simulation_and_reports():
                     price_mult_joins = _pmult(price, reference_price, join_eps)
                     price_mult_churn = _pmult(price, reference_price, churn_eps)
                     
-                    def _pmult(p, pref, eps):
-                        if pref <= 0:
-                            return 1.0
-                        # guard against absurd magnitudes
-                        m = (max(p, 1e-9) / pref) ** eps
-                        return float(np.clip(m, 0.25, 4.0))  # cap impact; tweak bounds if you like
-                    
-                    price_mult_joins = _pmult(price, reference_price, join_eps)
-                    price_mult_churn = _pmult(price, reference_price, churn_eps)
-                    
                     for month in range(MONTHS):
                         
                         # Reset SE wage base every January
@@ -989,10 +979,8 @@ def _core_simulation_and_reports():
                         # Total joins this month (respect onboarding ops cap, if any)
                         joins = (
                              joins_no_access + joins_home + joins_comm_studio
-                             + (
-                                 int(stream.get("joins_from_workshops", np.zeros(MONTHS))[month])
-                                 if globals().get("WORKSHOPS_ENABLED", False) else 0
-                             )
+                             + (int(stream.get("joins_from_workshops", np.zeros(MONTHS))[month]) if globals().get("WORKSHOPS_ENABLED", False) else 0)
+                             + class_joins_now
                          )
                         
                         # --- referral loop (Poisson) ---
@@ -1154,7 +1142,7 @@ def _core_simulation_and_reports():
     
                         # Revenues — membership, clay, firing, events
                         revenue_membership = sum(m["monthly_fee"] for m in active_members)
-                        revenue_clay = 0.0  # <-- now NET (pre-tax)
+                        revenue_clay = 0.0  #gross; net margin after COGS below
                         revenue_firing = 0.0
                         total_clay_lbs = 0.0
                         
@@ -1270,8 +1258,6 @@ def _core_simulation_and_reports():
                             + employer_payroll_tax
                         )
                         
-                        if ENTITY_TYPE == "s_corp":
-                            total_opex_cash += employee_withholding
                             
                         total_revenue = (
                             revenue_membership + revenue_clay + revenue_firing + revenue_events
@@ -1346,7 +1332,7 @@ def _core_simulation_and_reports():
     
                         # ---------- Cash view ----------
                         total_opex_cash += property_tax_this_month
-                        total_opex_cash += tax_payments_this_month
+                        total_opex_cash += tax_payments_this_month - sales_tax_remitted
                         net_cash_flow = total_revenue - total_opex_cash + sales_tax_collected
     
                         # Accrual after-tax profit (income/self-employment/corp taxes only)
@@ -2013,6 +1999,7 @@ def _core_simulation_and_reports():
                                 remaining_pool["home_studio"] -= joins_home
                                 cs_eligible -= joins_comm_studio
                                 joins = joins_no_access + joins_home + joins_comm_studio
+                                joins += int(locals().get("class_joins_now", 0) or 0)
                                 # Cap onboarding simply
                                 if MAX_ONBOARDINGS_PER_MONTH is not None and joins > MAX_ONBOARDINGS_PER_MONTH:
                                     joins = MAX_ONBOARDINGS_PER_MONTH

@@ -1069,7 +1069,7 @@ def _core_simulation_and_reports():
                             active_members.append({
                                 "type": archetype,
                                 "start_month": month,
-                                "monthly_fee": MEMBER_ARCHETYPES[archetype]["monthly_fee"],
+                                "monthly_fee": float(price),
                                 "clay_bags": MEMBER_ARCHETYPES[archetype]["clay_bags"],
                                 # NEW: record source to enable later analytics/retention tweaks
                                 "src": "class" if i < n_from_class else "other",
@@ -1960,7 +1960,7 @@ def _core_simulation_and_reports():
                                     active_members.append({
                                         "type": arch,
                                         "start_month": month,
-                                        "monthly_fee": MEMBER_ARCHETYPES[arch]["monthly_fee"],
+                                        "monthly_fee": float(price),
                                         "clay_bags": MEMBER_ARCHETYPES[arch]["clay_bags"],
                                         "src": "class" if i < n_from_class else "other",
                                     })

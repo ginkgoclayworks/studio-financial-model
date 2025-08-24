@@ -1879,7 +1879,7 @@ def _core_simulation_and_reports():
                             grant_month = scen_cfg["grant_month"]; grant_amount = scen_cfg["grant_amount"]
                             min_cash = float("inf")
                             
-                                 +    # --- Workshops state (mirror main sim loop) ---
+                            # --- Workshops state (mirror main sim loop) ---
                             # Build only when enabled; otherwise keep zero series.
                             stream = {}
                             stream["workshop_revenue"] = np.zeros(MONTHS)

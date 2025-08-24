@@ -450,6 +450,31 @@ AWARENESS_RAMP_MONTHS = 4
 AWARENESS_RAMP_START_MULT = 0.5
 AWARENESS_RAMP_END_MULT = 1.0
 
+# ==== Compartment join model (first principles) ====
+# Toggle: "baseline" (current behavior) or "compartment" (first principles)
+JOIN_MODEL = str(globals().get("JOIN_MODEL", "compartment")).lower()
+
+# Initial pool stocks (people not yet members) — defaults 0 to respect zero-boundary
+NO_ACCESS_POOL = int(globals().get("NO_ACCESS_POOL", 0))
+HOME_POOL      = int(globals().get("HOME_POOL", 0))
+COMMUNITY_POOL = int(globals().get("COMMUNITY_POOL", 0))
+
+# Monthly inflow (new people entering each pool) — defaults 0
+NO_ACCESS_INFLOW   = int(globals().get("NO_ACCESS_INFLOW", 0))
+HOME_INFLOW        = int(globals().get("HOME_INFLOW", 0))
+COMMUNITY_INFLOW   = int(globals().get("COMMUNITY_INFLOW", 0))
+
+# Per-segment baseline join hazards (per capita per month) — defaults 0
+BASELINE_RATE_NO_ACCESS = float(globals().get("BASELINE_RATE_NO_ACCESS", 0.0))
+BASELINE_RATE_HOME      = float(globals().get("BASELINE_RATE_HOME", 0.0))
+BASELINE_RATE_COMMUNITY = float(globals().get("BASELINE_RATE_COMMUNITY", 0.0))
+
+def _haz_to_prob(lam: float) -> float:
+    """Convert monthly hazard to probability in [0,1]."""
+    if lam <= 0.0:
+        return 0.0
+    return float(1.0 - np.exp(-float(lam)))
+
 # Capacity & utilization
 OPEN_HOURS_PER_WEEK = 16 * 7  # 112 hours
 STATIONS = {
@@ -761,7 +786,12 @@ def _core_simulation_and_reports():
                     active_members = []
                     
                     # --- Market pool state for this simulation ---
-                    remaining_pool = MARKET_POOLS.copy()
+
+                    remaining_pool = {
+                        "community_studio": int(COMMUNITY_POOL),
+                        "home_studio":      int(HOME_POOL),
+                        "no_access":        int(NO_ACCESS_POOL),
+                    }
     
                     # Community-studio: track an "eligible to switch" sub-pool.
                     cs_eligible = 0
@@ -930,12 +960,21 @@ def _core_simulation_and_reports():
                             wom_mult * capacity_damping * noise * price_mult
                         )
                     
-    
-                        pool_intents = {
-                            "no_access":        POOL_BASE_INTENT["no_access"]        * intent_common_mult,
-                            "home_studio":      POOL_BASE_INTENT["home_studio"]      * intent_common_mult,
-                            "community_studio": POOL_BASE_INTENT["community_studio"] * intent_common_mult,  # applies only to cs_eligible
-                        }
+                        if JOIN_MODEL == "compartment":
+                            lam_no   = max(0.0, BASELINE_RATE_NO_ACCESS * intent_common_mult)
+                            lam_home = max(0.0, BASELINE_RATE_HOME      * intent_common_mult)
+                            lam_comm = max(0.0, BASELINE_RATE_COMMUNITY * intent_common_mult)
+                            pool_intents = {
+                                "no_access":        _haz_to_prob(lam_no),
+                                "home_studio":      _haz_to_prob(lam_home),
+                                "community_studio": _haz_to_prob(lam_comm),  # applies only to cs_eligible
+                            }
+                        else:
+                            pool_intents = {
+                                "no_access":        POOL_BASE_INTENT["no_access"]        * intent_common_mult,
+                                "home_studio":      POOL_BASE_INTENT["home_studio"]      * intent_common_mult,
+                                "community_studio": POOL_BASE_INTENT["community_studio"] * intent_common_mult,  # applies only to cs_eligible
+                            }
     
                         # Draw adopters from each pool
                         joins_no_access   = draw_adopters(remaining_pool["no_access"],      pool_intents["no_access"], rng)
@@ -961,27 +1000,30 @@ def _core_simulation_and_reports():
                         remaining_supply = remaining_pool["no_access"] + remaining_pool["home_studio"] + cs_eligible
                         referral_joins = int(min(referral_joins, remaining_supply))
     
-                        # Baseline joins (capacity-aware trickle). Allocate like referrals, respecting remaining supply.
-                        cap_ratio = len(active_members) / max(1.0, MEMBERSHIP_SOFT_CAP)
-                        baseline_capacity_factor = max(0.0, 1.0 - cap_ratio**CAPACITY_DAMPING_BETA)
-                        baseline_demand = int(rng.poisson(BASELINE_JOIN_RATE * MEMBERSHIP_SOFT_CAP * baseline_capacity_factor))
-    
-                        remaining_supply = remaining_pool["no_access"] + remaining_pool["home_studio"] + cs_eligible
-                        baseline_demand = min(baseline_demand, int(remaining_supply))
-    
-                        bn_no_access = min(baseline_demand, remaining_pool["no_access"])
-                        remaining_pool["no_access"] -= bn_no_access
-                        spill = baseline_demand - bn_no_access
-    
-                        bn_cs = min(spill, cs_eligible)
-                        cs_eligible -= bn_cs
-                        spill -= bn_cs
-    
-                        bn_home = min(spill, remaining_pool["home_studio"])
-                        remaining_pool["home_studio"] -= bn_home
-    
-                        baseline_joins = bn_no_access + bn_cs + bn_home
-                        joins += baseline_joins
+                        if JOIN_MODEL != "compartment":
+                            # Baseline joins (capacity-aware trickle). Allocate like referrals, respecting remaining supply.
+                            cap_ratio = len(active_members) / max(1.0, MEMBERSHIP_SOFT_CAP)
+                            baseline_capacity_factor = max(0.0, 1.0 - cap_ratio**CAPACITY_DAMPING_BETA)
+                            baseline_demand = int(rng.poisson(BASELINE_JOIN_RATE * MEMBERSHIP_SOFT_CAP * baseline_capacity_factor))
+
+                            remaining_supply = remaining_pool["no_access"] + remaining_pool["home_studio"] + cs_eligible
+                            baseline_demand = min(baseline_demand, int(remaining_supply))
+
+                            bn_no_access = min(baseline_demand, remaining_pool["no_access"])
+                            remaining_pool["no_access"] -= bn_no_access
+                            spill = baseline_demand - bn_no_access
+
+                            bn_cs = min(spill, cs_eligible)
+                            cs_eligible -= bn_cs
+                            spill -= bn_cs
+
+                            bn_home = min(spill, remaining_pool["home_studio"])
+                            remaining_pool["home_studio"] -= bn_home
+
+                            baseline_joins = bn_no_access + bn_cs + bn_home
+                            joins += baseline_joins                    
+                        
+                        
                         
                         # apportion referrals
                         ref_no_access = min(referral_joins, remaining_pool["no_access"])
@@ -1873,7 +1915,13 @@ def _core_simulation_and_reports():
     
                             cash_balance = 0.0
                             active_members = []
-                            remaining_pool = MARKET_POOLS.copy()
+
+                            remaining_pool = {
+                                "community_studio": int(COMMUNITY_POOL),
+                                "home_studio":      int(HOME_POOL),
+                                "no_access":        int(NO_ACCESS_POOL),
+                            }
+
                             cs_eligible = 0
                             expansion_triggered = False
                             grant_month = scen_cfg["grant_month"]; grant_amount = scen_cfg["grant_amount"]
@@ -1943,11 +1991,16 @@ def _core_simulation_and_reports():
                                 intent_common_mult = (seasonal * (DOWNTURN_JOIN_MULT if is_downturn else 1.0) *
                                                       awareness_multiplier(month) * wom_multiplier(len(active_members)) *
                                                       capacity_damping * noise * price_mult)
-                                pool_intents = {
-                                    "no_access":        POOL_BASE_INTENT["no_access"]        * intent_common_mult,
-                                    "home_studio":      POOL_BASE_INTENT["home_studio"]      * intent_common_mult,
-                                    "community_studio": POOL_BASE_INTENT["community_studio"] * intent_common_mult,
-                                }
+                                if JOIN_MODEL == "compartment":
+                                    lam_comm = max(0.0, BASELINE_RATE_COMMUNITY * intent_common_mult)
+                                    pool_intents = {
+                                        "community_studio": _haz_to_prob(lam_comm),
+                                    }
+                                else:
+                                    pool_intents = {
+                                        "community_studio": POOL_BASE_INTENT["community_studio"] * intent_common_mult,
+                                    }
+                                
                                 joins_no_access   = draw_adopters(remaining_pool["no_access"],   pool_intents["no_access"],rng)
                                 joins_home        = draw_adopters(remaining_pool["home_studio"], pool_intents["home_studio"],rng)
                                 joins_comm_studio = draw_adopters(cs_eligible,                   pool_intents["community_studio"],rng)

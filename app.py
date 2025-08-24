@@ -34,7 +34,7 @@ PARAM_SPECS = {
     "grant_month":            {"type": "int",   "min": -1, "max": 36, "step": 1, "label": "Grant month (None=-1)"},
     # Optional future levers:
     "PRICE_ELASTICITY":       {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Price elasticity ε"},
-    "REF_PRICE":              {"type": "int",   "min": 50, "max": 500, "step": 10, "label": "Reference price"},
+    "REF_PRICE":              {"type": "int",   "min": 50, "max": 500, "step": 10, "label": "Membership price"},
     "WOM_RATE":               {"type": "float", "min": 0.0, "max": 0.2, "step": 0.005, "label": "Word-of-mouth rate"},
     "MARKETING_SPEND":        {"type": "int",   "min": 0, "max": 20_000, "step": 500, "label": "Marketing spend / mo"},
     "CAC":                    {"type": "int",   "min": 50, "max": 2000, "step": 10, "label": "CAC ($/lead)"},
@@ -914,6 +914,63 @@ STRATEGIES = [
 
 # Sidebar controls
 with st.sidebar:
+    
+    st.markdown("""
+    # 🏺 About This Model
+    
+    ### What this tool does
+    This simulator forecasts the financial health of a ceramics studio.  
+    It combines:
+    
+    - **Your choices** (membership fee, rent, owner draws, event pricing)  
+    - **The environment** (local demand, downturn risk, grants)  
+    - **Studio limits** (capacity, onboarding rates)  
+    
+    and projects how membership, revenue, and cash flow might evolve over time.
+    
+    ---
+    
+    ### How it works
+    Instead of giving one single prediction, the model runs **hundreds of “what-if” futures**.  
+    
+    Each future is slightly different:
+    - Some months more people join, other months fewer  
+    - Sometimes a downturn hits, sometimes not  
+    - Events may sell out, or underperform  
+    
+    By running all these futures, we can:
+    - See the **average path** (most likely outcome)  
+    - Understand the **range of outcomes** (best- to worst-case)  
+    - Plan for **resilience** (how much buffer is needed if things don’t go perfectly)  
+    
+    This approach is called a **Monte Carlo simulation**.  
+    Think of it like rolling dice many times to see the full spread of results, instead of relying on a single roll.
+    
+    ---
+    
+    ### How to read the charts
+    The plots show *possible futures*:
+    
+    - **Dark shaded band** = most common outcomes  
+    - **Light shaded band** = less common but possible  
+    - **Solid line** = average outcome across all runs  
+    
+    Don’t treat the model as a crystal ball.  
+    Treat it as a **flight simulator for business strategy** — a safe place to test different decisions before committing to them.
+    
+    ---
+    
+    ### Why it’s useful
+    - **Transparent** – all assumptions are editable.  
+    - **Flexible** – compare different strategies and macro conditions.  
+    - **Practical** – highlights break-even points, cash runway, and financial risks.  
+    
+    ---
+    
+    <small>*For technical readers: The engine is a monthly, stochastic simulator implemented in Python. It merges environment presets (`env`) with strategy presets (`strat`), applies price elasticity, downturn shocks, and tenure-based churn, then runs Monte Carlo ensembles (100–500 simulations) to generate probability bands.*</small>
+    """)
+    
+    
     st.header("Configuration")
     st.caption("Hover over any label for a short explanation.")
     st.session_state["_show_hints"] = st.toggle(

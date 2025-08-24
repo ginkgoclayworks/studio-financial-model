@@ -60,6 +60,10 @@ ALLOWED_OVERRIDES: Dict[str, str] = {
     # membership/capacity
     "MAX_MEMBERS": "MAX_MEMBERS",
     "PRICE": "PRICE",
+    "REFERENCE_PRICE": "REFERENCE_PRICE",
+    "JOIN_PRICE_ELASTICITY": "JOIN_PRICE_ELASTICITY",
+    "CHURN_PRICE_ELASTICITY": "CHURN_PRICE_ELASTICITY",
+
 }
 
 
@@ -128,7 +132,7 @@ def _prefer_modular_run(overrides: Optional[dict]) -> Optional[Tuple[pd.DataFram
         df = art["results_df"]
         # Capture a few effective knobs if present; otherwise synthesize from cfg
         eff_keys = [
-            "MONTHS", "N_SIMULATIONS", "PRICE", "PRICE_ELASTICITY",
+            "MONTHS", "N_SIMULATIONS", "PRICE", "JOIN_PRICE_ELASTICITY", "CHURN_PRICE_ELASTICITY",
             "RENT_SCENARIOS", "OWNER_DRAW_SCENARIOS",
             "DOWNTURN_PROB_PER_MONTH", "CAPACITY_SOFT_CAP", "RANDOM_SEED",
         ]
@@ -181,7 +185,7 @@ def run_original_once(script_path: str, overrides: dict | None = None):
 
     # Snapshot a few effective globals for tooling
     keys = [
-        "MONTHS", "N_SIMULATIONS", "PRICE", "PRICE_ELASTICITY",
+        "MONTHS", "N_SIMULATIONS", "PRICE", "JOIN_PRICE_ELASTICITY", "CHURN_PRICE_ELASTICITY",
         "RENT_SCENARIOS", "OWNER_DRAW_SCENARIOS",
         "DOWNTURN_PROB_PER_MONTH", "CAPACITY_SOFT_CAP", "RANDOM_SEED",
     ]

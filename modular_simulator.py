@@ -20,7 +20,7 @@ OVERVIEW
 
 KEY DIALS TO TUNE
 - Acquisition: MARKET_POOLS, POOL_BASE_INTENT, AWARENESS_*, WOM_Q, WOM_SATURATION, REFERRAL_RATE_PER_MEMBER, REFERRAL_CONV,
-  PRICE, REF_PRICE, PRICE_ELASTICITY, DOWNTURN_*.
+  PRICE, PRICE_ELASTICITY, DOWNTURN_*.
 - Switching windows: CLASS_TERM_MONTHS, CS_UNLOCK_FRACTION_PER_TERM.
 - Capacity feel: STATIONS[*]{capacity, alpha, kappa}, CAPACITY_DAMPING_BETA, OPEN_HOURS_PER_WEEK.
 - Retention: ARCHETYPE_MONTHLY_CHURN, tenure multipliers (early, steady, late), UTILIZATION_CHURN_UPLIFT.
@@ -41,7 +41,7 @@ MONTHLY FLOW (t = 0..T-1)
      W_t  = 1 + WOM_Q * (N_t / WOM_SATURATION)
      D_t  = max(0, 1 - (N_t / SoftCap) ** CAPACITY_DAMPING_BETA)
      ε_t  ~ LogNormal(mean=-(σ^2)/2, sigma=ADOPTION_SIGMA)  # mean-one noise
-     M_price = (REF_PRICE / PRICE) ** PRICE_ELASTICITY
+
 
 3) Organic joins (binomial by pool):
    p_pool = BASE_INTENT_pool * F_t
@@ -401,15 +401,6 @@ DESIGNATED_STUDIO_COUNT = 2
 DESIGNATED_STUDIO_PRICE = 300.0
 DESIGNATED_STUDIO_BASE_OCCUPANCY = 0.3
 
-# Workshops
-WORKSHOP_PROB_PER_MONTH = 0.6
-WORKSHOP_MAX_ATTENDEES = 10
-WORKSHOP_TICKET_PRICE = 80.0
-WORKSHOP_GUEST_FEE = 500.0
-WORKSHOP_MATERIAL_COST_PER_PERSON = 10.0
-WORKSHOP_OTHER_COSTS = 50.0
-WORKSHOP_REVENUE_SHARE = 1.0
-
 # -------------------------------------------------------------------------
 # Membership Dynamics (churn, adoption, capacity)
 # -------------------------------------------------------------------------
@@ -462,8 +453,8 @@ CAPACITY_DAMPING_BETA = 4
 # Pricing & Referrals
 # -------------------------------------------------------------------------
 PRICE = 175
-REF_PRICE = 200
-PRICE_ELASTICITY = 0.6
+JOIN_PRICE_ELASTICITY = -0.6
+CHURN_PRICE_ELASTICITY = 0.3
 BASELINE_JOIN_RATE = 0.013
 REFERRAL_RATE_PER_MEMBER = 0.06
 REFERRAL_CONV = 0.22
@@ -546,7 +537,8 @@ EFFECTIVE_CONFIG = OrderedDict({
     "MONTHS": _g("MONTHS"),
     "N_SIMULATIONS": _g("N_SIMULATIONS"),
     "PRICE": _g("PRICE"),
-    "PRICE_ELASTICITY": _g("PRICE_ELASTICITY"),
+    "JOIN_PRICE_ELASTICITY": _g("JOIN_PRICE_ELASTICITY"),
+    "CHURN_PRICE_ELASTICITY": _g("CHURN_PRICE_ELASTICITY"),
     "RENT_SCENARIOS": _ser(_g("RENT_SCENARIOS")),
     "OWNER_DRAW_SCENARIOS": _ser(_g("OWNER_DRAW_SCENARIOS")),
     # Macro / growth levers
@@ -757,9 +749,6 @@ def _core_simulation_and_reports():
                     insolvent_before_grant = False
                     grant_month = scen_cfg["grant_month"]
                     grant_amount = scen_cfg["grant_amount"]
-    
-                    # Diagnostic: which months had workshops in this sim
-                    workshop_month_flags = []
                     
                     # >>> BEGIN classes: per-simulation state
                     pending_class_conversions = {}   # {target_month: count}
@@ -771,7 +760,6 @@ def _core_simulation_and_reports():
                     stream["joins_from_workshops"] = np.zeros(MONTHS, dtype=int)
                     # Precompute monthly workshops using UI-configured knobs
                     apply_workshops(stream, globals(), MONTHS)
-                    workshop_conv_queue = np.zeros(MONTHS, dtype=int)
                     
                     # >>> END workshops
                     
@@ -783,6 +771,46 @@ def _core_simulation_and_reports():
                     sales_tax_payable_accum = 0.0         # accrued sales tax to remit
                     tax_payments_this_month = 0.0         # cash paid this month for taxes
     
+                    # >>> BEGIN events: capture config-driven knobs once per simulation
+                    _g = globals()
+                    events_enabled       = bool(_g.get("EVENTS_ENABLED", True))
+                    events_max_per_month = int(_g.get("EVENTS_MAX_PER_MONTH", 4))
+                    base_lambda          = float(_g.get("BASE_EVENTS_PER_MONTH_LAMBDA", 3.0))
+                    ticket_price         = float(_g.get("TICKET_PRICE", 75.0))
+                    attendees_range      = list(_g.get("ATTENDEES_PER_EVENT_RANGE", [8, 10, 12]))
+                    mug_cost_range       = tuple(_g.get("EVENT_MUG_COST_RANGE", (4.5, 7.5)))
+                    consumables_pp       = float(_g.get("EVENT_CONSUMABLES_PER_PERSON", 2.5))
+                    staff_rate_hr        = float(_g.get("EVENT_STAFF_RATE_PER_HOUR", 22.0))
+                    hours_per_event      = float(_g.get("EVENT_HOURS_PER_EVENT", 2.0))
+                    # >>> END events
+                    
+                    _g = globals()
+                    
+                    # --- Pricing elasticity setup (fixed baseline) ---
+                    price = float(globals().get("PRICE", 165.0))
+                    reference_price = float(globals().get("REFERENCE_PRICE", price))  # default to current price if missing
+                    join_eps  = float(globals().get("JOIN_PRICE_ELASTICITY", -0.6))  # negative
+                    churn_eps = float(globals().get("CHURN_PRICE_ELASTICITY",  0.3))  # positive
+
+                    def _pmult(p, pref, eps):
+                        if pref <= 0:
+                            return 1.0
+                        m = (max(p, 1e-9) / pref) ** eps
+                        return float(np.clip(m, 0.25, 4.0))  # safety caps
+
+                    price_mult_joins = _pmult(price, reference_price, join_eps)
+                    price_mult_churn = _pmult(price, reference_price, churn_eps)
+                    
+                    def _pmult(p, pref, eps):
+                        if pref <= 0:
+                            return 1.0
+                        # guard against absurd magnitudes
+                        m = (max(p, 1e-9) / pref) ** eps
+                        return float(np.clip(m, 0.25, 4.0))  # cap impact; tweak bounds if you like
+                    
+                    price_mult_joins = _pmult(price, reference_price, join_eps)
+                    price_mult_churn = _pmult(price, reference_price, churn_eps)
+                    
                     for month in range(MONTHS):
                         
                         # Reset SE wage base every January
@@ -827,10 +855,6 @@ def _core_simulation_and_reports():
                             class_joins_now = int(pending_class_conversions.pop(month, 0))
                             # gate by available supply and MAX_ONBOARDINGS_PER_MONTH later
                         
-                        
-                        
-                        
-                        
                         # Replenish pools each month  <-- ADD THESE LINES
                         for _k, _v in MARKET_POOLS_INFLOW.items():
                             remaining_pool[_k] += int(_v)
@@ -856,8 +880,8 @@ def _core_simulation_and_reports():
                         noise = rng.lognormal(mean=-(ADOPTION_SIGMA**2)/2, sigma=ADOPTION_SIGMA)
                         
                         # --- price elasticity multiplier (cheaper than reference => higher intent)
-                        price_mult = (REF_PRICE / max(1e-6, PRICE)) ** PRICE_ELASTICITY
-    
+                        price_mult = price_mult_joins
+                        
                         intent_common_mult = (
                             seasonal_mult * downturn_join_mult * awareness_mult *
                             wom_mult * capacity_damping * noise * price_mult
@@ -932,7 +956,7 @@ def _core_simulation_and_reports():
                             + baseline_joins
                             + referral_joins
                         )
-                        joins += int(workshop_conv_queue[month])
+                        joins += int(stream["joins_from_workshops"][month])
     
                      # If onboarding capped, roll back proportionally across ALL sources (incl baseline & referrals)
                         if MAX_ONBOARDINGS_PER_MONTH is not None and joins > MAX_ONBOARDINGS_PER_MONTH:
@@ -1022,6 +1046,7 @@ def _core_simulation_and_reports():
     
                             p_leave = month_churn_prob(m["type"], tenure_mo=tenure)
                             p_leave *= churn_mult                         # downturn regime
+                            p_leave *= price_mult_churn 
                             p_leave *= (1.0 + UTILIZATION_CHURN_UPLIFT * util_over)  # crowding
                             p_leave *= scm                                # 🔸 seasonality
                             p_leave = float(np.clip(p_leave, 0.0, 0.99))
@@ -1054,54 +1079,29 @@ def _core_simulation_and_reports():
                         revenue_events_gross = 0.0
                         events_cost_materials = 0.0
                         events_cost_labor = 0.0
-    
+
                         events_this_month = 0
-                        if EVENTS_ENABLED:
-                            events_this_month = int(np.clip(rng.poisson(BASE_EVENTS_PER_MONTH_LAMBDA * seasonal), 0, EVENTS_MAX_PER_MONTH))
+                        if events_enabled:
+                            # seasonality: keep your existing normalization
+                            seasonal = SEASONALITY_WEIGHTS_NORM[month % 12]
+                            # stochastic event count with hard cap
+                            lam = max(0.0, base_lambda * seasonal)
+                            events_this_month = int(np.clip(rng.poisson(lam), 0, events_max_per_month))
+
                             for _ in range(events_this_month):
-                                attendees = int(rng.choice(ATTENDEES_PER_EVENT_RANGE))
+                                attendees = int(rng.choice(attendees_range))
                                 # revenue
-                                event_gross = attendees * TICKET_PRICE
+                                event_gross = attendees * ticket_price
                                 revenue_events_gross += event_gross
-                                # material COGS: mugs + consumables
-                                mug_unit_cost = float(rng.uniform(*EVENT_MUG_COST_RANGE))
-                                material_cost = attendees * (mug_unit_cost + EVENT_CONSUMABLES_PER_PERSON)
-                                events_cost_materials += material_cost
-                                # optional labor
-                                events_cost_labor += EVENT_STAFF_RATE_PER_HOUR * EVENT_HOURS_PER_EVENT
-    
-                        # Net revenue from events (what flows into total_revenue)
+                                # materials (mugs + consumables)
+                                mugs_cost = attendees * rng.uniform(*mug_cost_range)
+                                consumables_cost = attendees * consumables_pp
+                                events_cost_materials += (mugs_cost + consumables_cost)
+                                # labor (optional)
+                                if staff_rate_hr > 0 and hours_per_event > 0:
+                                    events_cost_labor += staff_rate_hr * hours_per_event
+
                         revenue_events = max(0.0, revenue_events_gross - events_cost_materials - events_cost_labor)
-    
-    
-                        # --- Workshops revenue (monthly) ---
-                        events_pm = float(globals().get("WORKSHOPS_PER_MONTH", 0.0))
-                        avg_att   = int(globals().get("WORKSHOP_AVG_ATTENDANCE", 0))
-                        fee       = float(globals().get("WORKSHOP_FEE", 0.0))
-                        var_cost  = float(globals().get("WORKSHOP_COST_PER_EVENT", 0.0))
-                        
-                        attendees_pm = int(round(events_pm * avg_att))
-                        gross_ws = attendees_pm * fee
-                        cost_ws  = events_pm * var_cost
-                        net_ws   = max(0.0, gross_ws - cost_ws)   # ← keep using this in total_revenue later
-                        conv_rate = float(globals().get("WORKSHOP_CONV_RATE", 0.0))
-                        conv_lag  = int(globals().get("WORKSHOP_CONV_LAG_MO", 1))
-                        conv_joins = int(round(attendees_pm * conv_rate))
-                        target_m = min(MONTHS - 1, month + conv_lag)
-                        workshop_conv_queue[target_m] += conv_joins
-                        
-                        if rng.random() < WORKSHOP_PROB_PER_MONTH:
-                            # Stochastic fill 75–100% of max to avoid unrealistic zero or always-full months
-                            fill = rng.uniform(0.75, 1.00)
-                            workshop_attendees = int(round(WORKSHOP_MAX_ATTENDEES * fill))
-    
-                            gross_ws = workshop_attendees * WORKSHOP_TICKET_PRICE * WORKSHOP_REVENUE_SHARE
-                            cost_ws  = WORKSHOP_GUEST_FEE + (workshop_attendees * WORKSHOP_MATERIAL_COST_PER_PERSON) + WORKSHOP_OTHER_COSTS
-    
-                            # Clamp to zero so workshops never reduce total revenue
-                            net_ws = max(0.0, gross_ws - cost_ws)
-                            workshop_month_flags.append(month + 1)
-    
                         
                         # Variable costs
                         variable_clay_cost = (total_clay_lbs / 25) * WHOLESALE_CLAY_COST_PER_BAG
@@ -1768,6 +1768,19 @@ def _core_simulation_and_reports():
                             scen_index = next(i for i, s in enumerate(SCENARIO_CONFIGS) if s["name"] == scen_name)
                             ss = SeedSequence([RANDOM_SEED, int(fixed_rent), int(owner_draw), int(scen_index), int(sim)])
                             rng = default_rng(ss)
+                            
+                            # --- Pricing elasticity setup (fixed baseline) ---
+                            price = float(globals().get("PRICE", 165.0))
+                            reference_price = float(globals().get("REFERENCE_PRICE", price))  # default to current price if missing
+                            join_eps  = float(globals().get("JOIN_PRICE_ELASTICITY", -0.6))  # negative
+                            churn_eps = float(globals().get("CHURN_PRICE_ELASTICITY",  0.3))  # positive
+                            def _pmult(p, pref, eps):
+                                if pref <= 0: 
+                                    return 1.0
+                                m = (max(p, 1e-9) / pref) ** eps
+                                return float(np.clip(m, 0.25, 4.0))  # safety caps
+                            price_mult_joins = _pmult(price, reference_price, join_eps)
+                            price_mult_churn = _pmult(price, reference_price, churn_eps)
                             # --- CapEx and loan sizing (aligned with main sim) ---
                             capex_I_cost = sample_capex(STAGE_I_CAPEX, rng)
                             capex_II_cost = sample_capex(STAGE_II_CAPEX, rng)
@@ -1821,7 +1834,7 @@ def _core_simulation_and_reports():
     
                                 # Joins (coarse – same intent structure)
                                 noise = rng.lognormal(mean=-(ADOPTION_SIGMA**2)/2, sigma=ADOPTION_SIGMA)
-                                price_mult = (REF_PRICE / max(1e-6, PRICE)) ** PRICE_ELASTICITY
+                                price_mult = price_mult_joins
                                 cap_ratio = len(active_members) / max(1.0, MEMBERSHIP_SOFT_CAP)
                                 capacity_damping = max(0.0, 1.0 - cap_ratio**CAPACITY_DAMPING_BETA)
                                 intent_common_mult = (seasonal * (DOWNTURN_JOIN_MULT if is_downturn else 1.0) *
@@ -1862,8 +1875,8 @@ def _core_simulation_and_reports():
                                 kept = []
                                 util_over = max(0.0, (len(active_members) / max(1.0, MEMBERSHIP_SOFT_CAP)) - 1.0)
                                 for m in active_members:
-                                    p_leave = np.clip(month_churn_prob(m["type"], tenure_mo=(month - m["start_month"])) *
-                                                      churn_mult * (1.0 + UTILIZATION_CHURN_UPLIFT * util_over), 0.0, 0.99)
+                                    p_leave = month_churn_prob(m["type"], tenure_mo=(month - m["start_month"])) * churn_mult * price_mult_churn
+                                    p_leave = np.clip(p_leave * (1.0 + UTILIZATION_CHURN_UPLIFT * util_over), 0.0, 0.99)
                                     if rng.random() > p_leave: kept.append(m)
                                 active_members = kept
     

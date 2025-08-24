@@ -1154,7 +1154,7 @@ with st.sidebar:
         with colA:
             ws_per_month = st.slider(
                 "Workshops per month",
-                min_value=0.0, max_value=4, value=1.0, step=0.25,
+                min_value=0.0, max_value=4.0, value=1.0, step=0.25,
                 help="Average number of workshops you expect to host each month. Can be fractional if you only run them some months."
             )
             ws_avg_att = st.slider(

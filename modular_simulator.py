@@ -1328,7 +1328,7 @@ def _core_simulation_and_reports():
                             "revenue_firing": revenue_firing,
                             "revenue_clay": revenue_clay,
                             "revenue_events": revenue_events,
-                            "revenue_workshops_net": net_ws,
+                            "revenue_workshops_net": float(stream["workshop_revenue"][month]),
                             "revenue_designated_studios": revenue_designated_studios,
                             "designated_studio_occupied": ds_occupied,
                             "grant_received": grant_received,

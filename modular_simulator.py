@@ -358,6 +358,26 @@ CLASS_CONV_RATE = 0.12          # fraction converting to members
 CLASS_CONV_LAG_MO = 1           # months after class end
 CLASS_EARLY_CHURN_MULT = 0.8    # first 3–6 months lower churn for converts
 
+# ---- Semester Calendar for Classes ----
+# Switch between monthly classes and 4 terms/year.
+# "semester" mode: classes only run during defined months.
+CLASSES_CALENDAR_MODE = "semester"  # options: "semester", "monthly"
+CLASS_SEMESTER_LENGTH_MONTHS = 3    # e.g., 3-month terms
+# Start months within a year (0=Jan, 3=Apr, 6=Jul, 9=Oct)
+CLASS_SEMESTER_START_MONTHS = [0, 3, 6, 9]
+
+def _is_class_month(month: int) -> bool:
+    """Return True if classes run in this month under the configured calendar."""
+    if not CLASSES_ENABLED:
+        return False
+    if CLASSES_CALENDAR_MODE == "monthly":
+        return True
+    m = month % 12
+    for start in CLASS_SEMESTER_START_MONTHS:
+        # Within the window [start, start+length)
+        if 0 <= (m - start) < CLASS_SEMESTER_LENGTH_MONTHS:
+            return True
+    return False
 
 # -------------------------------------------------------------------------
 # Revenue: Memberships
@@ -829,7 +849,29 @@ def _core_simulation_and_reports():
                         class_students_this_month = 0
                         revenue_classes = 0
                         
-                        if CLASSES_ENABLED:
+                        # if CLASSES_ENABLED:
+                        #     # stochastic fill around mean
+                        #     for _ in range(int(CLASS_COHORTS_PER_MONTH)):
+                        #         fill = rng.normal(CLASS_FILL_MEAN, 0.08)
+                        #         fill = float(np.clip(fill, 0.0, 1.0))
+                        #         seats = int(round(CLASS_CAP_PER_COHORT * fill))
+                        #         class_students_this_month += seats
+                        #         revenue_classes_gross += seats * CLASS_PRICE
+                        #         classes_cost += (seats * CLASS_COST_PER_STUDENT) + (CLASS_INSTR_RATE_PER_HR * CLASS_HOURS_PER_COHORT)
+                        
+                        #     # schedule conversion of a fraction of students to members after a lag
+                        #     # keep a small queue keyed by target month
+                        #     if month == 0:
+                        #         pending_class_conversions = {}
+                        #     target_m = month + int(CLASS_CONV_LAG_MO)
+                        #     converts = int(round(class_students_this_month * CLASS_CONV_RATE))
+                        #     if converts > 0:
+                        #         pending_class_conversions[target_m] = pending_class_conversions.get(target_m, 0) + converts
+                        #      # Net class revenue (flow into total_revenue)
+                        #     revenue_classes = max(0.0, revenue_classes_gross - classes_cost)
+    
+                        # Classes (semester-aware if enabled)
+                        if CLASSES_ENABLED and _is_class_month(month):
                             # stochastic fill around mean
                             for _ in range(int(CLASS_COHORTS_PER_MONTH)):
                                 fill = rng.normal(CLASS_FILL_MEAN, 0.08)
@@ -838,18 +880,18 @@ def _core_simulation_and_reports():
                                 class_students_this_month += seats
                                 revenue_classes_gross += seats * CLASS_PRICE
                                 classes_cost += (seats * CLASS_COST_PER_STUDENT) + (CLASS_INSTR_RATE_PER_HR * CLASS_HOURS_PER_COHORT)
-                        
+                
                             # schedule conversion of a fraction of students to members after a lag
-                            # keep a small queue keyed by target month
-                            if month == 0:
+                            if 'pending_class_conversions' not in locals():
                                 pending_class_conversions = {}
                             target_m = month + int(CLASS_CONV_LAG_MO)
                             converts = int(round(class_students_this_month * CLASS_CONV_RATE))
                             if converts > 0:
                                 pending_class_conversions[target_m] = pending_class_conversions.get(target_m, 0) + converts
-                             # Net class revenue (flow into total_revenue)
-                            revenue_classes = max(0.0, revenue_classes_gross - classes_cost)
-    
+                
+                            # Net class revenue (adds into total_revenue)
+                            revenue_classes = max(0.0, revenue_classes_gross - classes_cost)    
+                        # conversions materialize this month    
                         class_joins_now = 0
                         if CLASSES_ENABLED and 'pending_class_conversions' in locals():
                             class_joins_now = int(pending_class_conversions.pop(month, 0))
@@ -1838,10 +1880,41 @@ def _core_simulation_and_reports():
     
                             for month in range(MONTHS):
                                 seasonal = SEASONALITY_WEIGHTS_NORM[month % 12]
-                                
                                 is_downturn = (rng.random() < DOWNTURN_PROB_PER_MONTH)
                                 churn_mult = DOWNTURN_CHURN_MULT if is_downturn else 1.0
-                                
+                            
+                                # ----- Beginner classes (optional, semester-aware) -----
+                                revenue_classes_gross = 0.0
+                                classes_cost = 0.0
+                                class_students_this_month = 0
+                                revenue_classes = 0.0
+                            
+                                if CLASSES_ENABLED and _is_class_month(month):
+                                    # stochastic fill around mean
+                                    for _ in range(int(CLASS_COHORTS_PER_MONTH)):
+                                        fill = rng.normal(CLASS_FILL_MEAN, 0.08)
+                                        fill = float(np.clip(fill, 0.0, 1.0))
+                                        seats = int(round(CLASS_CAP_PER_COHORT * fill))
+                                        class_students_this_month += seats
+                                        revenue_classes_gross += seats * CLASS_PRICE
+                                        classes_cost += (seats * CLASS_COST_PER_STUDENT) + (CLASS_INSTR_RATE_PER_HR * CLASS_HOURS_PER_COHORT)
+                            
+                                    # schedule conversion of a fraction of students to members after a lag
+                                    # keep a small queue keyed by target month
+                                    if month == 0:
+                                        pending_class_conversions = {}
+                                    target_m = month + int(CLASS_CONV_LAG_MO)
+                                    converts = int(round(class_students_this_month * CLASS_CONV_RATE))
+                                    if converts > 0:
+                                        pending_class_conversions[target_m] = pending_class_conversions.get(target_m, 0) + converts
+                            
+                                    # Net class revenue (flow into total_revenue)
+                                    revenue_classes = max(0.0, revenue_classes_gross - classes_cost)
+                            
+                                # conversions materialize this month (if any)
+                                class_joins_now = 0
+                                if CLASSES_ENABLED and 'pending_class_conversions' in locals():
+                                    class_joins_now = int(pending_class_conversions.pop(month, 0))
     
                                 # Replenish pools each month
                                 for _k, _v in MARKET_POOLS_INFLOW.items():

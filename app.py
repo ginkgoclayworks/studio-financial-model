@@ -836,6 +836,9 @@ def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: Optional[str] 
         df_cell["simulation_id"] = 0
     return df_cell, eff, cap.images, cap.manifest
 
+if st.sidebar.button("Clear cache"):
+        run_cell_cached.clear()  # Streamlit 1.25+: .clear() on the function
+        st.sidebar.success("Cache cleared.")
 
 # ---------- column detection & timings (robust) ----------
 def pick_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
@@ -1222,28 +1225,75 @@ with st.sidebar:
         )
     
     with st.expander("Workshops", expanded=False):
-        strat_workshops = render_param_controls(
-            "Workshops", _subset(strat, GROUPS["workshops"]),
-            group_keys=GROUPS["workshops"], prefix="strat_workshops"
+        ws_enabled = st.checkbox(
+            "Enable workshops (monthly)",
+            value=True,
+            help="Turn monthly workshop modeling on/off. When off, workshop revenue and conversions are zero."
         )
-        st.caption("Adds workshop net revenue each month; some attendees convert to members after the lag.")
-        try:
-            if bool(strat_workshops.get("WORKSHOPS_ENABLED", False)):
-                wpm   = float(strat_workshops.get("WORKSHOPS_PER_MONTH", 0))
-                avg_n = float(strat_workshops.get("WORKSHOP_AVG_ATTENDANCE", 0))
-                fee   = float(strat_workshops.get("WORKSHOP_FEE", 0))
-                cost  = float(strat_workshops.get("WORKSHOP_COST_PER_EVENT", 0))
-                conv  = float(strat_workshops.get("WORKSHOP_CONV_RATE", 0))
-                lag   = int(strat_workshops.get("WORKSHOP_CONV_LAG_MO", 1))
-                attendees = int(round(wpm * avg_n))
-                net_rev   = int(round(attendees * fee - wpm * cost))
-                converts  = int(round(attendees * conv))
-                st.markdown(
-                    f"• ≈ **{attendees}** attendees/mo → net ≈ **${net_rev:,}**; "
-                    f"**{converts}** new members after **{lag}** mo"
-                )
-        except Exception:
-            pass
+    
+        colA, colB = st.columns(2)
+    
+        with colA:
+            ws_per_month = st.slider(
+                "Workshops per month",
+                min_value=0.0, max_value=8.0, value=1.0, step=0.25,
+                help="Average number of workshops you expect to host each month. Can be fractional if you only run them some months."
+            )
+            ws_avg_att = st.slider(
+                "Avg attendees per workshop",
+                min_value=0, max_value=24, value=10, step=1,
+                help="Typical headcount per workshop. Used to estimate both revenue and conversions."
+            )
+            ws_conv_rate = st.slider(
+                "Attendee → Member conversion",
+                min_value=0.0, max_value=0.5, value=0.10, step=0.01,
+                help="Fraction of attendees who later become members. Example: 0.10 means 10% convert."
+            )
+            ws_conv_lag = st.slider(
+                "Conversion lag (months)",
+                min_value=0, max_value=6, value=1, step=1,
+                help="Delay between the workshop and when new members from that workshop actually join."
+            )
+    
+        with colB:
+            ws_fee = st.slider(
+                "Workshop fee per attendee ($)",
+                min_value=0, max_value=300, value=85, step=5,
+                help="Ticket price paid by each attendee."
+            )
+            ws_var_cost = st.slider(
+                "Variable cost per workshop ($)",
+                min_value=0, max_value=1000, value=50, step=10,
+                help="Your per‑event costs (guest instructor honorarium, space share, snacks, etc.)."
+            )
+    
+        # --- Live preview of what these inputs imply (only a UI hint; simulator is authoritative) ---
+        if ws_enabled:
+            attendees_pm = ws_per_month * ws_avg_att
+            gross_pm = attendees_pm * ws_fee
+            cost_pm = ws_per_month * ws_var_cost
+            net_pm = max(0.0, gross_pm - cost_pm)
+            conv_pm = attendees_pm * ws_conv_rate  # these join after ws_conv_lag months
+    
+            st.caption(
+                f"• ≈ **{attendees_pm:.0f} attendees/month** → gross ≈ **${gross_pm:,.0f}**, "
+                f"cost ≈ **${cost_pm:,.0f}**, **net ≈ ${net_pm:,.0f}**; "
+                f"≈ **{conv_pm:.1f}** new members after **{ws_conv_lag} mo**."
+            )
+        else:
+            st.caption("• Workshops disabled — no workshop revenue or conversions will be added.")
+    
+        # push into your config dict the simulator uses (adjust keys to match your cfg)
+        workshops_cfg = {
+            "WORKSHOPS_ENABLED": ws_enabled,
+            "WORKSHOPS_PER_MONTH": float(ws_per_month),
+            "WORKSHOP_AVG_ATTENDANCE": int(ws_avg_att),
+            "WORKSHOP_FEE": float(ws_fee),
+            "WORKSHOP_COST_PER_EVENT": float(ws_var_cost),
+            "WORKSHOP_CONV_RATE": float(ws_conv_rate),
+            "WORKSHOP_CONV_LAG_MO": int(ws_conv_lag),
+        }
+        # merge `workshops_cfg` into the env/strat/cfg you pass to the simulator
     
     with st.expander("Beginner Classes", expanded=False):
         strat_classes = render_param_controls(
@@ -1321,9 +1371,7 @@ with st.sidebar:
 
     run_btn = st.button("Run simulation", type="primary")
 
-    if st.sidebar.button("Clear cache"):
-        run_cell_cached.clear()  # Streamlit 1.25+: .clear() on the function
-        st.sidebar.success("Cache cleared.")
+    
 
 # Tabs
 tab_run, tab_matrix = st.tabs(["Single run", "Matrix heatmaps"])

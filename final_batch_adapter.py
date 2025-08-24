@@ -1,6 +1,6 @@
 # batch_adapter.py
 from __future__ import annotations
-
+import json
 import os
 import runpy
 from types import SimpleNamespace
@@ -36,6 +36,9 @@ ALLOWED_OVERRIDES: Dict[str, str] = {
     "BASE_EVENTS_PER_MONTH_LAMBDA": "BASE_EVENTS_PER_MONTH_LAMBDA",
     "EVENT_STAFF_RATE_PER_HOUR": "EVENT_STAFF_RATE_PER_HOUR",
     "EVENT_HOURS_PER_EVENT": "EVENT_HOURS_PER_EVENT",
+    "ATTENDEES_PER_EVENT_RANGE": "ATTENDEES_PER_EVENT_RANGE",      # NEW
+    "EVENT_MUG_COST_RANGE": "EVENT_MUG_COST_RANGE",                # NEW
+    "EVENT_CONSUMABLES_PER_PERSON": "EVENT_CONSUMABLES_PER_PERSON", # NEW
 
     # classes
     "CLASSES_ENABLED": "CLASSES_ENABLED",
@@ -76,6 +79,17 @@ def _row_to_overrides(row: pd.Series) -> dict:
                 ov[internal_key] = int(val)
             elif external_key in {"EVENTS_ENABLED", "CLASSES_ENABLED"}:
                 ov[internal_key] = bool(val)
+            elif external_key in {"ATTENDEES_PER_EVENT_RANGE", "EVENT_MUG_COST_RANGE"}:
+                v = row[external_key]
+                if isinstance(v, str):
+                    try:
+                        v = json.loads(v)
+                    except Exception:
+                        # fallback: comma-separated "8,10,12"
+                        v = [float(x) for x in str(v).split(",")]
+                ov[internal_key] = v
+            elif external_key == "EVENT_CONSUMABLES_PER_PERSON":
+                ov[internal_key] = float(row[external_key])
             else:
                 ov[internal_key] = float(val) if isinstance(val, (int, float, np.integer, np.floating)) else val
     return ov

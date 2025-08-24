@@ -1284,7 +1284,7 @@ with st.sidebar:
             st.caption("• Workshops disabled — no workshop revenue or conversions will be added.")
     
         # push into your config dict the simulator uses (adjust keys to match your cfg)
-        workshops_cfg = {
+        strat_workshops = {
             "WORKSHOPS_ENABLED": ws_enabled,
             "WORKSHOPS_PER_MONTH": float(ws_per_month),
             "WORKSHOP_AVG_ATTENDANCE": int(ws_avg_att),

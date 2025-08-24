@@ -1000,6 +1000,11 @@ def _core_simulation_and_reports():
                         remaining_supply = remaining_pool["no_access"] + remaining_pool["home_studio"] + cs_eligible
                         referral_joins = int(min(referral_joins, remaining_supply))
     
+                        bn_no_access = 0
+                        bn_home = 0
+                        bn_cs = 0
+                        baseline_joins = 0
+
                         if JOIN_MODEL != "compartment":
                             # Baseline joins (capacity-aware trickle). Allocate like referrals, respecting remaining supply.
                             cap_ratio = len(active_members) / max(1.0, MEMBERSHIP_SOFT_CAP)
@@ -1045,7 +1050,7 @@ def _core_simulation_and_reports():
                              + referral_joins
                              + (int(stream["joins_from_workshops"][month]) if globals().get("WORKSHOPS_ENABLED", False) else 0)
                          )
-                        joins += int(stream["joins_from_workshops"][month])
+                      
     
                      # If onboarding capped, roll back proportionally across ALL sources (incl baseline & referrals)
                         if MAX_ONBOARDINGS_PER_MONTH is not None and joins > MAX_ONBOARDINGS_PER_MONTH:

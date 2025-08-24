@@ -32,9 +32,8 @@ PARAM_SPECS = {
     "MARKET_POOLS_INFLOW": {"type": "market_inflow", "label": "Market inflow"},
     "grant_amount":           {"type": "int",   "min": 0, "max": 100_000, "step": 1000, "label": "Grant amount"},
     "grant_month":            {"type": "int",   "min": -1, "max": 36, "step": 1, "label": "Grant month (None=-1)"},
-    # Optional future levers:
-    "PRICE_ELASTICITY":       {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Price elasticity ε"},
-    "REF_PRICE":              {"type": "int",   "min": 50, "max": 500, "step": 10, "label": "Reference price for elasticity calculation"},
+    "JOIN_PRICE_ELASTICITY":  {"type": "float", "min": -2.0, "max": 0.0, "step": 0.05, "label": "Join price elasticity ε (neg)"},
+    "CHURN_PRICE_ELASTICITY": {"type": "float", "min":  0.0, "max": 2.0, "step": 0.05, "label": "Churn price elasticity ε (pos)"},
     "WOM_RATE":               {"type": "float", "min": 0.0, "max": 0.2, "step": 0.005, "label": "Word-of-mouth rate"},
     "MARKETING_SPEND":        {"type": "int",   "min": 0, "max": 20_000, "step": 500, "label": "Marketing spend / mo"},
     "CAC":                    {"type": "int",   "min": 50, "max": 2000, "step": 10, "label": "CAC ($/lead)"},
@@ -113,14 +112,6 @@ ENV_SPEC_META = {
     "grant_month": {
         "desc": "When the grant arrives (−1 = no grant). Month 0 is the start of operations.",
         "rec": (0, 12)
-    },
-    "PRICE_ELASTICITY": {
-        "desc": "Sensitivity of joins to price. 0 = insensitive; higher values mean price changes move demand more.",
-        "rec": (0.1, 0.6)
-    },
-    "REF_PRICE": {
-        "desc": "Anchor price used for modeling price sensitivity (does not force your actual price; it shapes elasticity math).",
-        "rec": (120, 220)
     },
     "WOM_RATE": {
         "desc": "Word-of-mouth strength. Approx fraction of members who generate a qualified lead each month.",
@@ -217,30 +208,8 @@ for key, meta in STRAT_SPEC_META.items():
 
 SCRIPT = "modular_simulator.py"   # your core simulator
 
-# --- Group definitions ---
+# --- Group definitions --
 
-# GROUPS = {
-#     # Scenario-owned
-#     "Income_env":   ["WOM_RATE", "LEAD_TO_JOIN_RATE", "MAX_ONBOARD_PER_MONTH"],
-#     "Expenses_env": ["MARKETING_SPEND", "CAC"],
-#     "Macro_env":    ["DOWNTURN_PROB_PER_MONTH", "DOWNTURN_JOIN_MULT",
-#                       "DOWNTURN_CHURN_MULT", "MARKET_POOLS_INFLOW",
-#                       "grant_amount", "grant_month"],
-#     "Capacity_env": ["MEMBER_CAP", "EXPANSION_THRESHOLD"],
-
-#     # Strategy-owned
-#     "Income_strat": ["PRICE", "REF_PRICE", "PRICE_ELASTICITY",
-#                       "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH",
-#                       "CLASS_CAP_PER_COHORT", "CLASS_PRICE",
-#                       "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
-#                       "USE_SEMESTER_SCHEDULE", "CLASSES_PER_SEMESTER", "WORKSHOPS_ENABLED", "WORKSHOPS_PER_MONTH",
-#     "WORKSHOP_AVG_ATTENDANCE", "WORKSHOP_FEE",
-#     "WORKSHOP_CONV_RATE", "WORKSHOP_CONV_LAG_MO",
-#     "WORKSHOP_COST_PER_EVENT",],
-#     "Expenses_strat": ["RENT", "OWNER_DRAW"],   # ← this must exist
-# }
-
-# === Group definitions (use only keys that exist in your app.py) ===
 GROUPS = {
     # Macro conditions
     "macro": [
@@ -260,7 +229,7 @@ GROUPS = {
 
     # Pricing (core price + elasticity)
     "pricing": [
-        "PRICE", "REF_PRICE", "PRICE_ELASTICITY",
+        "PRICE", "JOIN_PRICE_ELASTICITY", "CHURN_PRICE_ELASTICITY",
     ],
 
     # Workshops (single-source model you already have)
@@ -1121,20 +1090,6 @@ with st.sidebar:
     env  = json.loads(json.dumps(next(s for s in SCENARIOS  if s["name"] == scen_sel)))
     strat = json.loads(json.dumps(next(s for s in STRATEGIES if s["name"] == strat_sel)))
     
-    # # If preset changed, push values into widgets for ALL groups you render
-    # if scen_sel != st.session_state["last_scen_sel"]:
-    #     _push_preset_to_widgets(env,   prefix="env_income", keys=GROUPS["Income_env"])
-    #     _push_preset_to_widgets(env,   prefix="env_exp",    keys=GROUPS["Expenses_env"])
-    #     _push_preset_to_widgets(env,   prefix="env_macro",  keys=GROUPS["Macro_env"])
-    #     _push_preset_to_widgets(env,   prefix="env_cap",    keys=GROUPS["Capacity_env"])
-    #     st.session_state["last_scen_sel"] = scen_sel
-    
-    # if strat_sel != st.session_state["last_strat_sel"]:
-    #     _push_preset_to_widgets(strat, prefix="strat_income", keys=GROUPS["Income_strat"])
-    #     _push_preset_to_widgets(strat, prefix="strat_exp",    keys=GROUPS["Expenses_strat"])
-    #     # (no strat_macro — you removed that panel)
-    #     st.session_state["last_strat_sel"] = strat_sel
-    # If preset changed, push values into widgets for ALL groups you render
     if scen_sel != st.session_state["last_scen_sel"]:
         _push_preset_to_widgets(env,   prefix="env_macro",    keys=GROUPS["macro"])
         _push_preset_to_widgets(env,   prefix="env_growth",   keys=GROUPS["growth"])
@@ -1149,48 +1104,6 @@ with st.sidebar:
         _push_preset_to_widgets(strat, prefix="strat_events",    keys=GROUPS["events"])
         _push_preset_to_widgets(strat, prefix="strat_finance",   keys=["RENT", "OWNER_DRAW"])
         st.session_state["last_strat_sel"] = strat_sel
-        
-    # render all known fields dynamically
-    # # --- Grouped controls ---
-    # with st.expander("Income", expanded=True):
-    #     env_income = render_param_controls(
-    #         "Income — Scenario (market/capacity inputs)",
-    #         _subset(env, GROUPS["Income_env"]),
-    #         group_keys=GROUPS["Income_env"], prefix="env_income"
-    #     )
-    #     strat_income = render_param_controls(
-    #         "Income — Strategy (pricing, classes)",
-    #         _subset(strat, GROUPS["Income_strat"]),
-    #         group_keys=GROUPS["Income_strat"], prefix="strat_income"
-    #     )
-    
-    # with st.expander("Expenses", expanded=True):
-    #     env_exp = render_param_controls(
-    #         "Expenses — Scenario",
-    #         _subset(env, GROUPS["Expenses_env"]),
-    #         group_keys=GROUPS["Expenses_env"], prefix="env_exp"
-    #     )
-    #     strat_exp = render_param_controls(
-    #         "Expenses — Strategy",
-    #         _subset(strat, GROUPS["Expenses_strat"]),
-    #         group_keys=GROUPS["Expenses_strat"], prefix="strat_exp"
-    #     )
-    
-    # with st.expander("Macro", expanded=True):
-    #     env_macro = render_param_controls(
-    #         "Macro — Scenario",
-    #         _subset(env, GROUPS["Macro_env"]),
-    #         group_keys=GROUPS["Macro_env"], prefix="env_macro"
-    #     )
-    #     # remove the Macro — Strategy block (there are no strategy-owned macro keys)
-    
-    # with st.expander("Capacity (scenario)", expanded=True):
-    #     env_cap = render_param_controls(
-    #         "Capacity — Scenario",
-    #         _subset(env, GROUPS["Capacity_env"]),
-    #         group_keys=GROUPS["Capacity_env"], prefix="env_cap"
-    #     )
-    # === Render inside expanders (no new variables; uses your existing render helper) ===
    
     # === ENV-DRIVEN GROUPS (use env) ===
     with st.expander("Macro Conditions", expanded=False):
@@ -1223,6 +1136,11 @@ with st.sidebar:
             "Pricing", _subset(strat, GROUPS["pricing"]),
             group_keys=GROUPS["pricing"], prefix="strat_pricing"
         )
+     # --- pricing reference: fix once per selected strategy preset ---
+    if "REFERENCE_PRICE" not in st.session_state or st.session_state.get("ref_price_scen") != strat.get("name"):
+        st.session_state["REFERENCE_PRICE"] = float(strat.get("PRICE", strat_pricing.get("PRICE", 0)))
+        st.session_state["ref_price_scen"] = strat.get("name")
+    strat_pricing["REFERENCE_PRICE"] = float(st.session_state["REFERENCE_PRICE"])
     
     with st.expander("Workshops", expanded=False):
         ws_enabled = st.checkbox(
@@ -1236,7 +1154,7 @@ with st.sidebar:
         with colA:
             ws_per_month = st.slider(
                 "Workshops per month",
-                min_value=0.0, max_value=8.0, value=1.0, step=0.25,
+                min_value=0.0, max_value=4, value=1.0, step=0.25,
                 help="Average number of workshops you expect to host each month. Can be fractional if you only run them some months."
             )
             ws_avg_att = st.slider(
@@ -1254,12 +1172,12 @@ with st.sidebar:
         with colB:
             ws_fee = st.slider(
                 "Workshop fee per attendee ($)",
-                min_value=0, max_value=300, value=85, step=5,
+                min_value=25, max_value=300, value=85, step=5,
                 help="Ticket price paid by each attendee."
             )
             ws_var_cost = st.slider(
                 "Variable cost per workshop ($)",
-                min_value=0, max_value=1000, value=50, step=10,
+                min_value=0, max_value=500, value=50, step=10,
                 help="Your per‑event costs (guest instructor honorarium, space share, snacks, etc.)."
             )
             ws_conv_lag = st.slider(
@@ -1332,27 +1250,13 @@ with st.sidebar:
         )
    
     
-    # Merge edits back
-    # for part in (env_income, env_exp, env_macro, env_cap):
-    #     _update_from(part, env, part.keys())
-    # for part in (strat_income, strat_exp):
-    #     _update_from(part, strat, part.keys())
+    
     # Merge edits back
     for part in (env_macro, env_growth, env_capacity, env_finance):
         _update_from(part, env, part.keys())
     
     for part in (strat_pricing, strat_workshops, strat_classes, strat_events, strat_finance):
         _update_from(part, strat, part.keys())
-    
-    # # --- Events (discrete) lives with Income ---
-    # with st.expander("Events (discrete)", expanded=True):
-    #     events_fixed_ui   = st.selectbox("Events per month (fixed)", [0, 1, 2, 3, 4], index=0)
-    #     ticket_choice_ui  = st.selectbox("Event ticket price ($)",  [50, 75, 100, 125], index=2)
-    
-    # # Map discrete choices directly (0 == disabled)
-    # strat["BASE_EVENTS_PER_MONTH_LAMBDA"] = float(events_fixed_ui)
-    # strat["EVENTS_MAX_PER_MONTH"]         = int(events_fixed_ui)
-    # strat["TICKET_PRICE"]                 = int(ticket_choice_ui)
 
     # Preset save/load
     st.markdown("---")

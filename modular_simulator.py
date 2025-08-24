@@ -1308,7 +1308,21 @@ def _core_simulation_and_reports():
                         if (grant_month is not None) and (month == grant_month):
                             cash_balance += grant_amount
                             grant_received = grant_amount
-    
+                        
+                        # --- derive workshop stats for this month (from globals) ---
+                        _wpm   = float(globals().get("WORKSHOPS_PER_MONTH", 0.0))
+                        _avg_n = int(globals().get("WORKSHOP_AVG_ATTENDANCE", 0))
+                        _fee   = float(globals().get("WORKSHOP_FEE", 0.0))
+                        _cost  = float(globals().get("WORKSHOP_COST_PER_EVENT", 0.0))
+
+                        # If workshops are globally disabled, force zeros
+                        if not bool(globals().get("WORKSHOPS_ENABLED", False)):
+                            _wpm = _avg_n = _fee = _cost = 0.0
+
+                        _workshop_attendees = int(round(_wpm * _avg_n))
+                        _gross_ws = float(_workshop_attendees * _fee)
+                        _cost_ws  = float(_wpm * _cost)
+                        
                         # Store row
                         rows.append({
                             "simulation_id": sim,
@@ -1363,9 +1377,9 @@ def _core_simulation_and_reports():
                             "entity_type": ENTITY_TYPE,
                             "owner_draw_paid": owner_draw_now,
                             "employee_withholding": employee_withholding,
-                            "workshop_attendees": workshop_attendees,
-                            "workshop_gross": gross_ws,
-                            "workshop_cost": cost_ws,
+                            "workshop_attendees": _workshop_attendees,
+                            "workshop_gross": _gross_ws,
+                            "workshop_cost": _cost_ws,
                             "events_this_month": events_this_month,
                             "revenue_events_gross": revenue_events_gross,
                             "events_cost_materials": events_cost_materials,

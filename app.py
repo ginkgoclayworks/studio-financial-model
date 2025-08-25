@@ -46,7 +46,7 @@ PARAM_SPECS = {
     "EVENTS_MAX_PER_MONTH":   {"type": "int",   "min": 0, "max": 20, "step": 1, "label": "Events max / mo"},
     "TICKET_PRICE":           {"type": "int",   "min": 0, "max": 500, "step": 5, "label": "Ticket price"},
     "CLASSES_ENABLED":        {"type": "bool",  "label": "Classes enabled"},
-    "CLASS_COHORTS_PER_MONTH": {"type": "int",  "min": 0, "max": 12, "step": 1, "label": "Class cohorts / mo"},
+    "CLASS_COHORTS_PER_MONTH": {"type": "int", "min": 0, "max": 12, "step": 1, "label": "Cohorts per start (intake)"},
     "USE_SEMESTER_SCHEDULE": {"type": "bool",  "label": "Use semester schedule (3 mo × 4/yr)"},
     "CLASSES_PER_SEMESTER":  {"type": "int",   "min": 0, "max": 36, "step": 1, "label": "Cohorts per semester"},
     "CLASS_CAP_PER_COHORT":   {"type": "int",   "min": 1, "max": 30, "step": 1, "label": "Class cap / cohort"},
@@ -534,6 +534,10 @@ def build_overrides(env: dict, strat: dict) -> dict:
         ov["EXPANSION_THRESHOLD"] = thr_val
     else:
         ov.pop("EXPANSION_THRESHOLD", None)
+        
+    # --- Classes: fixed intake months (0-indexed Jan=0) -> months 1,4,7,10 === [0,3,6,9]
+    ov["CLASS_START_MONTHS"] = [0, 3, 6, 9]
+        
     # --- Classes: map UI semester knobs to simulator ---
     # Pull and translate the semester switch
     use_sem = bool(ov.pop("USE_SEMESTER_SCHEDULE", False)) if "USE_SEMESTER_SCHEDULE" in ov else False
@@ -1468,8 +1472,9 @@ with st.sidebar:
                     gross    = int(round(students * price))
                     converts = int(round(students * conv))
                     st.markdown(
-                        f"• **Monthly mode:** ≈ **{students}** students/mo → gross ≈ **${gross:,}**; "
-                        f"**{converts}** new members after **{lag}** mo."
+                        f"• **Starts 4×/yr** (months **1, 4, 7, 10**). "
+                        f"Each intake starts **{int(coh)}** cohort(s) ⇒ ≈ **{students}** students at start; "
+                        f"gross ≈ **${gross:,}**; **{converts}** convert after **{lag}** mo."
                     )
         except Exception:
             pass

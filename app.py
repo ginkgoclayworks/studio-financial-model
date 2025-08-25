@@ -1414,14 +1414,35 @@ with tab_matrix:
                         E_norm, S2, seed_, _make_cache_key(E_norm, S2, seed_)
                     )
 
-                    # summarize (for survival, cash, timings, etc.)
+                                        # summarize (for survival, cash, timings, etc.)
                     row_dict, _ = summarize_cell(df_cell)
 
-                    # detect horizon T robustly
-                    month_col = "month" if "month" in df_cell.columns else (
-                        "Month" if "Month" in df_cell.columns else "t"
-                    )
-                    T = int(df_cell[month_col].max())
+                    # detect horizon T robustly (handle empty DF, index-based month, or missing cols)
+                    if df_cell is None or df_cell.empty:
+                        month_col = None
+                        T = 0
+                    else:
+                        # try known column names
+                        month_col = next((c for c in ("month", "Month", "t") if c in df_cell.columns), None)
+                        if month_col is not None:
+                            T = int(df_cell[month_col].max())
+                        else:
+                            # try index as month
+                            if (df_cell.index.name in ("month", "Month", "t")
+                                or getattr(df_cell.index, "dtype", None) is not None and df_cell.index.dtype.kind in "iu"):
+                                T = int(df_cell.index.max())
+                                month_col = df_cell.index.name  # may be None
+                            else:
+                                # last resort: pick a numeric column
+                                num_cols = [c for c in df_cell.columns
+                                            if getattr(df_cell[c], "dtype", None) is not None
+                                            and df_cell[c].dtype.kind in "iu"]
+                                if num_cols:
+                                    month_col = num_cols[0]
+                                    T = int(df_cell[month_col].max())
+                                else:
+                                    T = max(int(df_cell.shape[0]) - 1, 0)
+
                     horizons.append(T)
 
                     runs.append({
@@ -1448,7 +1469,13 @@ with tab_matrix:
                 df = r["df"]
                 mc = r["month_col"]
                 if "dscr" in df.columns and m_for_dscr > 0:
-                    dscr_at_m = df[df[mc] == m_for_dscr]["dscr"]
+                    if mc and mc in df.columns:
+                        dscr_at_m = df.loc[df[mc] == m_for_dscr, "dscr"]
+                    elif (df.index.name in ("month","Month","t")
+                          or getattr(df.index, "dtype", None) is not None and df.index.dtype.kind in "iu"):
+                        dscr_at_m = df.loc[df.index == m_for_dscr, "dscr"]
+                    else:
+                        dscr_at_m = pd.Series([], dtype=float)
                     d["dscr_med"] = float(dscr_at_m.median()) if not dscr_at_m.empty else np.nan
                 else:
                     d["dscr_med"] = np.nan

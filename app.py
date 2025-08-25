@@ -47,6 +47,8 @@ PARAM_SPECS = {
     "TICKET_PRICE":           {"type": "int",   "min": 0, "max": 500, "step": 5, "label": "Ticket price"},
     "CLASSES_ENABLED":        {"type": "bool",  "label": "Classes enabled"},
     "CLASS_COHORTS_PER_MONTH": {"type": "int",  "min": 0, "max": 12, "step": 1, "label": "Class cohorts / mo"},
+    "USE_SEMESTER_SCHEDULE": {"type": "bool",  "label": "Use semester schedule (3 mo × 4/yr)"},
+    "CLASSES_PER_SEMESTER":  {"type": "int",   "min": 0, "max": 36, "step": 1, "label": "Cohorts per semester"},
     "CLASS_CAP_PER_COHORT":   {"type": "int",   "min": 1, "max": 30, "step": 1, "label": "Class cap / cohort"},
     "CLASS_PRICE":            {"type": "int",   "min": 0, "max": 1000, "step": 10, "label": "Class price"},
     "CLASS_CONV_RATE":        {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Class→Member conv"},
@@ -174,6 +176,14 @@ STRAT_SPEC_META = {
         "desc": "Enable/disable course cohorts (recurring multi-week classes).",
         "rec": (0, 1)
     },
+    "USE_SEMESTER_SCHEDULE": {
+        "desc": "When ON: classes run in 3‑month terms, 4×/year (Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec).",
+        "rec": (0, 1)
+    },
+    "CLASSES_PER_SEMESTER": {
+        "desc": "Total cohorts to start in each 3‑month term. We’ll distribute them evenly per month.",
+        "rec": (0, 12)
+    },
     "CLASS_COHORTS_PER_MONTH": {
         "desc": "How many new class groups you start each month.",
         "rec": (0, 4)
@@ -240,7 +250,8 @@ GROUPS = {
 
     # Beginner classes (only the keys present in your spec)
     "classes": [
-        "CLASSES_ENABLED", "CLASS_COHORTS_PER_MONTH", "CLASS_CAP_PER_COHORT",
+        "CLASSES_ENABLED", "USE_SEMESTER_SCHEDULE", "CLASSES_PER_SEMESTER",
+        "CLASS_COHORTS_PER_MONTH", "CLASS_CAP_PER_COHORT",
         "CLASS_PRICE", "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
     ],
 
@@ -535,13 +546,21 @@ def build_overrides(env: dict, strat: dict) -> dict:
 
     # Translate "classes per semester" (UI) -> per-month cohorts during class months
     # If user didn’t explicitly set CLASS_COHORTS_PER_MONTH, derive it.
-    if "CLASSES_PER_SEMESTER" in ov and "CLASS_COHORTS_PER_MONTH" not in ov:
-        try:
-            import math
-            _cps = int(ov.pop("CLASSES_PER_SEMESTER"))
-            ov["CLASS_COHORTS_PER_MONTH"] = max(0, int(math.ceil(_cps / 3.0)))
-        except Exception:
-            ov.pop("CLASSES_PER_SEMESTER", None)
+        # --- Classes: map UI semester knobs to simulator ---
+    use_sem = bool(ov.get("USE_SEMESTER_SCHEDULE", False))
+    if use_sem:
+        ov["CLASSES_CALENDAR_MODE"] = "semester"
+        ov["CLASS_SEMESTER_LENGTH_MONTHS"] = 3
+        ov["CLASS_SEMESTER_START_MONTHS"] = [0, 3, 6, 9]  # Jan, Apr, Jul, Oct
+        # Derive monthly cohorts if user supplied per-semester and left monthly unset
+        if "CLASS_COHORTS_PER_MONTH" not in ov and "CLASSES_PER_SEMESTER" in ov:
+            try:
+                cps = int(ov.get("CLASSES_PER_SEMESTER", 0))
+                ov["CLASS_COHORTS_PER_MONTH"] = max(0, int(math.ceil(cps / 3.0)))
+            except Exception:
+                pass
+    else:
+        ov["CLASSES_CALENDAR_MODE"] = "monthly"
             
     # --- Back-compat: map legacy monthly class knobs to workshops if workshops unset ---
     if "WORKSHOPS_PER_MONTH" not in ov and "CLASS_COHORTS_PER_MONTH" in ov:
@@ -1421,18 +1440,37 @@ with st.sidebar:
         st.caption("Adds class net revenue now; converts a fraction of students into members after a delay.")
         try:
             if bool(strat_classes.get("CLASSES_ENABLED", False)):
-                coh   = float(strat_classes.get("CLASS_COHORTS_PER_MONTH", 0))
-                cap   = float(strat_classes.get("CLASS_CAP_PER_COHORT", 0))
-                price = float(strat_classes.get("CLASS_PRICE", 0))
-                conv  = float(strat_classes.get("CLASS_CONV_RATE", 0))
-                lag   = int(strat_classes.get("CLASS_CONV_LAG_MO", 1))
-                students = int(round(coh * cap))
-                gross    = int(round(students * price))
-                converts = int(round(students * conv))
-                st.markdown(
-                    f"• ≈ **{students}** students/mo → gross ≈ **${gross:,}**; "
-                    f"**{converts}** new members after **{lag}** mo"
-                )
+                use_sem   = bool(strat_classes.get("USE_SEMESTER_SCHEDULE", False))
+                cap       = float(strat_classes.get("CLASS_CAP_PER_COHORT", 0))
+                price     = float(strat_classes.get("CLASS_PRICE", 0))
+                conv      = float(strat_classes.get("CLASS_CONV_RATE", 0))
+                lag       = int(strat_classes.get("CLASS_CONV_LAG_MO", 1))
+    
+                if use_sem:
+                    cps = float(strat_classes.get("CLASSES_PER_SEMESTER", 0))
+                    # Distribute evenly across the 3 months in a term
+                    import math
+                    coh_pm = int(math.ceil(cps / 3.0))
+                    # Ensure the monthly knob reflects this derived value for downstream use
+                    strat_classes["CLASS_COHORTS_PER_MONTH"] = coh_pm
+                    students = int(round(coh_pm * cap))
+                    gross    = int(round(students * price))
+                    converts = int(round(students * conv))
+                    st.markdown(
+                        f"• **Semester mode:** {int(cps)} cohorts/semester → ≈ **{coh_pm} cohorts/mo** during class months. "
+                        f"That’s ≈ **{students}** students/mo → gross ≈ **${gross:,}**; "
+                        f"**{converts}** new members after **{lag}** mo."
+                    )
+                    st.caption("Class months are Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec.")
+                else:
+                    coh = float(strat_classes.get("CLASS_COHORTS_PER_MONTH", 0))
+                    students = int(round(coh * cap))
+                    gross    = int(round(students * price))
+                    converts = int(round(students * conv))
+                    st.markdown(
+                        f"• **Monthly mode:** ≈ **{students}** students/mo → gross ≈ **${gross:,}**; "
+                        f"**{converts}** new members after **{lag}** mo."
+                    )
         except Exception:
             pass
     

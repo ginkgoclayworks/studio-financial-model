@@ -1454,7 +1454,7 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Invalid preset: {e}")
 
-    run_btn = st.button("Run simulation", type="primary")
+    
 
     
 
@@ -1463,6 +1463,7 @@ tab_run, tab_matrix = st.tabs(["Single run", "Matrix heatmaps"])
 
 # ---- Single run
 with tab_run:
+    run_btn = st.button("Run simulation", type="primary")
     if run_btn:
         with st.spinner("Running simulator…"):
             env_norm = _normalize_env(env)

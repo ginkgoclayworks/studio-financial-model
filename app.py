@@ -1455,7 +1455,8 @@ with tab_matrix:
                     })
 
             # Choose a single month for DSCR across ALL cells: min(12, shortest horizon)
-            global_horizon = min(horizons) if horizons else 0
+            valid_horizons = [h for h in horizons if h and h > 0]
+            global_horizon = min(valid_horizons) if valid_horizons else 0
             m_for_dscr = 12 if global_horizon >= 12 else global_horizon
 
             # Build the matrix rows, overriding dscr_med with DSCR@M{m_for_dscr} uniformly
@@ -1505,23 +1506,17 @@ with tab_matrix:
         ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title(f"Median DSCR @ M{m_for_dscr}")
         st.pyplot(fig)
 
-        # 3) Median cash at horizon
-        # 4) Median time to breakeven (months)
-        st.markdown("##### Median time to breakeven (months)")
-        sig = (matrix["breakeven_signal"].dropna().mode()[0]
-               if "breakeven_signal" in matrix.columns and not matrix["breakeven_signal"].dropna().empty
-               else "cfads")
-        bk  = (int(matrix["breakeven_k"].dropna().mode()[0])
-               if "breakeven_k" in matrix.columns and not matrix["breakeven_k"].dropna().empty
-               else 3)
-        st.caption(f"Breakeven signal = {sig} (k={bk} months)")
-        pv = (matrix.pivot(index="environment", columns="strategy", values="median_time_to_breakeven_months")
-                      .reindex(index=sorted(matrix["environment"].unique()),
-                               columns=sorted(matrix["strategy"].unique())))
+        # 3) Median cash at horizon ($k)
+        st.markdown("##### Median cash at horizon ($k)")
+        pv = (matrix.pivot(index="environment", columns="strategy", values="cash_med")
+              .reindex(index=sorted(matrix["environment"].unique()),
+                       columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(6, 4))
-        sns.heatmap(pv, annot=True, fmt=".0f", cmap="YlOrBr", ax=ax, cbar_kws={"label":"$ thousands"})
+        sns.heatmap(pv/1e3, annot=True, fmt=".0f", cmap="YlOrBr", ax=ax, cbar_kws={"label":"$ thousands"})
         ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Median cash at horizon ($k)")
         st.pyplot(fig)
+        
+        
 
         # 4) Median time to breakeven (months)
         st.markdown("##### Median time to breakeven (months)")

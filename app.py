@@ -523,7 +523,26 @@ def build_overrides(env: dict, strat: dict) -> dict:
         ov["EXPANSION_THRESHOLD"] = thr_val
     else:
         ov.pop("EXPANSION_THRESHOLD", None)
-    
+    # --- Classes: map UI semester knobs to simulator ---
+    # Pull and translate the semester switch
+    use_sem = bool(ov.pop("USE_SEMESTER_SCHEDULE", False)) if "USE_SEMESTER_SCHEDULE" in ov else False
+    if use_sem:
+        ov["CLASSES_CALENDAR_MODE"] = "semester"
+        ov["CLASS_SEMESTER_LENGTH_MONTHS"] = 3
+        ov["CLASS_SEMESTER_START_MONTHS"] = [0, 3, 6, 9]  # Jan, Apr, Jul, Oct
+    else:
+        ov["CLASSES_CALENDAR_MODE"] = "monthly"
+
+    # Translate "classes per semester" (UI) -> per-month cohorts during class months
+    # If user didn’t explicitly set CLASS_COHORTS_PER_MONTH, derive it.
+    if "CLASSES_PER_SEMESTER" in ov and "CLASS_COHORTS_PER_MONTH" not in ov:
+        try:
+            import math
+            _cps = int(ov.pop("CLASSES_PER_SEMESTER"))
+            ov["CLASS_COHORTS_PER_MONTH"] = max(0, int(math.ceil(_cps / 3.0)))
+        except Exception:
+            ov.pop("CLASSES_PER_SEMESTER", None)
+            
     # --- Back-compat: map legacy monthly class knobs to workshops if workshops unset ---
     if "WORKSHOPS_PER_MONTH" not in ov and "CLASS_COHORTS_PER_MONTH" in ov:
         ov["WORKSHOPS_PER_MONTH"] = float(ov.get("CLASS_COHORTS_PER_MONTH", 0.0))

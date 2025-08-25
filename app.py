@@ -1658,6 +1658,20 @@ with tab_matrix:
                 else:
                     d["dscr_med"] = np.nan
 
+                # --- DSCR @ fixed month 60 (5 years) for this cell ---
+                TARGET_MONTH = 60
+                d["dscr_at_60"] = np.nan
+                if "dscr" in df.columns:
+                    if mc and mc in df.columns:
+                        _dscr60 = df.loc[df[mc] == TARGET_MONTH, "dscr"]
+                    elif (df.index.name in ("month","Month","t")
+                          or getattr(df.index, "dtype", None) is not None and df.index.dtype.kind in "iu"):
+                        _dscr60 = df.loc[df.index == TARGET_MONTH, "dscr"]
+                    else:
+                        _dscr60 = pd.Series([], dtype=float)
+                    if not _dscr60.empty:
+                        d["dscr_at_60"] = float(_dscr60.median())
+
                 rows.append(d)
 
             matrix = pd.DataFrame(rows)
@@ -1712,6 +1726,45 @@ with tab_matrix:
         fig, ax = plt.subplots(figsize=(6, 4))
         sns.heatmap(pv, annot=True, fmt=".0f", cmap="Reds", ax=ax, cbar_kws={"label":"months"})
         ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Median time to insolvency (months)")
+        st.pyplot(fig)
+        
+        # ===== Combined heatmap: Insolvency time (color) + Survival prob (annotation) =====
+        st.markdown("##### Survival (annotated) + Median time to insolvency (color)")
+        pv_time = (matrix.pivot(index="environment", columns="strategy",
+                                values="median_time_to_insolvency_months")
+                          .reindex(index=sorted(matrix["environment"].unique()),
+                                   columns=sorted(matrix["strategy"].unique())))
+        pv_surv = (matrix.pivot(index="environment", columns="strategy",
+                                values="survival_prob")
+                          .reindex(index=pv_time.index, columns=pv_time.columns))
+        fig, ax = plt.subplots(figsize=(8, 6))
+        sns.heatmap(
+            pv_time,
+            annot=pv_surv.round(2),
+            fmt=".2f",
+            cmap="Reds",
+            cbar_kws={"label": "Median time to insolvency (months)"},
+            ax=ax
+        )
+        ax.set_xlabel(""); ax.set_ylabel("")
+        ax.set_title("Survival probability (annotation) + Insolvency time (color)")
+        st.pyplot(fig)
+
+        # ===== DSCR at 5 years (month 60) =====
+        st.markdown("##### DSCR at 5 years (month 60) — median across runs")
+        pv_dscr60 = (matrix.pivot(index="environment", columns="strategy", values="dscr_at_60")
+                            .reindex(index=sorted(matrix["environment"].unique()),
+                                     columns=sorted(matrix["strategy"].unique())))
+        fig, ax = plt.subplots(figsize=(8, 6))
+        sns.heatmap(
+            pv_dscr60,
+            annot=True, fmt=".2f",
+            cmap="Blues",
+            cbar_kws={"label": "DSCR @ 60 months (median)"},
+            ax=ax
+        )
+        ax.set_xlabel(""); ax.set_ylabel("")
+        ax.set_title("Median DSCR at 5 years")
         st.pyplot(fig)
 
         st.download_button("Download matrix CSV",

@@ -1391,11 +1391,25 @@ with tab_matrix:
 
             for i, E in enumerate(SCENARIOS):
                 for j, S in enumerate(STRATEGIES):
-                    S2 = json.loads(json.dumps(S))  # deep copy
+                    # --- deep copies of each preset cell ---
+                    E2 = json.loads(json.dumps(E))
+                    S2 = json.loads(json.dumps(S))
 
-                    E_norm = _normalize_env(E)
+                    # --- overlay current sliders onto the presets (sliders win) ---
+                    # skip meta fields like 'name'; ignore None to avoid clobbering with empties
+                    for k, v in (env or {}).items():
+                        if k == "name" or v is None:
+                            continue
+                        E2[k] = v
+                    for k, v in (strat or {}).items():
+                        if k == "name" or v is None:
+                            continue
+                        S2[k] = v
+
+                    # normalize env after overlay
+                    E_norm = _normalize_env(E2)
+
                     seed_ = 42 + 1000*(i*len(STRATEGIES)+j)
-
                     df_cell, eff, _imgs, _man = run_cell_cached(
                         E_norm, S2, seed_, _make_cache_key(E_norm, S2, seed_)
                     )

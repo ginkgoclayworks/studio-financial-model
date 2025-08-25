@@ -952,8 +952,43 @@ SCENARIOS = [
         "MAX_ONBOARD_PER_MONTH": 10,
 
         # Capacity levers
-        "MEMBER_CAP": 92,              # soft cap line in your plots is ~92
-        "EXPANSION_THRESHOLD": 20,     # tweakable
+        "MEMBER_CAP": 92,
+        "EXPANSION_THRESHOLD": 20,
+
+        # New: events + classes
+        "EVENTS": {
+            "workshops": {
+                "enabled": True,
+                "events_per_month": 2,
+                "attendees_per_event": 10,
+                "price_per_attendee": 95.0,
+                "variable_cost_per_attendee": 25.0,
+                "fixed_cost_per_event": 50.0,
+                "lead_rate": 0.10,   # fraction of attendees who become leads
+                "join_rate": 0.03    # fraction of attendees who convert to members (direct joins)
+            },
+            "classes": {
+                "enabled": True,
+                "classes_per_month": 1,
+                "seats_per_class": 8,
+                "price_per_seat": 260.0,
+                "variable_cost_per_seat": 40.0,
+                "instructor_hours_per_class": 6.0,
+                "instructor_cost_per_hour": 35.0,
+                "lead_rate": 0.20,
+                "join_rate": 0.08
+            },
+            "private_events": {
+                "enabled": False,
+                "events_per_month": 0,
+                "attendees_per_event": 12,
+                "price_per_attendee": 110.0,
+                "variable_cost_per_attendee": 28.0,
+                "fixed_cost_per_event": 75.0,
+                "lead_rate": 0.05,
+                "join_rate": 0.02
+            }
+        },
     },
     {
         "name": "Recession",
@@ -967,6 +1002,40 @@ SCENARIOS = [
         "MAX_ONBOARD_PER_MONTH": 8,
         "MEMBER_CAP": 86,
         "EXPANSION_THRESHOLD": 25,
+
+        "EVENTS": {
+            "workshops": {
+                "enabled": True,
+                "events_per_month": 1,
+                "attendees_per_event": 9,
+                "price_per_attendee": 90.0,
+                "variable_cost_per_attendee": 25.0,
+                "fixed_cost_per_event": 50.0,
+                "lead_rate": 0.08,
+                "join_rate": 0.02
+            },
+            "classes": {
+                "enabled": True,
+                "classes_per_month": 0.5,  # every other month
+                "seats_per_class": 8,
+                "price_per_seat": 240.0,
+                "variable_cost_per_seat": 40.0,
+                "instructor_hours_per_class": 6.0,
+                "instructor_cost_per_hour": 35.0,
+                "lead_rate": 0.15,
+                "join_rate": 0.05
+            },
+            "private_events": {
+                "enabled": False,
+                "events_per_month": 0,
+                "attendees_per_event": 10,
+                "price_per_attendee": 100.0,
+                "variable_cost_per_attendee": 28.0,
+                "fixed_cost_per_event": 75.0,
+                "lead_rate": 0.04,
+                "join_rate": 0.015
+            }
+        },
     },
     {
         "name": "SlowRecovery_Grant25k_M4",
@@ -980,6 +1049,40 @@ SCENARIOS = [
         "MAX_ONBOARD_PER_MONTH": 9,
         "MEMBER_CAP": 94,
         "EXPANSION_THRESHOLD": 22,
+
+        "EVENTS": {
+            "workshops": {
+                "enabled": True,
+                "events_per_month": 2,
+                "attendees_per_event": 10,
+                "price_per_attendee": 95.0,
+                "variable_cost_per_attendee": 25.0,
+                "fixed_cost_per_event": 50.0,
+                "lead_rate": 0.10,
+                "join_rate": 0.03
+            },
+            "classes": {
+                "enabled": True,
+                "classes_per_month": 1,
+                "seats_per_class": 8,
+                "price_per_seat": 255.0,
+                "variable_cost_per_seat": 40.0,
+                "instructor_hours_per_class": 6.0,
+                "instructor_cost_per_hour": 35.0,
+                "lead_rate": 0.18,
+                "join_rate": 0.07
+            },
+            "private_events": {
+                "enabled": True,
+                "events_per_month": 0.5,  # one every two months
+                "attendees_per_event": 12,
+                "price_per_attendee": 115.0,
+                "variable_cost_per_attendee": 28.0,
+                "fixed_cost_per_event": 75.0,
+                "lead_rate": 0.05,
+                "join_rate": 0.02
+            }
+        },
     },
     {
         "name": "Boom",
@@ -993,6 +1096,40 @@ SCENARIOS = [
         "MAX_ONBOARD_PER_MONTH": 12,
         "MEMBER_CAP": 100,
         "EXPANSION_THRESHOLD": 18,
+
+        "EVENTS": {
+            "workshops": {
+                "enabled": True,
+                "events_per_month": 3,
+                "attendees_per_event": 12,
+                "price_per_attendee": 99.0,
+                "variable_cost_per_attendee": 25.0,
+                "fixed_cost_per_event": 50.0,
+                "lead_rate": 0.12,
+                "join_rate": 0.04
+            },
+            "classes": {
+                "enabled": True,
+                "classes_per_month": 1.5,  # alternating 1 and 2 per month
+                "seats_per_class": 10,
+                "price_per_seat": 275.0,
+                "variable_cost_per_seat": 40.0,
+                "instructor_hours_per_class": 6.0,
+                "instructor_cost_per_hour": 35.0,
+                "lead_rate": 0.25,
+                "join_rate": 0.10
+            },
+            "private_events": {
+                "enabled": True,
+                "events_per_month": 1,
+                "attendees_per_event": 14,
+                "price_per_attendee": 120.0,
+                "variable_cost_per_attendee": 30.0,
+                "fixed_cost_per_event": 80.0,
+                "lead_rate": 0.07,
+                "join_rate": 0.03
+            }
+        },
     },
     {
         "name": "GreatDepression",
@@ -1004,9 +1141,42 @@ SCENARIOS = [
         "WOM_RATE": 0.01,
         "LEAD_TO_JOIN_RATE": 0.10,
         "MAX_ONBOARD_PER_MONTH": 6,
-
         "MEMBER_CAP": 81,
         "EXPANSION_THRESHOLD": 30,
+
+        "EVENTS": {
+            "workshops": {
+                "enabled": True,
+                "events_per_month": 0.5,  # one every two months
+                "attendees_per_event": 8,
+                "price_per_attendee": 85.0,
+                "variable_cost_per_attendee": 25.0,
+                "fixed_cost_per_event": 50.0,
+                "lead_rate": 0.06,
+                "join_rate": 0.015
+            },
+            "classes": {
+                "enabled": False,
+                "classes_per_month": 0,
+                "seats_per_class": 0,
+                "price_per_seat": 0.0,
+                "variable_cost_per_seat": 0.0,
+                "instructor_hours_per_class": 0.0,
+                "instructor_cost_per_hour": 0.0,
+                "lead_rate": 0.0,
+                "join_rate": 0.0
+            },
+            "private_events": {
+                "enabled": False,
+                "events_per_month": 0,
+                "attendees_per_event": 0,
+                "price_per_attendee": 0.0,
+                "variable_cost_per_attendee": 0.0,
+                "fixed_cost_per_event": 0.0,
+                "lead_rate": 0.0,
+                "join_rate": 0.0
+            }
+        },
     },
 ]
 STRATEGIES = [
@@ -1392,22 +1562,24 @@ with tab_matrix:
             for i, E in enumerate(SCENARIOS):
                 for j, S in enumerate(STRATEGIES):
                     # --- deep copies of each preset cell ---
-                    E2 = json.loads(json.dumps(E))
-                    S2 = json.loads(json.dumps(S))
-
-                    # --- overlay current sliders onto the presets (sliders win) ---
+                    # --- start from CURRENT SLIDER STATE as baseline ---
+                    E2 = json.loads(json.dumps(env))    # baseline = sliders (env)
+                    S2 = json.loads(json.dumps(strat))  # baseline = sliders (strat)
+     
+                    # --- overlay PRESET values (presets win where they specify a key) ---
                     # skip meta fields like 'name'; ignore None to avoid clobbering with empties
-                    for k, v in (env or {}).items():
+                    for k, v in (E or {}).items():
                         if k == "name" or v is None:
                             continue
                         E2[k] = v
-                    for k, v in (strat or {}).items():
+                    for k, v in (S or {}).items():
                         if k == "name" or v is None:
                             continue
                         S2[k] = v
-
-                    # normalize env after overlay
+     
+                 # normalize env after overlay
                     E_norm = _normalize_env(E2)
+ 
 
                     seed_ = 42 + 1000*(i*len(STRATEGIES)+j)
                     df_cell, eff, _imgs, _man = run_cell_cached(
@@ -1515,7 +1687,6 @@ with tab_matrix:
         sns.heatmap(pv/1e3, annot=True, fmt=".0f", cmap="YlOrBr", ax=ax, cbar_kws={"label":"$ thousands"})
         ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Median cash at horizon ($k)")
         st.pyplot(fig)
-        
         
 
         # 4) Median time to breakeven (months)

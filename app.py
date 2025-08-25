@@ -1561,11 +1561,11 @@ with tab_matrix:
 
             for i, E in enumerate(SCENARIOS):
                 for j, S in enumerate(STRATEGIES):
-                    # --- deep copies of each preset cell ---
-                    # --- start from CURRENT SLIDER STATE as baseline ---
+                   
+                    # --- start from CURRENT SLIDER STATE as # --- start from CURRENT SLIDER STATE as baseline ---
                     E2 = json.loads(json.dumps(env))    # baseline = sliders (env)
                     S2 = json.loads(json.dumps(strat))  # baseline = sliders (strat)
-     
+                    
                     # --- overlay PRESET values (presets win where they specify a key) ---
                     # skip meta fields like 'name'; ignore None to avoid clobbering with empties
                     for k, v in (E or {}).items():
@@ -1576,11 +1576,14 @@ with tab_matrix:
                         if k == "name" or v is None:
                             continue
                         S2[k] = v
-     
-                 # normalize env after overlay
+                    
+                    # ensure labels match the preset names (not the slider baseline)
+                    E2["name"] = E["name"]
+                    S2["name"] = S["name"]
+                    
+                    # normalize env after overlay
                     E_norm = _normalize_env(E2)
- 
-
+                    
                     seed_ = 42 + 1000*(i*len(STRATEGIES)+j)
                     df_cell, eff, _imgs, _man = run_cell_cached(
                         E_norm, S2, seed_, _make_cache_key(E_norm, S2, seed_)
@@ -1619,7 +1622,7 @@ with tab_matrix:
 
                     runs.append({
                         "env": E["name"],
-                        "strat": S2["name"],
+                        "strat": S["name"],
                         "df": df_cell,
                         "summary": row_dict,  # includes dscr_med at that run's own Mmin(12,T)
                         "T": T,

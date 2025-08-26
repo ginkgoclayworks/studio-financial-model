@@ -1309,6 +1309,7 @@ with st.sidebar:
     
     st.header("Configuration")
     st.caption("Hover over any label for a short explanation.")
+    st.sidebar.caption("BUILD: equip-01")
     st.session_state["_show_hints"] = st.toggle(
         "Show hints", value=True,
         help="If on, the app shows a small note when a value is outside its typical range."
@@ -1371,7 +1372,7 @@ with st.sidebar:
             group_keys=GROUPS.get("equipment", []), prefix="strat_equipment"
         )
         st.caption("Tie capacity & costs to equipment purchased at start. Racks set member cap (≈3 members/rack). Wheels cap wheel-station capacity. Pug mill reduces clay COGS; slab roller boosts handbuilding throughput.")
-
+        st.write("DEBUG: Equipment block loaded")
                   
     with st.expander("Finance & Grants (Scenario)", expanded=False):
         env_finance = render_param_controls(

@@ -1518,8 +1518,6 @@ with st.sidebar:
             "Finance & Grants (Strategy)", _subset(strat, ["RENT", "OWNER_DRAW"]),
             group_keys=["RENT", "OWNER_DRAW"], prefix="strat_finance"
         )
-   
-    
     
     # Merge edits back
     for part in (env_macro, env_growth, env_capacity, env_finance):

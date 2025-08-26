@@ -232,6 +232,11 @@ def apply_workshops(stream, cfg, T):
         conv_t = min(T-1, t + lag)
         stream["joins_from_workshops"][conv_t] += conv_joins_pm
 
+
+
+ 
+
+
 # =============================================================================
 # Tunable Parameters
 # =============================================================================
@@ -504,6 +509,12 @@ BASELINE_JOIN_RATE = 0.013
 REFERRAL_RATE_PER_MEMBER = 0.06
 REFERRAL_CONV = 0.22
 MAX_MEMBERS = 77
+# --- Equipment defaults (overridable via cfg) ---
+N_WHEELS_START        = 8
+HAS_SLAB_ROLLER_START = False
+N_RACKS_START         = 10
+HAS_PUG_MILL_START    = False
+N_CLAY_TRAPS_START    = 1
 UTILIZATION_CHURN_UPLIFT = 0.25
 
 # -------------------------------------------------------------------------
@@ -647,6 +658,50 @@ def in_owner_draw_window(month_idx: int) -> bool:
 def sample_capex(capex_dict, rng):
     return sum(rng.triangular(low, mode, high) for (low, mode, high) in capex_dict.values())
 
+def capex_from_choices(rng):
+    """
+    Count-aware CapEx for Stage I, driven by equipment choices.
+    Includes baseline Stage I items once; multiplies per-unit items.
+    """
+    def tri(val):
+        low, mode, high = val
+        return rng.triangular(low, mode, high)
+    total = 0.0
+    # Baseline Stage I items (exclude items replaced by counts)
+    exclude = {"wheels_1_to_4", "wire_racks_initial", "slab_roller", "industrial_sink_and_trap"}
+    for k, val in STAGE_I_CAPEX.items():
+        if k in exclude:
+            continue
+        total += tri(val)
+    # Wheels (per-unit)
+    try:
+        n_wheels = int(globals().get("N_WHEELS_START", 8))
+        per = STAGE_I_CAPEX.get("wheels_1_to_4")
+        if per:
+            total += sum(tri(per) for _ in range(max(0, n_wheels)))
+    except Exception:
+        pass
+    # Racks (per-unit)
+    try:
+        n_racks = int(globals().get("N_RACKS_START", 10))
+        per = STAGE_I_CAPEX.get("wire_racks_initial")
+        if per:
+            total += sum(tri(per) for _ in range(max(0, n_racks)))
+    except Exception:
+        pass
+    # Slab roller (optional)
+    if bool(globals().get("HAS_SLAB_ROLLER_START", False)):
+        val = STAGE_I_CAPEX.get("slab_roller")
+        if val: total += tri(val)
+    # Clay trap/sink (fixed 1)
+    val = STAGE_I_CAPEX.get("industrial_sink_and_trap")
+    if val: total += tri(val)
+    # Pug mill optionally bought up front (uses Stage II pricing)
+    if bool(globals().get("HAS_PUG_MILL_START", False)):
+        val = STAGE_II_CAPEX.get("pugmill")
+        if val: total += tri(val)
+    return float(total)
+
 def draw_adopters(remaining_pool, monthly_intent, rng):
     """
     Stochastic adoption draw from a pool with intent rate.
@@ -757,8 +812,14 @@ def _core_simulation_and_reports():
                     ss = SeedSequence([RANDOM_SEED, int(fixed_rent), int(owner_draw), int(scen_index), int(sim)])
                     rng = default_rng(ss)
                     # CapEx
-                    capex_I_cost = sample_capex(STAGE_I_CAPEX, rng)
-                    capex_II_cost = sample_capex(STAGE_II_CAPEX, rng)
+                    # capex_I_cost = sample_capex(STAGE_I_CAPEX, rng)
+                    # capex_II_cost = sample_capex(STAGE_II_CAPEX, rng)
+    
+                    capex_I_cost = capex_from_choices(rng)
+                    _stage2 = STAGE_II_CAPEX if not bool(globals().get("HAS_PUG_MILL_START", False)) else {k:v for k,v in STAGE_II_CAPEX.items() if k!="pugmill"}
+                    capex_II_cost = sample_capex(_stage2, rng)
+    
+    
     
                     # Runway
                     avg_monthly_heat = (HEATING_COST_WINTER + HEATING_COST_SUMMER) / 2
@@ -1187,6 +1248,7 @@ def _core_simulation_and_reports():
                         
                         # Variable costs
                         variable_clay_cost = (total_clay_lbs / 25) * WHOLESALE_CLAY_COST_PER_BAG
+                        variable_clay_cost *= float(globals().get("CLAY_COGS_MULT", 1.0))
                         water_cost = total_clay_lbs / 25 * GALLONS_PER_BAG_CLAY * WATER_COST_PER_GALLON
     
                         # Electricity
@@ -1204,10 +1266,11 @@ def _core_simulation_and_reports():
     
                         #Staff cost after expansion
                         staff_cost = STAFF_COST_PER_MONTH if len(active_members) >= STAFF_EXPANSION_THRESHOLD else 0.0
-                        
-                        #Maintenance
+                                                 
+                         #Maintenance
                         maintenance_cost = MAINTENANCE_BASE_COST + max(0, rng.normal(0, MAINTENANCE_RANDOM_STD))
-                        
+                        maintenance_cost += float(globals().get("PUGMILL_MAINT_COST_PER_MONTH", 0.0)) + float(globals().get("SLAB_ROLLER_MAINT_COST_PER_MONTH", 0.0))
+
                         #Marketing
                         if month < MARKETING_RAMP_MONTHS:
                             marketing_cost = MARKETING_COST_BASE * MARKETING_RAMP_MULTIPLIER
@@ -2074,6 +2137,7 @@ def _core_simulation_and_reports():
                                 )
     
                                 variable_clay_cost = (total_clay_lbs / 25) * WHOLESALE_CLAY_COST_PER_BAG
+                                variable_clay_cost *= float(globals().get("CLAY_COGS_MULT", 1.0))
                                 water_cost = (total_clay_lbs / 25) * GALLONS_PER_BAG_CLAY * WATER_COST_PER_GALLON
                                 
                                 firings = max(MIN_FIRINGS_PER_MONTH, min(MAX_FIRINGS_PER_MONTH, round(
@@ -2104,6 +2168,7 @@ def _core_simulation_and_reports():
     
                                 # Maintenance (randomized, never negative)
                                 maintenance_cost = MAINTENANCE_BASE_COST + max(0, rng.normal(0, MAINTENANCE_RANDOM_STD))
+                                maintenance_cost += float(globals().get("PUGMILL_MAINT_COST_PER_MONTH", 0.0)) + float(globals().get("SLAB_ROLLER_MAINT_COST_PER_MONTH", 0.0))
     
                                 # Marketing ramp
                                 marketing_cost = MARKETING_COST_BASE * (MARKETING_RAMP_MULTIPLIER if month < MARKETING_RAMP_MONTHS else 1.0)
@@ -2499,6 +2564,36 @@ def run_from_cfg(cfg: dict | None = None):
     p, p_src = _get_downturn_prob(merged)
     merged.setdefault("DOWNTURN_PROB_PER_MONTH", p)
     print(f"[nowcast] DOWNTURN_PROB_PER_MONTH = {merged['DOWNTURN_PROB_PER_MONTH']:.3f}  (source={p_src})")
+
+    # --- Derive equipment-linked capacities and costs into merged ---
+    try:
+        import copy
+        base_st = copy.deepcopy(globals().get("STATIONS", {}))
+        nw = int(merged.get("N_WHEELS_START", globals().get("N_WHEELS_START", 8)))
+        nr = int(merged.get("N_RACKS_START", globals().get("N_RACKS_START", 10)))
+        slab = bool(merged.get("HAS_SLAB_ROLLER_START", globals().get("HAS_SLAB_ROLLER_START", False)))
+        pug  = bool(merged.get("HAS_PUG_MILL_START", globals().get("HAS_PUG_MILL_START", False)))
+        # Wheels capacity
+        if "wheels" in base_st and isinstance(base_st["wheels"], dict):
+            base_st["wheels"] = dict(base_st["wheels"])
+            base_st["wheels"]["capacity"] = max(1, int(nw))
+        # Handbuilding boost
+        if "handbuilding" in base_st and isinstance(base_st["handbuilding"], dict):
+            base_st["handbuilding"] = dict(base_st["handbuilding"])
+            hb0 = int(base_st["handbuilding"].get("capacity", 6))
+            boost = 1.0 + (0.20 if slab else 0.0) + (0.10 if pug else 0.0)
+            base_st["handbuilding"]["capacity"] = max(1, int(round(hb0 * boost)))
+        merged["STATIONS"] = base_st
+        # Member capacity from racks unless user pinned MAX_MEMBERS
+        if not (cfg and "MAX_MEMBERS" in cfg):
+            merged["MAX_MEMBERS"] = max(3, 3 * int(nr))
+        # COGS & maintenance
+        merged["CLAY_COGS_MULT"] = 0.75 if pug else 1.0
+        merged["PUGMILL_MAINT_COST_PER_MONTH"] = 20.0 if pug else 0.0
+        merged["SLAB_ROLLER_MAINT_COST_PER_MONTH"] = 10.0 if slab else 0.0
+    except Exception:
+        pass
+
 
     with override_globals(merged):
         # If any helpers previously read globals, they still will—now pointed at merged.

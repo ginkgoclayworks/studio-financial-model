@@ -46,7 +46,7 @@ PARAM_SPECS = {
     "EVENTS_MAX_PER_MONTH":   {"type": "int",   "min": 0, "max": 20, "step": 1, "label": "Events max / mo"},
     "TICKET_PRICE":           {"type": "int",   "min": 0, "max": 500, "step": 5, "label": "Ticket price"},
     "CLASSES_ENABLED":        {"type": "bool",  "label": "Classes enabled"},
-    "CLASS_COHORTS_PER_MONTH": {"type": "int", "min": 0, "max": 12, "step": 1, "label": "Cohorts per start (intake)"},
+    "CLASS_COHORTS_PER_MONTH": {"type": "int", "min": 0, "max": 12, "step": 1, "label": "Cohorts_per launch"},
     "USE_SEMESTER_SCHEDULE": {"type": "bool",  "label": "Use semester schedule (3 mo × 4/yr)"},
     "CLASSES_PER_SEMESTER":  {"type": "int",   "min": 0, "max": 36, "step": 1, "label": "Cohorts per semester"},
     "CLASS_CAP_PER_COHORT":   {"type": "int",   "min": 1, "max": 30, "step": 1, "label": "Class cap / cohort"},
@@ -68,7 +68,7 @@ PARAM_SPECS = {
     },
     "CLASSES_PER_SEMESTER": {
         "type": "int", "min": 1, "max": 6, "step": 1, "label": "Classes per semester",
-        "desc": "How many cohorts begin at each semester start.",
+        "desc": "How many classes (Throwing 101, Handbuilding 101) begin at each semester start.",
         "rec": (2, 2)
     },
 }
@@ -191,7 +191,7 @@ STRAT_SPEC_META = {
         "rec": (0, 12)
     },
     "CLASS_COHORTS_PER_MONTH": {
-        "desc": "How many new class groups you start each month.",
+        "desc": "How many new cohorts you start per launch.",
         "rec": (0, 4)
     },
     "CLASS_CAP_PER_COHORT": {
@@ -1309,7 +1309,6 @@ with st.sidebar:
     
     st.header("Configuration")
     st.caption("Hover over any label for a short explanation.")
-    st.sidebar.caption("BUILD: equip-01")
     st.session_state["_show_hints"] = st.toggle(
         "Show hints", value=True,
         help="If on, the app shows a small note when a value is outside its typical range."

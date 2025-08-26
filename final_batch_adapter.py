@@ -63,6 +63,12 @@ ALLOWED_OVERRIDES: Dict[str, str] = {
     "REFERENCE_PRICE": "REFERENCE_PRICE",
     "JOIN_PRICE_ELASTICITY": "JOIN_PRICE_ELASTICITY",
     "CHURN_PRICE_ELASTICITY": "CHURN_PRICE_ELASTICITY",
+        # equipment (start-of-life)
+    "N_WHEELS_START": "N_WHEELS_START",
+    "HAS_SLAB_ROLLER_START": "HAS_SLAB_ROLLER_START",
+    "N_RACKS_START": "N_RACKS_START",
+    "HAS_PUG_MILL_START": "HAS_PUG_MILL_START",
+    "N_CLAY_TRAPS_START": "N_CLAY_TRAPS_START",
 
 }
 
@@ -135,6 +141,9 @@ def _prefer_modular_run(overrides: Optional[dict]) -> Optional[Tuple[pd.DataFram
             "MONTHS", "N_SIMULATIONS", "PRICE", "JOIN_PRICE_ELASTICITY", "CHURN_PRICE_ELASTICITY",
             "RENT_SCENARIOS", "OWNER_DRAW_SCENARIOS",
             "DOWNTURN_PROB_PER_MONTH", "CAPACITY_SOFT_CAP", "RANDOM_SEED",
+            # equipment (start-of-life)
+            "N_WHEELS_START", "HAS_SLAB_ROLLER_START", "N_RACKS_START",
+            "HAS_PUG_MILL_START", "N_CLAY_TRAPS_START",
         ]
         eff_src = art.get("effective_config", art)
         eff = {k: eff_src.get(k, cfg.get(k, None)) for k in eff_keys}

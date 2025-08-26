@@ -278,6 +278,20 @@ try:
 except NameError:
     IO_MONTHS_7A = 0
                         
+# --- SBA fee defaults (overridable from UI/batch) ---
+try: FEES_UPFRONT_PCT_7A
+except NameError: FEES_UPFRONT_PCT_7A = 0.03   # 3% example
+try: FEES_UPFRONT_PCT_504
+except NameError: FEES_UPFRONT_PCT_504 = 0.02  # 2% example
+try: FEES_PACKAGING
+except NameError: FEES_PACKAGING = 2500.0
+try: FEES_CLOSING
+except NameError: FEES_CLOSING = 1500.0
+try: FINANCE_FEES_7A
+except NameError: FINANCE_FEES_7A = True
+try: FINANCE_FEES_504
+except NameError: FINANCE_FEES_504 = True
+    
 # Owner draw taper
 OWNER_DRAW_START_MONTH = 1
 OWNER_DRAW_END_MONTH   = 12  # set None for indefinite
@@ -874,10 +888,27 @@ def _core_simulation_and_reports():
                     # Loan principal sizing
                    # ----- Split loan sizing: 504 (CapEx) + 7(a) (runway/draw/buffer) -----
                     total_capex_for_loan = (capex_I_cost + capex_II_cost) if ("all_upfront" in scen_name) else capex_I_cost
-                    loan_504_principal = total_capex_for_loan * (1 + LOAN_CONTINGENCY_PCT)
-                    
 
+                    loan_504_principal = total_capex_for_loan * (1 + LOAN_CONTINGENCY_PCT)
                     loan_7a_principal  = runway_costs + EXTRA_BUFFER
+
+                    # ---- SBA fees (can be financed into principal or paid in cash) ----
+                    fees_7a_pct  = float(FEES_UPFRONT_PCT_7A)  * float(loan_7a_principal)
+                    fees_504_pct = float(FEES_UPFRONT_PCT_504) * float(loan_504_principal)
+                    flat_fees    = float(FEES_PACKAGING) + float(FEES_CLOSING)  # attach to 7(a) for simplicity
+                    fees_7a_total  = fees_7a_pct  + flat_fees
+                    fees_504_total = fees_504_pct
+
+                    fees_cash_outflow = 0.0
+                    if FINANCE_FEES_7A:
+                        loan_7a_principal += fees_7a_total
+                    else:
+                        fees_cash_outflow += fees_7a_total
+                    if FINANCE_FEES_504:
+                        loan_504_principal += fees_504_total
+                    else:
+                        fees_cash_outflow += fees_504_total
+                    # ---- end SBA fees ----
 
                     # Build per-month payment schedules (IO -> amortization)
                     loan_payment_504_ts = build_loan_schedule(
@@ -1479,13 +1510,13 @@ def _core_simulation_and_reports():
                         
                         dscr_cash = (cfads / loan_payment_total_ts[month]) if loan_payment_total_ts[month] > 0 else np.nan
     
-                        # Month 0 loan & capex (use split principals; cash = total proceeds − upfront CapEx spend)
+                        # Month 0 loan & capex (use split principals; cash = total proceeds − upfront CapEx spend − any cash-paid fees)
                         if month == 0:
                             if "all_upfront" in scen_name:
                                 upfront_capex = (capex_I_cost + capex_II_cost)
                             else:
                                 upfront_capex = capex_I_cost
-                            cash_balance += loan_principal_total - upfront_capex
+                            cash_balance += loan_principal_total - upfront_capex - (fees_cash_outflow if 'fees_cash_outflow' in locals() else 0.0)
                             cumulative_after_capex -= upfront_capex
     
                         # Staged expansion capex at trigger
@@ -1557,6 +1588,11 @@ def _core_simulation_and_reports():
                             "loan_principal_total": loan_principal_total,
                             "loan_principal_504": loan_504_principal,
                             "loan_principal_7a": loan_7a_principal,
++                            # Fees visibility (only meaningful at month 0; still included for traceability)
+                            "fees_cash_outflow": float(fees_cash_outflow if 'fees_cash_outflow' in locals() else 0.0),
+                            "fees_7a_financed": float((fees_7a_total if ('fees_7a_total' in locals() and FINANCE_FEES_7A) else 0.0)),
+                            "fees_504_financed": float((fees_504_total if ('fees_504_total' in locals() and FINANCE_FEES_504) else 0.0)),
+                            
                             "capex_I_cost": capex_I_cost,
                             "capex_II_cost": capex_II_cost,
                             "runway_costs": sized_runway_costs,
@@ -2008,8 +2044,28 @@ def _core_simulation_and_reports():
     
                             # Split loans (504 = CapEx + contingency; 7(a) = runway + EXTRA_BUFFER)
                             total_capex_for_loan = (capex_I_cost + capex_II_cost) if ("all_upfront" in scen_name) else capex_I_cost
+
+
                             loan_504_principal = total_capex_for_loan * (1 + LOAN_CONTINGENCY_PCT)
                             loan_7a_principal  = runway_costs + EXTRA_BUFFER
+        
+                            # ---- SBA fees (can be financed into principal or paid in cash) ----
+                            fees_7a_pct  = float(FEES_UPFRONT_PCT_7A)  * float(loan_7a_principal)
+                            fees_504_pct = float(FEES_UPFRONT_PCT_504) * float(loan_504_principal)
+                            flat_fees    = float(FEES_PACKAGING) + float(FEES_CLOSING)  # attach to 7(a) for simplicity
+                            fees_7a_total  = fees_7a_pct  + flat_fees
+                            fees_504_total = fees_504_pct
+        
+                            fees_cash_outflow = 0.0
+                            if FINANCE_FEES_7A:
+                                loan_7a_principal += fees_7a_total
+                            else:
+                                fees_cash_outflow += fees_7a_total
+                            if FINANCE_FEES_504:
+                                loan_504_principal += fees_504_total
+                            else:
+                                fees_cash_outflow += fees_504_total
+                            # ---- end SBA fees ----
     
                             # Monthly debt service (define these; they’re used later)
                            # Build per-month payment schedules (IO -> amortization)
@@ -2330,10 +2386,11 @@ def _core_simulation_and_reports():
                                 # Add tax remittances to cash OpEx
                                 total_opex_cash += tax_payments_this_month
     
-                                # Month 0 loan proceeds / CapEx (match main sim; use total of 504 + 7(a))
+                                # Month 0 loan proceeds / CapEx / cash-paid fees (match main sim; use total of 504 + 7(a))
+
                                 if month == 0:
                                     upfront_capex = (capex_I_cost + capex_II_cost) if ("all_upfront" in scen_name) else capex_I_cost
-                                    cash_balance += loan_principal_total - upfront_capex
+                                    cash_balance += loan_principal_total - upfront_capex - (fees_cash_outflow if 'fees_cash_outflow' in locals() else 0.0)
                                 cash_balance += (total_revenue - total_opex_cash)
                                 if (grant_month is not None) and (month == grant_month):
                                     cash_balance += grant_amount

@@ -87,6 +87,12 @@ PARAM_SPECS.update({
     "WORKSHOP_CONV_LAG_MO": {"type":"int", "min":0, "max":12, "step":1, "default": 1, "label":"Conversion lag (months)"},
     # Optional cost model
     "WORKSHOP_COST_PER_EVENT": {"type":"float", "min":0.0, "max":1000.0, "step":5.0, "default": 50.0, "label":"Variable cost per workshop", "help":"Supplies, instructor stipend, etc."},
+
+    "N_WHEELS_START":        {"type":"int",   "min":1,  "max":12, "step":1,  "label":"Wheels at start", "default": 8},
+    "HAS_SLAB_ROLLER_START": {"type":"bool",  "label":"Slab roller at start", "default": False},
+    "N_RACKS_START":         {"type":"int",   "min":5,  "max":20, "step":5,  "label":"Wire racks at start", "default": 10},
+    "HAS_PUG_MILL_START":    {"type":"bool",  "label":"Pug mill at start", "default": False},
+    "N_CLAY_TRAPS_START":    {"type":"int",   "min":1,  "max":1,  "step":1,  "label":"Clay trap (fixed)", "default": 1},
 })
 
 
@@ -259,6 +265,12 @@ GROUPS = {
     "events": [
         "BASE_EVENTS_PER_MONTH_LAMBDA", "EVENTS_MAX_PER_MONTH", "TICKET_PRICE",
     ],
+    
+        # Equipment (start-of-life)
+    "equipment": [
+        "N_WHEELS_START", "HAS_SLAB_ROLLER_START", "N_RACKS_START",
+        "HAS_PUG_MILL_START", "N_CLAY_TRAPS_START",
+     ],
 
     # Finance & grants
     "finance": [
@@ -1353,6 +1365,14 @@ with st.sidebar:
             group_keys=GROUPS["capacity"], prefix="env_capacity"
         )
     
+    with st.expander("Equipment", expanded=True):
+        strat_equipment = render_param_controls(
+            "Equipment", _subset(strat, GROUPS.get("equipment", [])),
+            group_keys=GROUPS.get("equipment", []), prefix="strat_equipment"
+        )
+        st.caption("Tie capacity & costs to equipment purchased at start. Racks set member cap (≈3 members/rack). Wheels cap wheel-station capacity. Pug mill reduces clay COGS; slab roller boosts handbuilding throughput.")
+
+                  
     with st.expander("Finance & Grants (Scenario)", expanded=False):
         env_finance = render_param_controls(
             "Finance & Grants (Scenario)", _subset(env, ["grant_amount", "grant_month"]),

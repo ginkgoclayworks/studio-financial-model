@@ -46,20 +46,13 @@ PARAM_SPECS = {
     "EVENTS_MAX_PER_MONTH":   {"type": "int",   "min": 0, "max": 20, "step": 1, "label": "Events max / mo"},
     "TICKET_PRICE":           {"type": "int",   "min": 0, "max": 500, "step": 5, "label": "Ticket price"},
     "CLASSES_ENABLED":        {"type": "bool",  "label": "Classes enabled"},
-    "CLASS_COHORTS_PER_MONTH": {"type": "int", "min": 0, "max": 12, "step": 1, "label": "Cohorts_per launch"},
-    "USE_SEMESTER_SCHEDULE": {"type": "bool",  "label": "Use semester schedule (3 mo × 4/yr)"},
-    "CLASSES_PER_SEMESTER":  {"type": "int",   "min": 0, "max": 36, "step": 1, "label": "Cohorts per semester"},
+    "CLASS_COHORTS_PER_MONTH": {"type": "int", "min": 0, "max": 12, "step": 1, "label": "Cohorts_per_launch"},
     "CLASS_CAP_PER_COHORT":   {"type": "int",   "min": 1, "max": 30, "step": 1, "label": "Class cap / cohort"},
     "CLASS_PRICE":            {"type": "int",   "min": 0, "max": 1000, "step": 10, "label": "Class price"},
     "CLASS_CONV_RATE":        {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Class→Member conv"},
     "CLASS_CONV_LAG_MO":      {"type": "int",   "min": 0, "max": 12, "step": 1, "label": "Class conv lag (mo)"},
-        # In PARAM_SPECS (near the other Strategy/Income items)
-    "MEMBER_CAP": {
-        "type": "int", "min": -1, "max": 500, "step": 1, "label": "Member cap (hard limit)"
-    },
-    "EXPANSION_THRESHOLD": {
-        "type": "int", "min": 0, "max": 200, "step": 1, "label": "Expansion threshold (members)"
-    },
+    "MEMBER_CAP": {"type": "int", "min": -1, "max": 500, "step": 1, "label": "Member cap (hard limit)"},
+    "EXPANSION_THRESHOLD": {"type": "int", "min": 0, "max": 200, "step": 1, "label": "Expansion threshold (members)"},
     # --- Semester schedule controls (Strategy) ---
     "USE_SEMESTER_SCHEDULE": {
         "type": "bool", "label": "Use semester schedule",
@@ -69,8 +62,18 @@ PARAM_SPECS = {
     "CLASSES_PER_SEMESTER": {
         "type": "int", "min": 1, "max": 6, "step": 1, "label": "Classes per semester",
         "desc": "How many classes (Throwing 101, Handbuilding 101) begin at each semester start.",
-        "rec": (2, 2)
-    },
+        "rec": (2, 2)},
+    # --- Loans & sizing ---
+    "LOAN_504_ANNUAL_RATE": {"type": "float", "min": 0.03, "max": 0.20, "step": 0.001, "label": "504 rate (APR)"},
+    "LOAN_504_TERM_YEARS":  {"type": "int",   "min": 5,    "max": 25,   "step": 1,     "label": "504 term (years)"},
+    "IO_MONTHS_504":        {"type": "int",   "min": 0,    "max": 18,   "step": 1,     "label": "504 interest-only (mo)", "desc": "Planned interest-only months before amortization. (Phase 1 UI only)"},
+    "LOAN_7A_ANNUAL_RATE":  {"type": "float", "min": 0.05, "max": 0.20, "step": 0.001, "label": "7(a) rate (APR)"},
+    "LOAN_7A_TERM_YEARS":   {"type": "int",   "min": 5,    "max": 10,   "step": 1,     "label": "7(a) term (years)"},
+    "IO_MONTHS_7A":         {"type": "int",   "min": 0,    "max": 18,   "step": 1,     "label": "7(a) interest-only (mo)", "desc": "Planned interest-only months before amortization. (Phase 1 UI only)"},
+    "LOAN_CONTINGENCY_PCT": {"type": "float", "min": 0.00, "max": 0.25, "step": 0.01,  "label": "CapEx contingency (%)"},
+    "RUNWAY_MONTHS":        {"type": "int",   "min": 0,    "max": 24,   "step": 1,     "label": "Runway months (7a sizing)"},
+    "EXTRA_BUFFER":         {"type": "int",   "min": 0,    "max": 200000, "step": 1000, "label": "Extra buffer ($)"},
+    "RESERVE_FLOOR":        {"type": "int",   "min": 0,    "max": 100000, "step": 1000, "label": "Reserve floor ($)", "desc": "Target minimum cash buffer for LOC sizing; not yet used by simulator."}, 
 }
     
 PARAM_SPECS.update({
@@ -275,6 +278,18 @@ GROUPS = {
     # Finance & grants
     "finance": [
         "RENT", "OWNER_DRAW", "grant_amount", "grant_month",
+    ],
+    # Loans & sizing
+    "loans": [
+        "LOAN_504_ANNUAL_RATE", "LOAN_504_TERM_YEARS",
+        "LOAN_7A_ANNUAL_RATE", "LOAN_7A_TERM_YEARS",
+        "LOAN_CONTINGENCY_PCT", "RUNWAY_MONTHS", "EXTRA_BUFFER"
+    ],
+    "io": [
+        "IO_MONTHS_504", "IO_MONTHS_7A"
+    ],
+    "sizing": [
+        "RESERVE_FLOOR"
     ],
 }
 
@@ -990,6 +1005,36 @@ def summarize_cell(df: pd.DataFrame) -> Tuple[dict, pd.DataFrame]:
     matrix_row["breakeven_signal"] = cf_col     
     matrix_row["breakeven_k"] = breakeven_k
 
+        # --- LoanNeeded-LOC (peak deficit sizing) -------------------------------
+    # Logic: size to lift the deepest cash trough up to RESERVE_FLOOR.
+    # Uses post-debt cash path. Falls back gracefully if columns are missing.
+    try:
+        reserve_floor = float(strat.get("RESERVE_FLOOR", 0.0)) if "strat" in globals() else 0.0
+    except Exception:
+        reserve_floor = 0.0
+
+    loan_loc_p50 = loan_loc_p10 = loan_loc_p90 = np.nan
+
+    if (sim_col in df.columns) and (cash_col in df.columns):
+        # Min cash per simulation (post-debt if loans are modeled in cash)
+        min_cash_by_sim = (
+            df.groupby(sim_col)[cash_col]
+              .min()
+              .astype(float)
+        )
+        # LOC needed per simulation to reach reserve floor
+        loc_needed_by_sim = np.maximum(0.0, reserve_floor - min_cash_by_sim.values)
+        if loc_needed_by_sim.size > 0:
+            loan_loc_p50 = float(np.nanpercentile(loc_needed_by_sim, 50))
+            loan_loc_p10 = float(np.nanpercentile(loc_needed_by_sim, 10))
+            loan_loc_p90 = float(np.nanpercentile(loc_needed_by_sim, 90))
+
+    # store on the one-row matrix so it returns with the rest of summaries
+    matrix_row["loan_needed_loc_p50"] = loan_loc_p50
+    matrix_row["loan_needed_loc_p10"] = loan_loc_p10
+    matrix_row["loan_needed_loc_p90"] = loan_loc_p90
+
+
     # return a dict-like row (first row) and the timings table
     return matrix_row.iloc[0].to_dict(), timings
 
@@ -1518,13 +1563,20 @@ with st.sidebar:
             "Finance & Grants (Strategy)", _subset(strat, ["RENT", "OWNER_DRAW"]),
             group_keys=["RENT", "OWNER_DRAW"], prefix="strat_finance"
         )
+    with st.expander("Loans & Sizing", expanded=False):
+        strat_loans = render_param_controls(
+            "Loans & Sizing",
+            _subset(strat, GROUPS["loans"] + GROUPS["io"] + GROUPS["sizing"]),
+            group_keys=GROUPS["loans"] + GROUPS["io"] + GROUPS["sizing"],
+            prefix="strat_loans"
+        )
     
     # Merge edits back
     for part in (env_macro, env_growth, env_capacity, env_finance):
         _update_from(part, env, part.keys())
     
-    for part in (strat_pricing, strat_workshops, strat_classes, strat_events, strat_finance, strat_equipment):
-        _update_from(part, strat, part.keys())
+    for part in (strat_pricing, strat_workshops, strat_classes, strat_events, strat_finance, strat_loans, strat_equipment):
+         _update_from(part, strat, part.keys())
 
     # Preset save/load
     st.markdown("---")
@@ -1573,9 +1625,21 @@ with tab_run:
         dscr_med    = kpi_cell.get("dscr_med", np.nan)
         t_breakeven = row_dict.get("median_time_to_breakeven_months", np.nan)
         
-        dscr_med    = kpi_cell.get("dscr_med", np.nan)
-        t_breakeven = row_dict.get("median_time_to_breakeven_months", np.nan)
-
+        # --- LoanNeeded-LOC KPI --------------------------------------------------
+        try:
+            loan_p50 = row_dict.get("loan_needed_loc_p50", np.nan)
+            loan_p10 = row_dict.get("loan_needed_loc_p10", np.nan)
+            loan_p90 = row_dict.get("loan_needed_loc_p90", np.nan)
+        except Exception:
+            loan_p50 = loan_p10 = loan_p90 = np.nan
+    
+        loc_cols = st.columns(3)
+        loc_cols[0].metric("Loan Needed (LOC) — p50", "$" + (f"{loan_p50:,.0f}" if np.isfinite(loan_p50) else "NA"))
+        loc_cols[1].metric("p10 (optimistic)", "$" + (f"{loan_p10:,.0f}" if np.isfinite(loan_p10) else "NA"))
+        loc_cols[2].metric("p90 (conservative)", "$" + (f"{loan_p90:,.0f}" if np.isfinite(loan_p90) else "NA"))
+        st.caption("LOC sizing uses the peak cash deficit vs. Reserve floor (post-debt cash path).")
+        # -------------------------------------------------------------------------
+        
         # Figure out which month we actually have DSCR for (M12 or horizon if T<12)
         if not df_cell.empty and any(c in df_cell.columns for c in ("month", "Month", "t")):
             month_col = "month" if "month" in df_cell.columns else ("Month" if "Month" in df_cell.columns else "t")

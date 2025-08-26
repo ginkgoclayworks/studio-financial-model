@@ -10,6 +10,15 @@ Created on Mon Aug 18 16:43:44 2025
 # -*- coding: utf-8 -*-
 
 
+# --- Non-interactive matplotlib backend for headless/batch runs ---
+import matplotlib
+try:
+    # Use a headless backend so CLI, batch, and CI runs don't try to open windows.
+    matplotlib.use("Agg")
+except Exception:
+    # If something else already configured the backend, just proceed.
+    pass
+
 def main():
     """
     Scenario × Strategy matrix runner for the GCWS simulator.

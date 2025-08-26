@@ -28,7 +28,16 @@ ALLOWED_OVERRIDES: Dict[str, str] = {
     # economics
     "RENT": "RENT_SCENARIOS",                 # wrapped as np.array([RENT])
     "OWNER_DRAW": "OWNER_DRAW_SCENARIOS",     # wrapped as [OWNER_DRAW]
-
+    
+    # workshops
+    "WORKSHOPS_ENABLED": "WORKSHOPS_ENABLED",
+    "WORKSHOPS_PER_MONTH": "WORKSHOPS_PER_MONTH",
+    "WORKSHOP_AVG_ATTENDANCE": "WORKSHOP_AVG_ATTENDANCE",
+    "WORKSHOP_FEE": "WORKSHOP_FEE",
+    "WORKSHOP_COST_PER_EVENT": "WORKSHOP_COST_PER_EVENT",
+    "WORKSHOP_CONV_RATE": "WORKSHOP_CONV_RATE",
+    "WORKSHOP_CONV_LAG_MO": "WORKSHOP_CONV_LAG_MO",
+    
     # events
     "EVENTS_ENABLED": "EVENTS_ENABLED",
     "TICKET_PRICE": "TICKET_PRICE",
@@ -56,6 +65,10 @@ ALLOWED_OVERRIDES: Dict[str, str] = {
     "LOAN_504_TERM_YEARS": "LOAN_504_TERM_YEARS",
     "LOAN_7A_ANNUAL_RATE": "LOAN_7A_ANNUAL_RATE",
     "LOAN_7A_TERM_YEARS": "LOAN_7A_TERM_YEARS",
+        # interest-only months and reserve floor (new)
+    "IO_MONTHS_504": "IO_MONTHS_504",
+    "IO_MONTHS_7A": "IO_MONTHS_7A",
+    "RESERVE_FLOOR": "RESERVE_FLOOR",
 
     # membership/capacity
     "MAX_MEMBERS": "MAX_MEMBERS",
@@ -84,10 +97,11 @@ def _row_to_overrides(row: pd.Series) -> dict:
                 ov[internal_key] = [float(val)]
             elif external_key in {
                 "N_SIMULATIONS", "MONTHS", "RANDOM_SEED", "EVENTS_MAX_PER_MONTH",
-                "RUNWAY_MONTHS", "LOAN_504_TERM_YEARS", "LOAN_7A_TERM_YEARS", "MAX_MEMBERS"
+                "RUNWAY_MONTHS", "LOAN_504_TERM_YEARS", "LOAN_7A_TERM_YEARS",
+                "IO_MONTHS_504", "IO_MONTHS_7A", "RESERVE_FLOOR", "MAX_MEMBERS"
             }:
                 ov[internal_key] = int(val)
-            elif external_key in {"EVENTS_ENABLED", "CLASSES_ENABLED"}:
+            elif external_key in {"EVENTS_ENABLED", "CLASSES_ENABLED", "WORKSHOPS_ENABLED"}:
                 ov[internal_key] = bool(val)
             elif external_key in {"ATTENDEES_PER_EVENT_RANGE", "EVENT_MUG_COST_RANGE"}:
                 v = row[external_key]
@@ -205,7 +219,8 @@ def run_original_once(script_path: str, overrides: dict | None = None):
 # -----------------------------
 # Lender summary helpers
 # -----------------------------
-def lender_summary_from_results(results_df: pd.DataFrame) -> pd.DataFrame:
+def lender_summary_from_results(results_df: pd.DataFrame, reserve_floor: float = 0.0) -> pd.DataFrame:
+
     def first_be(group: pd.DataFrame):
         be_m = group.loc[group["cumulative_op_profit"] >= 0, "month"].min()
         return be_m if pd.notna(be_m) else np.nan
@@ -269,6 +284,25 @@ def lender_summary_from_results(results_df: pd.DataFrame) -> pd.DataFrame:
            .merge(cashT, on=["scenario","rent","owner_draw"], how="left")
            .merge(insol, on=["scenario","rent","owner_draw"], how="left"))
 
+    # LOC sizing: peak deficit vs. reserve floor (p10/p50/p90)
+    required = {"scenario","rent","owner_draw","simulation_id","cash_balance"}
+    if required.issubset(results_df.columns):
+        trough = (results_df
+                  .groupby(["scenario","rent","owner_draw","simulation_id"])["cash_balance"]
+                  .min()
+                  .reset_index(name="min_cash"))
+        trough["loc_needed"] = (reserve_floor - trough["min_cash"]).clip(lower=0.0)
+        def _p(a, q): return float(np.nanpercentile(a, q)) if len(a) else np.nan
+        loc_df = (trough
+                  .groupby(["scenario","rent","owner_draw"])["loc_needed"]
+                  .apply(lambda s: pd.Series({
+                      "loan_needed_loc_p10": _p(s.values, 10),
+                      "loan_needed_loc_p50": _p(s.values, 50),
+                      "loan_needed_loc_p90": _p(s.values, 90),
+                  }))
+                  .reset_index())
+        out = out.merge(loc_df, on=["scenario","rent","owner_draw"], how="left")
+
     return out
 
 
@@ -291,7 +325,8 @@ def run_batch(script_path: str, scenarios: pd.DataFrame) -> pd.DataFrame:
         res = run_original_once(script_path, ov)
         df, _eff = res if isinstance(res, tuple) else (res, None)
 
-        summ = lender_summary_from_results(df)
+        reserve = float(ov.get("RESERVE_FLOOR", 0.0)) if isinstance(ov, dict) else 0.0
+        summ = lender_summary_from_results(df, reserve_floor=reserve)
         summ.insert(0, "scenario_id", i)
         lender_rows.append(summ)
 

@@ -73,7 +73,14 @@ PARAM_SPECS = {
     "LOAN_CONTINGENCY_PCT": {"type": "float", "min": 0.00, "max": 0.25, "step": 0.01,  "label": "CapEx contingency (%)"},
     "RUNWAY_MONTHS":        {"type": "int",   "min": 0,    "max": 24,   "step": 1,     "label": "Runway months (7a sizing)"},
     "EXTRA_BUFFER":         {"type": "int",   "min": 0,    "max": 200000, "step": 1000, "label": "Extra buffer ($)"},
-    "RESERVE_FLOOR":        {"type": "int",   "min": 0,    "max": 100000, "step": 1000, "label": "Reserve floor ($)", "desc": "Target minimum cash buffer for LOC sizing; not yet used by simulator."}, 
+    "RESERVE_FLOOR":        {"type": "int",   "min": 0,    "max": 100000, "step": 1000, "label": "Reserve floor ($)", "desc": "Target minimum cash buffer for LOC sizing; not yet used by simulator."},
+        # --- SBA fees (Phase 2) ---
+    "FEES_UPFRONT_PCT_7A": {"type": "float", "min": 0.00, "max": 0.08, "step": 0.001, "label": "7(a) upfront fees (%)", "desc": "Guaranty + lender fees as % of 7(a) principal."},
+    "FEES_UPFRONT_PCT_504": {"type": "float", "min": 0.00, "max": 0.08, "step": 0.001, "label": "504 upfront fees (%)", "desc": "CDC + bank fees as % of 504 principal."},
+    "FEES_PACKAGING": {"type": "int", "min": 0, "max": 10000, "step": 100, "label": "Packaging fees ($)"},
+    "FEES_CLOSING": {"type": "int", "min": 0, "max": 20000, "step": 100, "label": "Closing costs ($)"},
+    "FINANCE_FEES_7A": {"type": "bool", "label": "Finance fees into 7(a)"},
+    "FINANCE_FEES_504": {"type": "bool", "label": "Finance fees into 504"},
 }
     
 PARAM_SPECS.update({
@@ -290,6 +297,11 @@ GROUPS = {
     ],
     "sizing": [
         "RESERVE_FLOOR"
+    ],
+    "fees": [
+        "FEES_UPFRONT_PCT_7A", "FEES_UPFRONT_PCT_504",
+        "FEES_PACKAGING", "FEES_CLOSING",
+        "FINANCE_FEES_7A", "FINANCE_FEES_504"
     ],
 }
 
@@ -1566,8 +1578,8 @@ with st.sidebar:
     with st.expander("Loans & Sizing", expanded=False):
         strat_loans = render_param_controls(
             "Loans & Sizing",
-            _subset(strat, GROUPS["loans"] + GROUPS["io"] + GROUPS["sizing"]),
-            group_keys=GROUPS["loans"] + GROUPS["io"] + GROUPS["sizing"],
+            _subset(strat, GROUPS["loans"] + GROUPS["io"] + GROUPS["sizing"] + GROUPS["fees"]),
+            group_keys=GROUPS["loans"] + GROUPS["io"] + GROUPS["sizing"] + GROUPS["fees"],
             prefix="strat_loans"
         )
     

@@ -266,6 +266,17 @@ LOAN_7A_ANNUAL_RATE  = 0.115   # SBA 7(a), 5-year term mid-case
 LOAN_7A_TERM_YEARS   = 5
 
 DSCR_CASH_TARGET = 1.25  # put with other constants
+
+# --- Interest-only months (can be overridden from UI/batch) ---
+try:
+    IO_MONTHS_504
+except NameError:
+    IO_MONTHS_504 = 0
+
+try:
+    IO_MONTHS_7A
+except NameError:
+    IO_MONTHS_7A = 0
                         
 # Owner draw taper
 OWNER_DRAW_START_MONTH = 1
@@ -717,6 +728,41 @@ def calculate_monthly_payment(principal, annual_rate, years):
     n = years * 12
     return principal * (r * (1 + r)**n) / ((1 + r)**n - 1)
 
+def build_loan_schedule(principal: float, annual_rate: float, term_years: int,
+                        io_months: int, total_months: int) -> np.ndarray:
+    """
+    Return a length-`total_months` array of monthly payments.
+    First `io_months`: interest-only; thereafter level amortization over remaining term months.
+    Payments beyond the loan term are zeros.
+    """
+    if principal <= 0 or total_months <= 0:
+        return np.zeros(max(int(total_months), 0), dtype=float)
+
+    r = float(annual_rate) / 12.0
+    term_m = int(term_years * 12)
+    io_m = int(max(0, io_months))
+    io_m = min(io_m, term_m)  # IO cannot exceed term
+
+    pays = np.zeros(int(total_months), dtype=float)
+
+    # Interest-only phase
+    io_payment = principal * r if r != 0.0 else 0.0
+    io_len = min(io_m, total_months)
+    if io_len > 0:
+        pays[:io_len] = io_payment
+
+    # Amortization phase
+    rem_term = term_m - io_len
+    if rem_term > 0 and io_len < total_months:
+        if r == 0.0:
+            amort_payment = principal / rem_term
+        else:
+            amort_payment = principal * (r / (1.0 - (1.0 + r) ** (-rem_term)))
+        pays[io_len: min(total_months, io_len + rem_term)] = amort_payment
+
+    # Beyond loan maturity: zeros
+    return pays
+
 def compute_firing_fee(clay_lbs):
     if clay_lbs <= 20: return clay_lbs * 3
     elif clay_lbs <= 40: return 20 * 3 + (clay_lbs - 20) * 4
@@ -829,11 +875,19 @@ def _core_simulation_and_reports():
                    # ----- Split loan sizing: 504 (CapEx) + 7(a) (runway/draw/buffer) -----
                     total_capex_for_loan = (capex_I_cost + capex_II_cost) if ("all_upfront" in scen_name) else capex_I_cost
                     loan_504_principal = total_capex_for_loan * (1 + LOAN_CONTINGENCY_PCT)
+                    
+
                     loan_7a_principal  = runway_costs + EXTRA_BUFFER
-    
-                    monthly_loan_payment_504 = calculate_monthly_payment(loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS)
-                    monthly_loan_payment_7a  = calculate_monthly_payment(loan_7a_principal,  LOAN_7A_ANNUAL_RATE,  LOAN_7A_TERM_YEARS)
-                    monthly_loan_payment     = monthly_loan_payment_504 + monthly_loan_payment_7a
+
+                    # Build per-month payment schedules (IO -> amortization)
+                    loan_payment_504_ts = build_loan_schedule(
+                        loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS, IO_MONTHS_504, MONTHS
+                    )
+                    loan_payment_7a_ts = build_loan_schedule(
+                        loan_7a_principal, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
+                    )
+                    loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
+                    # (scalar monthly_loan_payment_* replaced by per-month schedules)
     
                     loan_principal_total = loan_504_principal + loan_7a_principal
                     sized_runway_costs = runway_costs  # keep for reporting
@@ -1306,7 +1360,8 @@ def _core_simulation_and_reports():
                         in_draw_window = in_owner_draw_window(month)  # existing calendar gate (start/end months)
                         within_stipend_quota = (month < OWNER_STIPEND_MONTHS)  # stipend only for first N months
                         owner_draw_now = owner_draw if (in_draw_window and within_stipend_quota) else 0.0
-                        fixed_opex_cash = fixed_opex_profit + monthly_loan_payment + owner_draw_now
+                        fixed_opex_cash = fixed_opex_profit + loan_payment_total_ts[month] + owner_draw_now
+
     
                         # Cash OpEx (pre-tax)
                         total_opex_cash = (
@@ -1403,7 +1458,7 @@ def _core_simulation_and_reports():
                         op_profit_after_tax = op_profit - tax_cost
     
                         # DSCR based on pre-tax operating profit (keep if you want to track it)
-                        dscr = (op_profit / monthly_loan_payment) if monthly_loan_payment > 0 else np.nan
+                        dscr = (op_profit / loan_payment_total_ts[month]) if loan_payment_total_ts[month] > 0 else np.nan
                         
                         # --- CFADS / Cash-DSCR (lender standard) ---
                         # total_opex_cash currently INCLUDES:
@@ -1416,13 +1471,13 @@ def _core_simulation_and_reports():
                         
                         opex_cash_excl_debt_and_draws = (
                             total_opex_cash
-                            - monthly_loan_payment    # remove debt service
-                            - owner_draw_now          # remove distributions
+                            - loan_payment_total_ts[month]    # remove debt service
+                            - owner_draw_now                  # remove distributions
                         )
                         
                         cfads = total_revenue - opex_cash_excl_debt_and_draws
                         
-                        dscr_cash = (cfads / monthly_loan_payment) if monthly_loan_payment > 0 else np.nan
+                        dscr_cash = (cfads / loan_payment_total_ts[month]) if loan_payment_total_ts[month] > 0 else np.nan
     
                         # Month 0 loan & capex (use split principals; cash = total proceeds − upfront CapEx spend)
                         if month == 0:
@@ -1496,9 +1551,9 @@ def _core_simulation_and_reports():
                             "grant_month": grant_month,
                             "grant_amount": grant_amount,
                             "is_downturn": is_downturn,                        
-                            "loan_payment_total": monthly_loan_payment,
-                            "loan_payment_504": monthly_loan_payment_504,
-                            "loan_payment_7a": monthly_loan_payment_7a,
+                            "loan_payment_total": float(loan_payment_total_ts[month]),
+                            "loan_payment_504": float(loan_payment_504_ts[month]),
+                            "loan_payment_7a": float(loan_payment_7a_ts[month]),
                             "loan_principal_total": loan_principal_total,
                             "loan_principal_504": loan_504_principal,
                             "loan_principal_7a": loan_7a_principal,
@@ -1957,13 +2012,14 @@ def _core_simulation_and_reports():
                             loan_7a_principal  = runway_costs + EXTRA_BUFFER
     
                             # Monthly debt service (define these; they’re used later)
-                            monthly_loan_payment_504 = calculate_monthly_payment(
-                                loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS
+                           # Build per-month payment schedules (IO -> amortization)
+                            loan_payment_504_ts = build_loan_schedule(
+                                loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS, IO_MONTHS_504, MONTHS
                             )
-                            monthly_loan_payment_7a = calculate_monthly_payment(
-                                loan_7a_principal, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS
+                            loan_payment_7a_ts = build_loan_schedule(
+                                loan_7a_principal, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
                             )
-                            monthly_loan_payment = monthly_loan_payment_504 + monthly_loan_payment_7a
+                            loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
     
                             loan_principal_total = loan_504_principal + loan_7a_principal
     
@@ -2182,7 +2238,7 @@ def _core_simulation_and_reports():
                                     employer_payroll_tax = owner_salary_expense * EMPLOYER_PAYROLL_TAX_RATE
                                     employee_withholding = owner_salary_expense * EMPLOYEE_PAYROLL_TAX_RATE
     
-                                fixed_opex_cash = fixed_opex_profit + monthly_loan_payment + owner_draw_now
+                                fixed_opex_cash = fixed_opex_profit + loan_payment_total_ts[month] + owner_draw_now
                                 total_opex_cash = (
                                     fixed_opex_cash
                                     + variable_clay_cost

@@ -357,16 +357,24 @@ def _normalize_capex_items(df):
     for _, r in df.iterrows():
         try:
             label = str(r.get("label", "")).strip()
-            amt = float(r.get("amount", 0) or 0)
-            mth = r.get("month", None)
-            thr = r.get("member_threshold", None)
+            unit  = float(r.get("unit_cost", 0) or 0)
+            cnt   = int(r.get("count", 1) or 1)
+            mth   = r.get("month", None)
+            thr   = r.get("member_threshold", None)
             enabled = bool(r.get("enabled", True))
             mth = None if (mth == "" or pd.isna(mth)) else int(mth)
             thr = None if (thr == "" or pd.isna(thr)) else int(thr)
             if not enabled:
                 continue
-            if amt > 0 and (mth is not None or thr is not None):
-                items.append({"label": label, "amount": amt, "month": mth, "member_threshold": thr})
+            # Must have positive unit cost and at least one trigger
+            if unit > 0 and (mth is not None or thr is not None):
+                items.append({
+                    "label": label,
+                    "unit_cost": unit,        # per-unit cost
+                    "count": cnt,             # units purchased when triggered
+                    "month": mth,
+                    "member_threshold": thr
+                })
         except Exception:
             continue
     return items
@@ -1446,20 +1454,20 @@ with st.sidebar:
     
         capex_existing = strat.get("CAPEX_ITEMS", [])
         capex_df_default = pd.DataFrame(capex_existing) if capex_existing else pd.DataFrame([
-            {"enabled": True,  "label": "Kiln #1",      "amount": 4000, "month": 0, "member_threshold": None},
-            {"enabled": True,  "label": "Wheels (x8)",      "amount": 9600, "month": 0, "member_threshold": None},
-            {"enabled": True,  "label": "Wire racks (x10)", "amount": 1500, "month": 0, "member_threshold": None},
-            {"enabled": True,  "label": "Clay traps",       "amount": 300,  "month": 0, "member_threshold": None},
-            {"enabled": True, "label": "Kiln #2",          "amount": 8000, "month": 6, "member_threshold": None},
-            {"enabled": True, "label": "Slab roller",      "amount": 4000, "month": None, "member_threshold": 50},
-            {"enabled": True, "label": "Pug mill",         "amount": 5000, "month": None, "member_threshold": 60},
-            {"enabled": True, "label": "Spray booth",      "amount": 2500, "month": 18, "member_threshold": None},
-            {"enabled": True, "label": "Photo booth",      "amount": 350,  "month": 12, "member_threshold": None},
+            {"enabled": True,  "label": "Kiln #1",      "count": 1,  "unit_cost": 4000, "month": 0,   "member_threshold": None},
+            {"enabled": True,  "label": "Wheels",       "count": 4,  "unit_cost": 800,  "month": 0,   "member_threshold": None},
+            {"enabled": True,  "label": "Wire racks",   "count": 5,  "unit_cost": 150,  "month": 0,   "member_threshold": None},
+            {"enabled": True,  "label": "Clay traps",   "count": 1,  "unit_cost": 300,  "month": 0,   "member_threshold": None},
+            {"enabled": False, "label": "Kiln #2",      "count": 1,  "unit_cost": 8000, "month": 6,   "member_threshold": None},
+            {"enabled": False, "label": "Wire racks",   "count": 7,  "unit_cost": 150,  "month": 0,   "member_threshold": None},
+            {"enabled": False, "label": "Wheels",       "count": 10, "unit_cost": 800,  "month": 6,   "member_threshold": None},
+            {"enabled": False, "label": "Slab roller",  "count": 1,  "unit_cost": 4000, "month": None,"member_threshold": 50},
+            {"enabled": False, "label": "Pug mill",     "count": 1,  "unit_cost": 5000, "month": None,"member_threshold": 60},
         ])
-        for col in ["enabled","label","amount","month","member_threshold"]:
+        for col in ["enabled","label","count","unit_cost","month","member_threshold"]:
             if col not in capex_df_default.columns:
                 capex_df_default[col] = [False] if col == "enabled" else [None]
-        capex_df_default = capex_df_default[["enabled","label","amount","month","member_threshold"]]
+        capex_df_default = capex_df_default[["enabled","label","count","unit_cost","month","member_threshold"]]
     
         capex_df = st.data_editor(
             capex_df_default,
@@ -1468,7 +1476,8 @@ with st.sidebar:
             column_config={
                 "enabled": st.column_config.CheckboxColumn("Include"),
                 "label": st.column_config.TextColumn("Item"),
-                "amount": st.column_config.NumberColumn("Amount ($)", min_value=0, step=100),
+                "count": st.column_config.NumberColumn("Count", min_value=1, step=1),
+                "unit_cost": st.column_config.NumberColumn("Unit cost ($)", min_value=0, step=10),
                 "month": st.column_config.NumberColumn("Trigger month", min_value=0, step=1, help="Month after launch"),
                 "member_threshold": st.column_config.NumberColumn("Trigger members", min_value=0, step=1, help="Active members ≥ this"),
             },

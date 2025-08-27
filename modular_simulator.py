@@ -123,6 +123,7 @@ from types import SimpleNamespace
 from contextlib import contextmanager
 import copy
 import inspect
+import re
 
 mpl.rcParams['font.family'] = 'Noto Sans'  # or another installed font with U+2011
 
@@ -343,7 +344,6 @@ STAGE_II_CAPEX = {
     'photo_booth': (250, 300, 350),
 }
 
-
 # -------------------------------------------------------------------------
 # Generalized CapEx schedule (optional).
 # Each item may trigger by month, by membership threshold, or either:
@@ -548,11 +548,6 @@ REFERRAL_RATE_PER_MEMBER = 0.06
 REFERRAL_CONV = 0.22
 MAX_MEMBERS = 77
 # --- Equipment defaults (overridable via cfg) ---
-N_WHEELS_START        = 8
-HAS_SLAB_ROLLER_START = False
-N_RACKS_START         = 10
-HAS_PUG_MILL_START    = False
-N_CLAY_TRAPS_START    = 1
 UTILIZATION_CHURN_UPLIFT = 0.25
 
 # -------------------------------------------------------------------------
@@ -711,33 +706,6 @@ def capex_from_choices(rng):
         if k in exclude:
             continue
         total += tri(val)
-    # Wheels (per-unit)
-    try:
-        n_wheels = int(globals().get("N_WHEELS_START", 8))
-        per = STAGE_I_CAPEX.get("wheels_1_to_4")
-        if per:
-            total += sum(tri(per) for _ in range(max(0, n_wheels)))
-    except Exception:
-        pass
-    # Racks (per-unit)
-    try:
-        n_racks = int(globals().get("N_RACKS_START", 10))
-        per = STAGE_I_CAPEX.get("wire_racks_initial")
-        if per:
-            total += sum(tri(per) for _ in range(max(0, n_racks)))
-    except Exception:
-        pass
-    # Slab roller (optional)
-    if bool(globals().get("HAS_SLAB_ROLLER_START", False)):
-        val = STAGE_I_CAPEX.get("slab_roller")
-        if val: total += tri(val)
-    # Clay trap/sink (fixed 1)
-    val = STAGE_I_CAPEX.get("industrial_sink_and_trap")
-    if val: total += tri(val)
-    # Pug mill optionally bought up front (uses Stage II pricing)
-    if bool(globals().get("HAS_PUG_MILL_START", False)):
-        val = STAGE_II_CAPEX.get("pugmill")
-        if val: total += tri(val)
     return float(total)
 
 def draw_adopters(remaining_pool, monthly_intent, rng):
@@ -963,7 +931,16 @@ def _core_simulation_and_reports():
                     except Exception:
                         _capex_queue = []
                     
-                    # --- Market pool state for this simulation ---
+
+                     # --- Market pool state for this simulation ---
+
+                    # ---- Dynamic equipment effects state (mutable during the run) ----
+                    # Start from current globals so effects are incremental and visible to existing functions.
+                    _dyn_STATIONS = {k: dict(v) for k, v in STATIONS.items()}
+                    _dyn_MAX_MEMBERS = int(MAX_MEMBERS)
+                    _dyn_CLAY_COGS_MULT = float(globals().get("CLAY_COGS_MULT", 1.0))
+                    _dyn_PUGMILL_MAINT = float(globals().get("PUGMILL_MAINT_COST_PER_MONTH", 0.0))
+                    _dyn_SLAB_MAINT = float(globals().get("SLAB_ROLLER_MAINT_COST_PER_MONTH", 0.0))
 
                     remaining_pool = {
                         "community_studio": int(COMMUNITY_POOL),
@@ -1047,27 +1024,6 @@ def _core_simulation_and_reports():
                         classes_cost = 0.0
                         class_students_this_month = 0
                         revenue_classes = 0
-                        
-                        # if CLASSES_ENABLED:
-                        #     # stochastic fill around mean
-                        #     for _ in range(int(CLASS_COHORTS_PER_MONTH)):
-                        #         fill = rng.normal(CLASS_FILL_MEAN, 0.08)
-                        #         fill = float(np.clip(fill, 0.0, 1.0))
-                        #         seats = int(round(CLASS_CAP_PER_COHORT * fill))
-                        #         class_students_this_month += seats
-                        #         revenue_classes_gross += seats * CLASS_PRICE
-                        #         classes_cost += (seats * CLASS_COST_PER_STUDENT) + (CLASS_INSTR_RATE_PER_HR * CLASS_HOURS_PER_COHORT)
-                        
-                        #     # schedule conversion of a fraction of students to members after a lag
-                        #     # keep a small queue keyed by target month
-                        #     if month == 0:
-                        #         pending_class_conversions = {}
-                        #     target_m = month + int(CLASS_CONV_LAG_MO)
-                        #     converts = int(round(class_students_this_month * CLASS_CONV_RATE))
-                        #     if converts > 0:
-                        #         pending_class_conversions[target_m] = pending_class_conversions.get(target_m, 0) + converts
-                        #      # Net class revenue (flow into total_revenue)
-                        #     revenue_classes = max(0.0, revenue_classes_gross - classes_cost)
     
                         # Classes (semester-aware if enabled)
                         if CLASSES_ENABLED and _is_class_month(month):
@@ -1566,10 +1522,40 @@ def _core_simulation_and_reports():
                                 n_ok = (_item["member_threshold"] is not None) and (current_members >= int(_item["member_threshold"]))
                                 if m_ok or n_ok:
                                     capex_draw_this_month += float(_item["amount"])
+                                    # ---- Apply equipment effects based on label ----
+                                    lbl = str(_item.get("label", "")).lower()
+                                    # Wheels: add capacity; parse "xN" (default +4)
+                                    if "wheel" in lbl:
+                                        m = re.search(r"x\s*(\d+)", lbl)
+                                        add = int(m.group(1)) if m else 4
+                                        if "wheels" in _dyn_STATIONS:
+                                            base = int(_dyn_STATIONS["wheels"].get("capacity", 0))
+                                            _dyn_STATIONS["wheels"]["capacity"] = base + max(0, add)
+                                    # Wire racks: +3 MAX_MEMBERS per rack; parse "xN" (default 1 rack)
+                                    if "rack" in lbl:
+                                        m = re.search(r"x\s*(\d+)", lbl)
+                                        racks = int(m.group(1)) if m else 1
+                                        _dyn_MAX_MEMBERS = max(3, _dyn_MAX_MEMBERS + 3 * max(0, racks))
+                                    # Slab roller: boost handbuilding capacity (+20%) and add maintenance
+                                    if "slab" in lbl and "roll" in lbl:
+                                        if "handbuilding" in _dyn_STATIONS:
+                                            hb = int(_dyn_STATIONS["handbuilding"].get("capacity", 6))
+                                            _dyn_STATIONS["handbuilding"]["capacity"] = max(1, int(round(hb * 1.20)))
+                                        _dyn_SLAB_MAINT += 10.0
+                                    # Pug mill: reduce clay COGS multiplier and add maintenance
+                                    if "pug" in lbl:
+                                        _dyn_CLAY_COGS_MULT = 0.75
+                                        _dyn_PUGMILL_MAINT += 20.0
                                     _item["purchased"] = True
                             if capex_draw_this_month > 0.0:
                                 cash_balance -= capex_draw_this_month
                                 cumulative_after_capex -= capex_draw_this_month
+                                # ---- Write back dynamic globals so downstream code sees the changes ----
+                            STATIONS.update(_dyn_STATIONS)
+                            globals()["MAX_MEMBERS"] = int(_dyn_MAX_MEMBERS)
+                            globals()["CLAY_COGS_MULT"] = float(_dyn_CLAY_COGS_MULT)
+                            globals()["PUGMILL_MAINT_COST_PER_MONTH"] = float(_dyn_PUGMILL_MAINT)
+                            globals()["SLAB_ROLLER_MAINT_COST_PER_MONTH"] = float(_dyn_SLAB_MAINT)
     
                         # Staged expansion capex at trigger
                         if ("staged" in scen_name) and (not expansion_triggered) and (len(active_members) >= EXPANSION_TRIGGER_MEMBERS):
@@ -2729,36 +2715,6 @@ def run_from_cfg(cfg: dict | None = None):
     p, p_src = _get_downturn_prob(merged)
     merged.setdefault("DOWNTURN_PROB_PER_MONTH", p)
     print(f"[nowcast] DOWNTURN_PROB_PER_MONTH = {merged['DOWNTURN_PROB_PER_MONTH']:.3f}  (source={p_src})")
-
-    # --- Derive equipment-linked capacities and costs into merged ---
-    try:
-        import copy
-        base_st = copy.deepcopy(globals().get("STATIONS", {}))
-        nw = int(merged.get("N_WHEELS_START", globals().get("N_WHEELS_START", 8)))
-        nr = int(merged.get("N_RACKS_START", globals().get("N_RACKS_START", 10)))
-        slab = bool(merged.get("HAS_SLAB_ROLLER_START", globals().get("HAS_SLAB_ROLLER_START", False)))
-        pug  = bool(merged.get("HAS_PUG_MILL_START", globals().get("HAS_PUG_MILL_START", False)))
-        # Wheels capacity
-        if "wheels" in base_st and isinstance(base_st["wheels"], dict):
-            base_st["wheels"] = dict(base_st["wheels"])
-            base_st["wheels"]["capacity"] = max(1, int(nw))
-        # Handbuilding boost
-        if "handbuilding" in base_st and isinstance(base_st["handbuilding"], dict):
-            base_st["handbuilding"] = dict(base_st["handbuilding"])
-            hb0 = int(base_st["handbuilding"].get("capacity", 6))
-            boost = 1.0 + (0.20 if slab else 0.0) + (0.10 if pug else 0.0)
-            base_st["handbuilding"]["capacity"] = max(1, int(round(hb0 * boost)))
-        merged["STATIONS"] = base_st
-        # Member capacity from racks unless user pinned MAX_MEMBERS
-        if not (cfg and "MAX_MEMBERS" in cfg):
-            merged["MAX_MEMBERS"] = max(3, 3 * int(nr))
-        # COGS & maintenance
-        merged["CLAY_COGS_MULT"] = 0.75 if pug else 1.0
-        merged["PUGMILL_MAINT_COST_PER_MONTH"] = 20.0 if pug else 0.0
-        merged["SLAB_ROLLER_MAINT_COST_PER_MONTH"] = 10.0 if slab else 0.0
-    except Exception:
-        pass
-
 
     with override_globals(merged):
         # If any helpers previously read globals, they still will—now pointed at merged.

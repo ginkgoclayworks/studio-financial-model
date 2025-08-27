@@ -922,7 +922,8 @@ def _core_simulation_and_reports():
                             lbl = _it.get("label", "")
                             if amt > 0 and (mth is not None or thr is not None):
                                 _capex_queue.append({
-                                    "amount": amt,
+                                    "unit_cost": float(_it.get("unit_cost", 0) or 0.0),
+                                    "count": int(_it.get("count", 1) or 1),
                                     "month": mth,
                                     "member_threshold": thr,
                                     "label": lbl,
@@ -1521,21 +1522,22 @@ def _core_simulation_and_reports():
                                 m_ok = (_item["month"] is not None) and (month == int(_item["month"]))
                                 n_ok = (_item["member_threshold"] is not None) and (current_members >= int(_item["member_threshold"]))
                                 if m_ok or n_ok:
-                                    capex_draw_this_month += float(_item["amount"])
+                                    cnt = int(_item.get("count", 1) or 1)
+                                    unit = float(_item.get("unit_cost", 0) or 0.0)
+                                    total_cost = unit * cnt
+                                    capex_draw_this_month += total_cost
                                     # ---- Apply equipment effects based on label ----
                                     lbl = str(_item.get("label", "")).lower()
-                                    # Wheels: add capacity; parse "xN" (default +4)
+                                    cnt = int(_item.get("count", 1) or 1)
+                                    # Wheels: add capacity by count
                                     if "wheel" in lbl:
-                                        m = re.search(r"x\s*(\d+)", lbl)
-                                        add = int(m.group(1)) if m else 4
                                         if "wheels" in _dyn_STATIONS:
                                             base = int(_dyn_STATIONS["wheels"].get("capacity", 0))
-                                            _dyn_STATIONS["wheels"]["capacity"] = base + max(0, add)
-                                    # Wire racks: +3 MAX_MEMBERS per rack; parse "xN" (default 1 rack)
+                                            _dyn_STATIONS["wheels"]["capacity"] = base + max(0, cnt)
+                                    # Wire racks: +3 MAX_MEMBERS per rack
                                     if "rack" in lbl:
-                                        m = re.search(r"x\s*(\d+)", lbl)
-                                        racks = int(m.group(1)) if m else 1
-                                        _dyn_MAX_MEMBERS = max(3, _dyn_MAX_MEMBERS + 3 * max(0, racks))
+                                        _dyn_MAX_MEMBERS = max(3, _dyn_MAX_MEMBERS + 3 * max(0, cnt))
+
                                     # Slab roller: boost handbuilding capacity (+20%) and add maintenance
                                     if "slab" in lbl and "roll" in lbl:
                                         if "handbuilding" in _dyn_STATIONS:
@@ -1691,7 +1693,6 @@ def _core_simulation_and_reports():
         pass
     plt.title("Projected Membership Over Time — Capacity-aware")
     plt.xlabel("Month"); plt.ylabel("Active Members")
-    plt.ylim(0,300)
     plt.legend(); plt.tight_layout(); plt.show()
     
     # Cash balance overlays per (scenario, rent)

@@ -413,9 +413,13 @@ def _is_class_month(month: int) -> bool:
     """Return True if classes run in this month under the configured calendar."""
     if not CLASSES_ENABLED:
         return False
-    # Date-based ramp-up gate: block any class activity before Jan 1, 2026
-    if date.today() < date(2026, 1, 1):
+    # Date-based gate: figure out how many months until Jan 1, 2026 from today.
+    # For those initial months of the simulation, do not allow classes even if enabled.
+    _gate_months = _months_until_date(date.today(), date(2026, 1, 1))
+    if month < _gate_months:
         return False
+
+
     if CLASSES_CALENDAR_MODE == "monthly":
         return True
     m = month % 12
@@ -658,6 +662,22 @@ print("[EFFECTIVE_CONFIG]", json.dumps(EFFECTIVE_CONFIG, default=_to_serializabl
 # =============================================================================
 # Helpers
 # =============================================================================
+
+
+def _months_until_date(start: date, target: date) -> int:
+    """
+    Number of whole simulation months to reach `target` from `start`.
+    Partial current months do not count as a full month.
+    Example: from Aug 27, 2025 to Jan 1, 2026 -> 4 (Sep, Oct, Nov, Dec).
+    """
+    if start >= target:
+        return 0
+    months = (target.year - start.year) * 12 + (target.month - start.month)
+    # If we're already partway through the current month, don't count it as a full month.
+    if start.day > 1:
+        months -= 1
+    return max(0, months)
+
 
 def seasonal_churn_mult(month_idx: int) -> float:
     """

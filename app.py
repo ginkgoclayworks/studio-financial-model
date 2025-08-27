@@ -1637,8 +1637,8 @@ with st.sidebar:
     
     with st.expander("Finance & Grants (Strategy)", expanded=False):
         strat_finance = render_param_controls(
-            "Finance & Grants (Strategy)", _subset(strat, ["RENT", "OWNER_DRAW"]),
-            group_keys=["RENT", "OWNER_DRAW"], prefix="strat_finance"
+            "Finance & Grants (Strategy)", _subset(strat, GROUPS["finance"]),
+            group_keys=GROUPS["finance"], prefix="strat_finance"
         )
     with st.expander("Loans & Sizing", expanded=False):
         strat_loans = render_param_controls(

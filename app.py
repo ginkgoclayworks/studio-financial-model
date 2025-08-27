@@ -1417,7 +1417,6 @@ with st.sidebar:
         _push_preset_to_widgets(strat, prefix="strat_pricing",   keys=GROUPS["pricing"])
         _push_preset_to_widgets(strat, prefix="strat_workshops", keys=GROUPS["workshops"])
         _push_preset_to_widgets(strat, prefix="strat_classes",   keys=GROUPS["classes"])
-        _push_preset_to_widgets(strat, prefix="strat_equipment", keys=GROUPS["equipment"])
         _push_preset_to_widgets(strat, prefix="strat_events",    keys=GROUPS["events"])
         _push_preset_to_widgets(strat, prefix="strat_finance",   keys=["RENT", "OWNER_DRAW"])
         st.session_state["last_strat_sel"] = strat_sel
@@ -1637,8 +1636,9 @@ with st.sidebar:
     for part in (env_macro, env_growth, env_capacity, env_finance):
         _update_from(part, env, part.keys())
     
-    for part in (strat_pricing, strat_workshops, strat_classes, strat_events, strat_finance, strat_loans, strat_equipment):
-         _update_from(part, strat, part.keys())
+    # Merge all sub-groups back into strat
+    for part in (strat_pricing, strat_workshops, strat_classes, strat_events, strat_finance, strat_loans):
+        _update_from(part, strat, part.keys())
 
     # Preset save/load
     st.markdown("---")

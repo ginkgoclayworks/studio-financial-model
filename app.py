@@ -1342,14 +1342,15 @@ with st.sidebar:
     with st.expander("About this model", expanded=False):
         st.markdown("""
         # 🏺 About This Model
-        
+
         ### What this tool does
         This simulator forecasts the financial health of a ceramics studio.  
         It combines:
         
-        - **Your choices** (membership fee, rent, owner draws, event pricing)  
-        - **The environment** (local demand, downturn risk, grants)  
-        - **Studio limits** (capacity, onboarding rates)  
+        - **Your choices** (membership fee, rent, annual rent escalation, owner draws, event & class pricing)  
+        - **The environment** (local demand inflows, seasonality, downturn risk, grants)  
+        - **Studio limits** (capacity, onboarding rates, reserve floor, buffer)  
+        - **Financing decisions** (loans, CapEx purchases, timing triggers)  
         
         and projects how membership, revenue, and cash flow might evolve over time.
         
@@ -1361,7 +1362,10 @@ with st.sidebar:
         Each future is slightly different:
         - Some months more people join, other months fewer  
         - Sometimes a downturn hits, sometimes not  
-        - Events may sell out, or underperform  
+        - Rent can escalate annually, depending on your setting  
+        - Events and workshops may sell out, or underperform  
+        - Classes won’t contribute revenue until after the configured start gate (e.g. Jan 1, 2026)  
+        - CapEx purchases and loan payments kick in at different times  
         
         By running all these futures, we can:
         - See the **average path** (most likely outcome)  
@@ -1370,6 +1374,21 @@ with st.sidebar:
         
         This approach is called a **Monte Carlo simulation**.  
         Think of it like rolling dice many times to see the full spread of results, instead of relying on a single roll.
+        
+        ---
+        
+        ### What’s modeled
+        - **Memberships** with tenure-based churn and price elasticity  
+        - **Events** (Make-a-Mug, PYOP) with ticket prices, capacity, and variability  
+        - **Workshops** with attendance, conversion rate, and costs  
+        - **Classes** (monthly or semester) with cohort size, price, conversion to members,  
+          plus a **date-based ramp-up gate** so revenue only starts after Jan 2026  
+        - **Retail clay sales** and **firing fees**  
+        - **Designated studios** as additional rental revenue  
+        - **CapEx purchases** (kilns, wheels, racks) triggered by time or membership thresholds  
+        - **Loans** (7a and 504) with APR, term years, interest-only months, contingency, and fees  
+        - **Owner draws** and a **reserve floor** (minimum cash buffer)  
+        - **Seasonality** and **macro downturn shocks** (affecting joins & churn)  
         
         ---
         
@@ -1387,12 +1406,12 @@ with st.sidebar:
         
         ### Why it’s useful
         - **Transparent** – all assumptions are editable.  
-        - **Flexible** – compare different strategies and macro conditions.  
+        - **Flexible** – compare different strategies, macro conditions, and financial choices.  
         - **Practical** – highlights break-even points, cash runway, and financial risks.  
         
         ---
         
-        <small>*For technical readers: The engine is a monthly, stochastic simulator implemented in Python. It merges environment presets (`env`) with strategy presets (`strat`), applies price elasticity, downturn shocks, and tenure-based churn, then runs Monte Carlo ensembles (100–500 simulations) to generate probability bands.*</small>
+        <small>*For technical readers: The engine is a monthly, stochastic simulator implemented in Python. It merges environment presets (`env`) with strategy presets (`strat`), applies price elasticity, downturn shocks, tenure-based churn, annual rent escalation, CapEx triggers, loan amortization, and a class start-date gate, then runs Monte Carlo ensembles (100–500 simulations) to generate probability bands.*</small>
         """)
     
     

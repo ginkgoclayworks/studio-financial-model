@@ -109,8 +109,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 from numpy.random import default_rng, SeedSequence
-# near the top
-
+from datetime import datetime, date
 import matplotlib
 matplotlib.use("Agg")  # before importing pyplot
 import json
@@ -118,7 +117,6 @@ from pathlib import Path
 from datetime import datetime
 import matplotlib as mpl
 from collections import OrderedDict
-
 from types import SimpleNamespace
 from contextlib import contextmanager
 import copy
@@ -414,6 +412,9 @@ CLASS_SEMESTER_START_MONTHS = [0, 3, 6, 9]
 def _is_class_month(month: int) -> bool:
     """Return True if classes run in this month under the configured calendar."""
     if not CLASSES_ENABLED:
+        return False
+    # Date-based ramp-up gate: block any class activity before Jan 1, 2026
+    if date.today() < date(2026, 1, 1):
         return False
     if CLASSES_CALENDAR_MODE == "monthly":
         return True

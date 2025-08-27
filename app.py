@@ -73,10 +73,11 @@ PARAM_SPECS = {
     "LOAN_CONTINGENCY_PCT": {"type": "float", "min": 0.00, "max": 0.25, "step": 0.01,  "label": "CapEx contingency (%)"},
     "RUNWAY_MONTHS":        {"type": "int",   "min": 0,    "max": 24,   "step": 1,     "label": "Runway months (7a sizing)"},
     "EXTRA_BUFFER":         {"type": "int",   "min": 0,    "max": 200000, "step": 1000, "label": "Extra buffer ($)"},
-    "RESERVE_FLOOR":        {"type": "int",   "min": 0,    "max": 100000, "step": 1000, "label": "Reserve floor ($)", "desc": "Target minimum cash buffer for LOC sizing; not yet used by simulator."},
-        # --- SBA fees (Phase 2) ---
-    "FEES_UPFRONT_PCT_7A": {"type": "float", "min": 0.00, "max": 0.08, "step": 0.001, "label": "7(a) upfront fees (%)", "desc": "Guaranty + lender fees as % of 7(a) principal."},
-    "FEES_UPFRONT_PCT_504": {"type": "float", "min": 0.00, "max": 0.08, "step": 0.001, "label": "504 upfront fees (%)", "desc": "CDC + bank fees as % of 504 principal."},
+    "RESERVE_FLOOR":        {"type": "int",   "min": 0,    "max": 200000, "step": 1000, "label": "Reserve floor ($)", "desc": "Minimum cash buffer for LOC sizing; not yet used by simulator."}, 
+
+    # --- SBA fees (Phase 2) ---
+    "FEES_UPFRONT_PCT_7A": {"type": "float", "min": 0.00, "max": 0.08, "step": 0.001, "label": "7(a) upfront fees (%)"},
+    "FEES_UPFRONT_PCT_504": {"type": "float", "min": 0.00, "max": 0.08, "step": 0.001, "label": "504 upfront fees (%)"},
     "FEES_PACKAGING": {"type": "int", "min": 0, "max": 10000, "step": 100, "label": "Packaging fees ($)"},
     "FEES_CLOSING": {"type": "int", "min": 0, "max": 20000, "step": 100, "label": "Closing costs ($)"},
     "FINANCE_FEES_7A": {"type": "bool", "label": "Finance fees into 7(a)"},
@@ -359,6 +360,29 @@ def _update_from(src, dst, keys):
     for k in keys:
         if k in src:
             dst[k] = src[k]
+            
+def _normalize_capex_items(df):
+    """Convert the data_editor DataFrame into a clean list[dict]."""
+    import pandas as pd
+    items = []
+    if df is None or (isinstance(df, pd.DataFrame) and df.empty):
+        return items
+    for _, r in df.iterrows():
+        try:
+            label = str(r.get("label", "")).strip()
+            amt = float(r.get("amount", 0) or 0)
+            mth = r.get("month", None)
+            thr = r.get("member_threshold", None)
+            enabled = bool(r.get("enabled", True))
+            mth = None if (mth == "" or pd.isna(mth)) else int(mth)
+            thr = None if (thr == "" or pd.isna(thr)) else int(thr)
+            if not enabled:
+                continue
+            if amt > 0 and (mth is not None or thr is not None):
+                items.append({"label": label, "amount": amt, "month": mth, "member_threshold": thr})
+        except Exception:
+            continue
+    return items
 
 def _default_from_spec_for_push(key: str, spec: dict):
     if not spec:
@@ -544,6 +568,12 @@ def build_overrides(env: dict, strat: dict) -> dict:
         "grant_amount": float(env.get("grant_amount", 0.0) or 0.0),
         "grant_month": gm,
     }]
+        # Forward staged CapEx schedule if present
+    try:
+        if strat.get("CAPEX_ITEMS"):
+            ov["CAPEX_ITEMS"] = list(strat.get("CAPEX_ITEMS", []))
+    except Exception:
+        pass
 
     # ----- Capacity mapping (UI → simulator)
     # UI contract: MEMBER_CAP > 0 => enforce hard cap; 0/None => no override (use internal station bottlenecks)
@@ -1430,7 +1460,43 @@ with st.sidebar:
         )
         st.caption("Tie capacity & costs to equipment purchased at start. Racks set member cap (≈3 members/rack). Wheels cap wheel-station capacity. Pug mill reduces clay COGS; slab roller boosts handbuilding throughput.")
         st.write("DEBUG: Equipment block loaded")
-                  
+    
+
+        # ---- Staged purchases (optional) ----
+        st.markdown("**Staged purchases (optional)**")
+        st.caption("Add equipment purchases to occur at a specific month *or* when membership crosses a threshold.")
+
+        capex_existing = strat.get("CAPEX_ITEMS", [])
+        capex_df_default = pd.DataFrame(capex_existing) if capex_existing else pd.DataFrame([
+            {"enabled": True,  "label": "Kiln #2",     "amount": 8000, "month": 6,   "member_threshold": None},
+            {"enabled": True,  "label": "Slab roller", "amount": 4000, "month": None, "member_threshold": 50},
+            {"enabled": False, "label": "",            "amount": 0,    "month": None, "member_threshold": None},
+        ])
+        for col in ["enabled","label","amount","month","member_threshold"]:
+            if col not in capex_df_default.columns:
+                capex_df_default[col] = [False] if col == "enabled" else [None]
+        capex_df_default = capex_df_default[["enabled","label","amount","month","member_threshold"]]
+
+        capex_df = st.data_editor(
+            capex_df_default,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "enabled": st.column_config.CheckboxColumn("Include"),
+                "label": st.column_config.TextColumn("Item"),
+                "amount": st.column_config.NumberColumn("Amount ($)", min_value=0, step=100),
+                "month": st.column_config.NumberColumn("Trigger month", min_value=0, step=1, help="Month after launch"),
+                "member_threshold": st.column_config.NumberColumn("Trigger members", min_value=0, step=1, help="Purchase once active members ≥ this"),
+            },
+            key="capex_items_editor",
+        )
+
+        strat["CAPEX_ITEMS"] = _normalize_capex_items(capex_df)
+        if strat["CAPEX_ITEMS"]:
+            st.success(f"{len(strat['CAPEX_ITEMS'])} staged purchases configured.", icon="🛠️")
+        else:
+            st.info("No staged purchases configured. All CapEx follows the existing Stage I/II behavior.", icon="ℹ️")
+
     with st.expander("Finance & Grants (Scenario)", expanded=False):
         env_finance = render_param_controls(
             "Finance & Grants (Scenario)", _subset(env, ["grant_amount", "grant_month"]),
@@ -1605,10 +1671,6 @@ with st.sidebar:
             st.success("Preset loaded. Scroll up and press Apply in each expander if needed.")
         except Exception as e:
             st.error(f"Invalid preset: {e}")
-
-    
-
-    
 
 # Tabs
 tab_run, tab_matrix = st.tabs(["Single run", "Matrix heatmaps"])

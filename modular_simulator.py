@@ -1691,6 +1691,7 @@ def _core_simulation_and_reports():
         pass
     plt.title("Projected Membership Over Time — Capacity-aware")
     plt.xlabel("Month"); plt.ylabel("Active Members")
+    plt.ylim(300)
     plt.legend(); plt.tight_layout(); plt.show()
     
     # Cash balance overlays per (scenario, rent)

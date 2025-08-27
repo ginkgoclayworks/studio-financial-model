@@ -41,6 +41,7 @@ PARAM_SPECS = {
     "MAX_ONBOARD_PER_MONTH":  {"type": "int",   "min": 1, "max": 200, "step": 1, "label": "Max onboarding / mo"},
     # -------- Strategy --------
     "RENT":                   {"type": "int",   "min": 1000, "max": 10_000, "step": 50, "label": "Rent ($/mo)"},
+    "RENT_GROWTH_PCT":       {"type": "float", "min": 0.0,   "max": 15.0,   "step": 0.25, "label": "Rent increase per year (%)"},
     "OWNER_DRAW":             {"type": "int",   "min": 0, "max": 5000, "step": 50, "label": "Owner draw ($/mo)"},
     "BASE_EVENTS_PER_MONTH_LAMBDA": {"type": "float", "min": 0.0, "max": 20.0, "step": 0.5, "label": "Events λ"},
     "EVENTS_MAX_PER_MONTH":   {"type": "int",   "min": 0, "max": 20, "step": 1, "label": "Events max / mo"},
@@ -167,6 +168,9 @@ STRAT_SPEC_META = {
         "desc": "Monthly base rent for the space (excludes utilities and insurance).",
         "rec": (2500, 5500)
     },
+    "RENT_GROWTH_PCT": {
+        "desc": "Annual rent escalation as a percent, compounded each year (e.g., 3.0 = 3%/yr).",
+        "rec": (0.0, 5.0),
     "OWNER_DRAW": {
         "desc": "Cash you pay yourself each month from the business.",
         "rec": (0, 1500)
@@ -272,7 +276,7 @@ GROUPS = {
     ],
     # Finance & grants
     "finance": [
-        "RENT", "OWNER_DRAW", "grant_amount", "grant_month",
+    "RENT", "RENT_GROWTH_PCT", "OWNER_DRAW", "grant_amount", "grant_month",
     ],
     # Loans & sizing
     "loans": [

@@ -98,12 +98,6 @@ PARAM_SPECS.update({
     "WORKSHOP_CONV_LAG_MO": {"type":"int", "min":0, "max":12, "step":1, "default": 1, "label":"Conversion lag (months)"},
     # Optional cost model
     "WORKSHOP_COST_PER_EVENT": {"type":"float", "min":0.0, "max":1000.0, "step":5.0, "default": 50.0, "label":"Variable cost per workshop", "help":"Supplies, instructor stipend, etc."},
-
-    "N_WHEELS_START":        {"type":"int",   "min":1,  "max":12, "step":1,  "label":"Wheels at start", "default": 8},
-    "HAS_SLAB_ROLLER_START": {"type":"bool",  "label":"Slab roller at start", "default": False},
-    "N_RACKS_START":         {"type":"int",   "min":5,  "max":20, "step":5,  "label":"Wire racks at start", "default": 10},
-    "HAS_PUG_MILL_START":    {"type":"bool",  "label":"Pug mill at start", "default": False},
-    "N_CLAY_TRAPS_START":    {"type":"int",   "min":1,  "max":1,  "step":1,  "label":"Clay trap (fixed)", "default": 1},
 })
 
 
@@ -276,13 +270,6 @@ GROUPS = {
     "events": [
         "BASE_EVENTS_PER_MONTH_LAMBDA", "EVENTS_MAX_PER_MONTH", "TICKET_PRICE",
     ],
-    
-        # Equipment (start-of-life)
-    "equipment": [
-        "N_WHEELS_START", "HAS_SLAB_ROLLER_START", "N_RACKS_START",
-        "HAS_PUG_MILL_START", "N_CLAY_TRAPS_START",
-     ],
-
     # Finance & grants
     "finance": [
         "RENT", "OWNER_DRAW", "grant_amount", "grant_month",
@@ -1455,29 +1442,25 @@ with st.sidebar:
         )
     
     with st.expander("Equipment", expanded=True):
-        strat_equipment = render_param_controls(
-            "Equipment", _subset(strat, GROUPS.get("equipment", [])),
-            group_keys=GROUPS.get("equipment", []), prefix="strat_equipment"
-        )
-        st.caption("Tie capacity & costs to equipment purchased at start. Racks set member cap (≈3 members/rack). Wheels cap wheel-station capacity. Pug mill reduces clay COGS; slab roller boosts handbuilding throughput.")
-        st.write("DEBUG: Equipment block loaded")
+        st.markdown("**Staged purchases (all equipment)**")
+        st.caption("Define all equipment as staged purchases. Month=0 means start-of-life.")
     
-
-        # ---- Staged purchases (optional) ----
-        st.markdown("**Staged purchases (optional)**")
-        st.caption("Add equipment purchases to occur at a specific month *or* when membership crosses a threshold.")
-
         capex_existing = strat.get("CAPEX_ITEMS", [])
         capex_df_default = pd.DataFrame(capex_existing) if capex_existing else pd.DataFrame([
-            {"enabled": True,  "label": "Kiln #2",     "amount": 8000, "month": 6,   "member_threshold": None},
-            {"enabled": True,  "label": "Slab roller", "amount": 4000, "month": None, "member_threshold": 50},
-            {"enabled": False, "label": "",            "amount": 0,    "month": None, "member_threshold": None},
+            {"enabled": True,  "label": "Wheels (x8)",      "amount": 9600, "month": 0, "member_threshold": None},
+            {"enabled": True,  "label": "Wire racks (x10)", "amount": 1500, "month": 0, "member_threshold": None},
+            {"enabled": True,  "label": "Clay traps",       "amount": 300,  "month": 0, "member_threshold": None},
+            {"enabled": False, "label": "Kiln #2",          "amount": 8000, "month": 6, "member_threshold": None},
+            {"enabled": False, "label": "Slab roller",      "amount": 4000, "month": None, "member_threshold": 50},
+            {"enabled": False, "label": "Pug mill",         "amount": 5000, "month": None, "member_threshold": 60},
+            {"enabled": False, "label": "Spray booth",      "amount": 2500, "month": 18, "member_threshold": None},
+            {"enabled": False, "label": "Photo booth",      "amount": 350,  "month": 12, "member_threshold": None},
         ])
         for col in ["enabled","label","amount","month","member_threshold"]:
             if col not in capex_df_default.columns:
                 capex_df_default[col] = [False] if col == "enabled" else [None]
         capex_df_default = capex_df_default[["enabled","label","amount","month","member_threshold"]]
-
+    
         capex_df = st.data_editor(
             capex_df_default,
             num_rows="dynamic",
@@ -1487,16 +1470,16 @@ with st.sidebar:
                 "label": st.column_config.TextColumn("Item"),
                 "amount": st.column_config.NumberColumn("Amount ($)", min_value=0, step=100),
                 "month": st.column_config.NumberColumn("Trigger month", min_value=0, step=1, help="Month after launch"),
-                "member_threshold": st.column_config.NumberColumn("Trigger members", min_value=0, step=1, help="Purchase once active members ≥ this"),
+                "member_threshold": st.column_config.NumberColumn("Trigger members", min_value=0, step=1, help="Active members ≥ this"),
             },
             key="capex_items_editor",
         )
-
+    
         strat["CAPEX_ITEMS"] = _normalize_capex_items(capex_df)
         if strat["CAPEX_ITEMS"]:
-            st.success(f"{len(strat['CAPEX_ITEMS'])} staged purchases configured.", icon="🛠️")
+            st.success(f"{len(strat['CAPEX_ITEMS'])} equipment purchases configured.", icon="🛠️")
         else:
-            st.info("No staged purchases configured. All CapEx follows the existing Stage I/II behavior.", icon="ℹ️")
+            st.warning("No equipment rows configured. Simulation may understate CapEx.", icon="⚠️")
 
     with st.expander("Finance & Grants (Scenario)", expanded=False):
         env_finance = render_param_controls(

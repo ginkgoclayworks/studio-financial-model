@@ -1446,14 +1446,15 @@ with st.sidebar:
     
         capex_existing = strat.get("CAPEX_ITEMS", [])
         capex_df_default = pd.DataFrame(capex_existing) if capex_existing else pd.DataFrame([
+            {"enabled": True,  "label": "Kiln #1",      "amount": 4000, "month": 0, "member_threshold": None},
             {"enabled": True,  "label": "Wheels (x8)",      "amount": 9600, "month": 0, "member_threshold": None},
             {"enabled": True,  "label": "Wire racks (x10)", "amount": 1500, "month": 0, "member_threshold": None},
             {"enabled": True,  "label": "Clay traps",       "amount": 300,  "month": 0, "member_threshold": None},
-            {"enabled": False, "label": "Kiln #2",          "amount": 8000, "month": 6, "member_threshold": None},
-            {"enabled": False, "label": "Slab roller",      "amount": 4000, "month": None, "member_threshold": 50},
-            {"enabled": False, "label": "Pug mill",         "amount": 5000, "month": None, "member_threshold": 60},
-            {"enabled": False, "label": "Spray booth",      "amount": 2500, "month": 18, "member_threshold": None},
-            {"enabled": False, "label": "Photo booth",      "amount": 350,  "month": 12, "member_threshold": None},
+            {"enabled": True, "label": "Kiln #2",          "amount": 8000, "month": 6, "member_threshold": None},
+            {"enabled": True, "label": "Slab roller",      "amount": 4000, "month": None, "member_threshold": 50},
+            {"enabled": True, "label": "Pug mill",         "amount": 5000, "month": None, "member_threshold": 60},
+            {"enabled": True, "label": "Spray booth",      "amount": 2500, "month": 18, "member_threshold": None},
+            {"enabled": True, "label": "Photo booth",      "amount": 350,  "month": 12, "member_threshold": None},
         ])
         for col in ["enabled","label","amount","month","member_threshold"]:
             if col not in capex_df_default.columns:

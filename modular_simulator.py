@@ -343,6 +343,19 @@ STAGE_II_CAPEX = {
     'photo_booth': (250, 300, 350),
 }
 
+
+# -------------------------------------------------------------------------
+# Generalized CapEx schedule (optional).
+# Each item may trigger by month, by membership threshold, or either:
+#   {"amount": 8000, "month": 6, "label": "Kiln #2"}
+#   {"amount": 4000, "member_threshold": 50, "label": "Slab Roller"}
+# If CAPEX_ITEMS is empty/undefined, the model uses existing Stage I/II behavior.
+# -------------------------------------------------------------------------
+try:
+    CAPEX_ITEMS
+except NameError:
+    CAPEX_ITEMS = []  # default: use current Stage I/II behavior
+
 # -------------------------------------------------------------------------
 # Operating Expenses (recurring)
 # -------------------------------------------------------------------------
@@ -931,6 +944,25 @@ def _core_simulation_and_reports():
                     expansion_triggered = False
                     active_members = []
                     
+                    # Generalized CapEx trigger state (copy globals → per-sim queue)
+                    _capex_queue = []
+                    try:
+                        for _it in CAPEX_ITEMS:
+                            amt = float(_it.get("amount", 0.0))
+                            mth = _it.get("month", None)
+                            thr = _it.get("member_threshold", None)
+                            lbl = _it.get("label", "")
+                            if amt > 0 and (mth is not None or thr is not None):
+                                _capex_queue.append({
+                                    "amount": amt,
+                                    "month": mth,
+                                    "member_threshold": thr,
+                                    "label": lbl,
+                                    "purchased": False,
+                                })
+                    except Exception:
+                        _capex_queue = []
+                    
                     # --- Market pool state for this simulation ---
 
                     remaining_pool = {
@@ -1512,12 +1544,32 @@ def _core_simulation_and_reports():
     
                         # Month 0 loan & capex (use split principals; cash = total proceeds − upfront CapEx spend − any cash-paid fees)
                         if month == 0:
-                            if "all_upfront" in scen_name:
-                                upfront_capex = (capex_I_cost + capex_II_cost)
+                            # If a custom CAPEX schedule is provided, do not subtract "upfront_capex" here.
+                            if _capex_queue:
+                                upfront_capex = 0.0
                             else:
-                                upfront_capex = capex_I_cost
-                            cash_balance += loan_principal_total - upfront_capex - (fees_cash_outflow if 'fees_cash_outflow' in locals() else 0.0)
+                                if "all_upfront" in scen_name:
+                                    upfront_capex = (capex_I_cost + capex_II_cost)
+                                else:
+                                    upfront_capex = capex_I_cost
+                            cash_balance += loan_principal_total - upfront_capex
                             cumulative_after_capex -= upfront_capex
+
+                        # Generalized staged CapEx (month-based or membership-based)
+                        capex_draw_this_month = 0.0
+                        if _capex_queue:
+                            current_members = len(active_members)
+                            for _item in _capex_queue:
+                                if _item["purchased"]:
+                                    continue
+                                m_ok = (_item["month"] is not None) and (month == int(_item["month"]))
+                                n_ok = (_item["member_threshold"] is not None) and (current_members >= int(_item["member_threshold"]))
+                                if m_ok or n_ok:
+                                    capex_draw_this_month += float(_item["amount"])
+                                    _item["purchased"] = True
+                            if capex_draw_this_month > 0.0:
+                                cash_balance -= capex_draw_this_month
+                                cumulative_after_capex -= capex_draw_this_month
     
                         # Staged expansion capex at trigger
                         if ("staged" in scen_name) and (not expansion_triggered) and (len(active_members) >= EXPANSION_TRIGGER_MEMBERS):
@@ -1588,13 +1640,13 @@ def _core_simulation_and_reports():
                             "loan_principal_total": loan_principal_total,
                             "loan_principal_504": loan_504_principal,
                             "loan_principal_7a": loan_7a_principal,
-+                            # Fees visibility (only meaningful at month 0; still included for traceability)
+                            # Fees visibility (only meaningful at month 0; still included for traceability)
                             "fees_cash_outflow": float(fees_cash_outflow if 'fees_cash_outflow' in locals() else 0.0),
                             "fees_7a_financed": float((fees_7a_total if ('fees_7a_total' in locals() and FINANCE_FEES_7A) else 0.0)),
-                            "fees_504_financed": float((fees_504_total if ('fees_504_total' in locals() and FINANCE_FEES_504) else 0.0)),
-                            
+                            "fees_504_financed": float((fees_504_total if ('fees_504_total' in locals() and FINANCE_FEES_504) else 0.0)),  
                             "capex_I_cost": capex_I_cost,
                             "capex_II_cost": capex_II_cost,
+                            "capex_draw": float(capex_draw_this_month) if 'capex_draw_this_month' in locals() else 0.0,
                             "runway_costs": sized_runway_costs,
                             "dscr": dscr,
                             "dscr_cash": dscr_cash,

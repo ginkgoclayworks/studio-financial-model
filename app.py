@@ -171,6 +171,8 @@ STRAT_SPEC_META = {
     "RENT_GROWTH_PCT": {
         "desc": "Annual rent escalation as a percent, compounded each year (e.g., 3.0 = 3%/yr).",
         "rec": (0.0, 5.0),
+    },
+    
     "OWNER_DRAW": {
         "desc": "Cash you pay yourself each month from the business.",
         "rec": (0, 1500)

@@ -319,6 +319,8 @@ MAX_ONBOARDINGS_PER_MONTH = None     # set an int (e.g., 6/10/12) to hard-cap mo
 RENT_SCENARIOS = np.arange(2500, 5001, 1000)
 OWNER_DRAW_SCENARIOS = [0, 1000, 2000, 3000]
 
+RENT_GROWTH_PCT = 0.0 # Annual rent escalation, as a fraction (e.g., 0.03 = 3%/yr). Defaults to 0.
+
 # -------------------------------------------------------------------------
 # Capital Expenditures (triangular distributions)
 # -------------------------------------------------------------------------
@@ -1364,7 +1366,13 @@ def _core_simulation_and_reports():
                             employee_withholding = owner_salary_expense * EMPLOYEE_PAYROLL_TAX_RATE
     
                         # ---------- OpEx (pre-tax) ----------
-                        fixed_opex_profit = fixed_rent + INSURANCE_COST + GLAZE_COST_PER_MONTH + monthly_heating_cost
+                        # Annual rent increase (compounded once per year)
+                        _rent_growth = float(globals().get("RENT_GROWTH_PCT", 0.0))
+                        _year_index = (month // 12)
+                        rent_this_month = fixed_rent * ((1.0 + _rent_growth) ** _year_index)
+                        
+                        # ---------- OpEx (pre-tax) ----------
+                        fixed_opex_profit = rent_this_month + INSURANCE_COST + GLAZE_COST_PER_MONTH + monthly_heating_cost
                         total_opex_profit = (
                             fixed_opex_profit
                             + variable_clay_cost
@@ -2308,7 +2316,11 @@ def _core_simulation_and_reports():
                                 
                                 monthly_heating_cost = HEATING_COST_WINTER if month % 12 in [10,11,0,1,2,3] else HEATING_COST_SUMMER
     
-                                fixed_opex_profit = fixed_rent + INSURANCE_COST + GLAZE_COST_PER_MONTH + monthly_heating_cost
+                                _rent_growth = float(globals().get("RENT_GROWTH_PCT", 0.0))
+                                _year_index = (month // 12)
+                                rent_this_month = fixed_rent * ((1.0 + _rent_growth) ** _year_index)
+                                
+                                fixed_opex_profit = rent_this_month + INSURANCE_COST + GLAZE_COST_PER_MONTH + monthly_heating_cost
     
                                 # Owner draw gating (same as main sim)
                                 in_draw_window = in_owner_draw_window(month)

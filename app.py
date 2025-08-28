@@ -1448,6 +1448,19 @@ with st.sidebar:
         min_tr    = st.number_input("Staged Min Tranche ($)", min_value=0, step=500, value=0)
         max_tr    = st.number_input("Staged Max Tranche ($, 0=None)", min_value=0, step=500, value=0)
     
+     # --- persist loan controls so build_overrides can forward them ---
+    st.session_state["loan_mode"] = loan_mode
+    if loan_mode == "upfront":
+        st.session_state["loan_upfront"] = float(loan_upfront)
+        st.session_state["draw_pct"] = None
+        st.session_state["min_tr"]   = None
+        st.session_state["max_tr"]   = None
+    else:
+        st.session_state["loan_upfront"] = 0.0
+        st.session_state["draw_pct"]     = float(draw_pct)
+        st.session_state["min_tr"]       = float(min_tr)
+        st.session_state["max_tr"]       = float(max_tr)
+   
     
     # --- Simulation settings ---
     with st.expander("Simulation settings", expanded=False):
@@ -1749,6 +1762,9 @@ with tab_run:
         with st.spinner("Running simulator…"):
             env_norm = _normalize_env(env)
             cache_key = _make_cache_key(env_norm, strat, seed)
+
+
+            
             df_cell, eff, images, manifest = run_cell_cached(env_norm, strat, seed, cache_key)
         
         st.subheader(f"KPIs — {env['name']} | {strat['name']}")

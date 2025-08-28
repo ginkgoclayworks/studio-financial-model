@@ -542,6 +542,7 @@ USAGE_SHARE = {
     "Production Potter": {"wheels": 0.60, "handbuilding": 0.25, "glaze": 0.15},
     "Seasonal User": {"wheels": 0.40, "handbuilding": 0.45, "glaze": 0.15},
 }
+
 CAPACITY_DAMPING_BETA = 4
 
 # -------------------------------------------------------------------------
@@ -637,14 +638,12 @@ EFFECTIVE_CONFIG = OrderedDict({
     "CHURN_PRICE_ELASTICITY": _g("CHURN_PRICE_ELASTICITY"),
     "RENT_SCENARIOS": _ser(_g("RENT_SCENARIOS")),
     "OWNER_DRAW_SCENARIOS": _ser(_g("OWNER_DRAW_SCENARIOS")),
-    # Macro / growth levers
     "DOWNTURN_PROB_PER_MONTH": _g("DOWNTURN_PROB_PER_MONTH"),
     "DOWNTURN_JOIN_MULT": _g("DOWNTURN_JOIN_MULT"),
     "DOWNTURN_CHURN_MULT": _g("DOWNTURN_CHURN_MULT"),
     "MARKET_POOLS_INFLOW": _ser(_g("MARKET_POOLS_INFLOW")),
     "WOM_Q": _g("WOM_Q"),
     "AWARENESS_RAMP_MONTHS": _g("AWARENESS_RAMP_MONTHS"),
-    # Capacity / limits (use one naming scheme consistently)
     "HARD_CAP": _g("HARD_CAP"),
     "CAPACITY_SOFT_CAP": _g("CAPACITY_SOFT_CAP"),
 })
@@ -659,6 +658,7 @@ except Exception:
     pass
 
 print("[EFFECTIVE_CONFIG]", json.dumps(EFFECTIVE_CONFIG, default=_to_serializable))
+
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -686,7 +686,6 @@ def seasonal_churn_mult(month_idx: int) -> float:
     """
     m = (month_idx % 12) + 1  # 1..12
 
-    # Example profile — tweak as you see fit:
     if m in (6, 7, 8):       # Jun–Aug: travel/moves
         return 1.25          # +25% churn
     elif m in (1, 2):        # Jan–Feb: post-holiday dropouts
@@ -879,19 +878,29 @@ def _core_simulation_and_reports():
                     # capex_I_cost = sample_capex(STAGE_I_CAPEX, rng)
                     # capex_II_cost = sample_capex(STAGE_II_CAPEX, rng)
     
-                    capex_I_cost = capex_from_choices(rng)
-                    _stage2 = STAGE_II_CAPEX if not bool(globals().get("HAS_PUG_MILL_START", False)) else {k:v for k,v in STAGE_II_CAPEX.items() if k!="pugmill"}
-                    capex_II_cost = sample_capex(_stage2, rng)
-    
-    
+                    capex_I_cost = 0.0
+                    capex_II_cost = 0.0
     
                     # Runway
                     avg_monthly_heat = (HEATING_COST_WINTER + HEATING_COST_SUMMER) / 2
                     runway_costs = (INSURANCE_COST + GLAZE_COST_PER_MONTH + avg_monthly_heat + fixed_rent + owner_draw) * RUNWAY_MONTHS
     
+                     # Table-driven CapEx total (unit_cost × count, or amount fallback)
+                    capex_table_total = 0.0
+                    for _it in CAPEX_ITEMS:
+                        unit = float(_it.get("unit_cost", 0.0) or 0.0)
+                        cnt  = int(_it.get("count", 1) or 1)
+                        if unit > 0:
+                            capex_table_total += unit * max(1, cnt)
+                        else:
+                            amt = _it.get("amount", None)
+                            if amt is not None:
+                                capex_table_total += float(amt)
+    
+    
                     # Loan principal sizing
                    # ----- Split loan sizing: 504 (CapEx) + 7(a) (runway/draw/buffer) -----
-                    total_capex_for_loan = (capex_I_cost + capex_II_cost) if ("all_upfront" in scen_name) else capex_I_cost
+                    total_capex_for_loan = total_capex_for_loan = capex_table_total
 
                     loan_504_principal = total_capex_for_loan * (1 + LOAN_CONTINGENCY_PCT)
                     loan_7a_principal  = runway_costs + EXTRA_BUFFER
@@ -939,14 +948,16 @@ def _core_simulation_and_reports():
                     _capex_queue = []
                     try:
                         for _it in CAPEX_ITEMS:
-                            amt = float(_it.get("amount", 0.0))
-                            mth = _it.get("month", None)
-                            thr = _it.get("member_threshold", None)
-                            lbl = _it.get("label", "")
-                            if amt > 0 and (mth is not None or thr is not None):
+                            unit = float(_it.get("unit_cost", 0.0) or 0.0)
+                            cnt  = int(_it.get("count", 1) or 1)
+                            mth  = _it.get("month", None)
+                            thr  = _it.get("member_threshold", None)
+                            lbl  = _it.get("label", "")
+                            total_cost = (unit * max(1, cnt)) if unit > 0 else float(_it.get("amount", 0.0) or 0.0)
+                            if total_cost > 0 and (mth is not None or thr is not None):
                                 _capex_queue.append({
-                                    "unit_cost": float(_it.get("unit_cost", 0) or 0.0),
-                                    "count": int(_it.get("count", 1) or 1),
+                                    "unit_cost": unit,
+                                    "count": cnt,
                                     "month": mth,
                                     "member_threshold": thr,
                                     "label": lbl,
@@ -1588,12 +1599,6 @@ def _core_simulation_and_reports():
                             globals()["PUGMILL_MAINT_COST_PER_MONTH"] = float(_dyn_PUGMILL_MAINT)
                             globals()["SLAB_ROLLER_MAINT_COST_PER_MONTH"] = float(_dyn_SLAB_MAINT)
     
-                        # Staged expansion capex at trigger
-                        if ("staged" in scen_name) and (not expansion_triggered) and (len(active_members) >= EXPANSION_TRIGGER_MEMBERS):
-                            cash_balance -= capex_II_cost
-                            cumulative_after_capex -= capex_II_cost
-                            expansion_triggered = True
-    
                         # Apply monthly results
                         cash_balance += net_cash_flow
                         cumulative_op_profit += op_profit
@@ -2102,8 +2107,8 @@ def _core_simulation_and_reports():
                             price_mult_joins = _pmult(price, reference_price, join_eps)
                             price_mult_churn = _pmult(price, reference_price, churn_eps)
                             # --- CapEx and loan sizing (aligned with main sim) ---
-                            capex_I_cost = sample_capex(STAGE_I_CAPEX, rng)
-                            capex_II_cost = sample_capex(STAGE_II_CAPEX, rng)
+                            capex_I_cost = 0.0
+                            capex_II_cost = 0.0
     
                             # Runway (INCLUDES owner draw, matching main sim)
                             avg_monthly_heat = (HEATING_COST_WINTER + HEATING_COST_SUMMER) / 2
@@ -2111,8 +2116,19 @@ def _core_simulation_and_reports():
                                 INSURANCE_COST + GLAZE_COST_PER_MONTH + avg_monthly_heat + fixed_rent + owner_draw
                             ) * RUNWAY_MONTHS
     
+                            capex_table_total = 0.0
+                            for _it in CAPEX_ITEMS:
+                                unit = float(_it.get("unit_cost", 0.0) or 0.0)
+                                cnt  = int(_it.get("count", 1) or 1)
+                                if unit > 0:
+                                    capex_table_total += unit * max(1, cnt)
+                                else:
+                                    amt = _it.get("amount", None)
+                                    if amt is not None:
+                                        capex_table_total += float(amt)
+    
                             # Split loans (504 = CapEx + contingency; 7(a) = runway + EXTRA_BUFFER)
-                            total_capex_for_loan = (capex_I_cost + capex_II_cost) if ("all_upfront" in scen_name) else capex_I_cost
+                            total_capex_for_loan = capex_table_total
 
 
                             loan_504_principal = total_capex_for_loan * (1 + LOAN_CONTINGENCY_PCT)
@@ -2149,7 +2165,35 @@ def _core_simulation_and_reports():
                             loan_principal_total = loan_504_principal + loan_7a_principal
     
                             cash_balance = 0.0
-                            active_members = []
+                            active_members = []   
+
+                            # ---- Staged CapEx: dynamic effects + per-sim queue (mirror main sim) ----
+                            _dyn_STATIONS = {k: dict(v) for k, v in STATIONS.items()}
+                            _dyn_MAX_MEMBERS = int(MAX_MEMBERS)
+                            _dyn_CLAY_COGS_MULT = float(globals().get("CLAY_COGS_MULT", 1.0))
+                            _dyn_PUGMILL_MAINT = float(globals().get("PUGMILL_MAINT_COST_PER_MONTH", 0.0))
+                            _dyn_SLAB_MAINT = float(globals().get("SLAB_ROLLER_MAINT_COST_PER_MONTH", 0.0))
+
+                            _capex_queue = []
+                            try:
+                                for _it in CAPEX_ITEMS:
+                                    unit = float(_it.get("unit_cost", 0.0) or 0.0)
+                                    cnt  = int(_it.get("count", 1) or 1)
+                                    mth  = _it.get("month", None)
+                                    thr  = _it.get("member_threshold", None)
+                                    lbl  = _it.get("label", "")
+                                    total_cost = (unit * max(1, cnt)) if unit > 0 else float(_it.get("amount", 0.0) or 0.0)
+                                    if total_cost > 0 and (mth is not None or thr is not None):
+                                        _capex_queue.append({
+                                            "unit_cost": unit,
+                                            "count": cnt,
+                                            "month": mth,
+                                            "member_threshold": thr,
+                                            "label": lbl,
+                                            "purchased": False,
+                                        })
+                            except Exception:
+                                _capex_queue = []
 
                             remaining_pool = {
                                 "community_studio": int(COMMUNITY_POOL),
@@ -2273,10 +2317,8 @@ def _core_simulation_and_reports():
                                 active_members = kept
     
                                 # Revenues (simplified calc consistent with main code)
-                                # Stage-II CapEx spend when expansion triggers (match main sim)
-                                if ("staged" in scen_name) and (not expansion_triggered) and (len(active_members) >= EXPANSION_TRIGGER_MEMBERS):
-                                    cash_balance -= capex_II_cost
-                                    expansion_triggered = True
+                               
+                                # Stage-II legacy spend removed — table-driven CapEx only
                                 revenue_membership = sum(m["monthly_fee"] for m in active_members)
                                 revenue_clay = 0.0; revenue_firing = 0.0; total_clay_lbs = 0.0
                                 for m in active_members:
@@ -2462,8 +2504,49 @@ def _core_simulation_and_reports():
                                 # Month 0 loan proceeds / CapEx / cash-paid fees (match main sim; use total of 504 + 7(a))
 
                                 if month == 0:
-                                    upfront_capex = (capex_I_cost + capex_II_cost) if ("all_upfront" in scen_name) else capex_I_cost
+                                    upfront_capex = 0
                                     cash_balance += loan_principal_total - upfront_capex - (fees_cash_outflow if 'fees_cash_outflow' in locals() else 0.0)
+                                
+                                # ---- Staged CapEx purchases (month- or membership-triggered) ----
+                                capex_draw_this_month = 0.0
+                                if _capex_queue:
+                                    current_members = len(active_members)
+                                    for _item in _capex_queue:
+                                        if _item["purchased"]:
+                                            continue
+                                        m_ok = (_item["month"] is not None) and (month == int(_item["month"]))
+                                        n_ok = (_item["member_threshold"] is not None) and (current_members >= int(_item["member_threshold"]))
+                                        if m_ok or n_ok:
+                                            cnt = int(_item.get("count", 1) or 1)
+                                            unit = float(_item.get("unit_cost", 0.0) or 0.0)
+                                            total_cost = unit * cnt
+                                            capex_draw_this_month += total_cost
+                                            # ---- Apply equipment effects based on label ----
+                                            lbl = str(_item.get("label", "")).lower()
+                                            if "wheel" in lbl:
+                                                if "wheels" in _dyn_STATIONS:
+                                                    base = int(_dyn_STATIONS["wheels"].get("capacity", 0))
+                                                    _dyn_STATIONS["wheels"]["capacity"] = base + max(0, cnt)
+                                            if "rack" in lbl:
+                                                _dyn_MAX_MEMBERS = max(3, _dyn_MAX_MEMBERS + 3 * max(0, cnt))
+                                            if "slab" in lbl and "roll" in lbl:
+                                                if "handbuilding" in _dyn_STATIONS:
+                                                    hb = int(_dyn_STATIONS["handbuilding"].get("capacity", 6))
+                                                    _dyn_STATIONS["handbuilding"]["capacity"] = max(1, int(round(hb * 1.20)))
+                                                _dyn_SLAB_MAINT += 10.0
+                                            if "pug" in lbl:
+                                                _dyn_CLAY_COGS_MULT = 0.75
+                                                _dyn_PUGMILL_MAINT += 20.0
+                                            _item["purchased"] = True
+                                    if capex_draw_this_month > 0.0:
+                                        cash_balance -= capex_draw_this_month
+                                        # Update dynamic globals so downstream code sees the changes next month
+                                        STATIONS.update(_dyn_STATIONS)
+                                        globals()["MAX_MEMBERS"] = int(_dyn_MAX_MEMBERS)
+                                        globals()["CLAY_COGS_MULT"] = float(_dyn_CLAY_COGS_MULT)
+                                        globals()["PUGMILL_MAINT_COST_PER_MONTH"] = float(_dyn_PUGMILL_MAINT)
+                                        globals()["SLAB_ROLLER_MAINT_COST_PER_MONTH"] = float(_dyn_SLAB_MAINT)
+
                                 cash_balance += (total_revenue - total_opex_cash)
                                 if (grant_month is not None) and (month == grant_month):
                                     cash_balance += grant_amount

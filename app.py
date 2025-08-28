@@ -1795,6 +1795,34 @@ with tab_run:
         loc_cols[1].metric("p10 (optimistic)", "$" + (f"{loan_p10:,.0f}" if np.isfinite(loan_p10) else "NA"))
         loc_cols[2].metric("p90 (conservative)", "$" + (f"{loan_p90:,.0f}" if np.isfinite(loan_p90) else "NA"))
         st.caption("LOC sizing uses the peak cash deficit vs. Reserve floor (post-debt cash path).")
+        
+        # --- Total Loan Used (CapEx vs OpEx) ---
+        loan_mode = str(strat.get("LOAN_MODE", "upfront")).lower()
+        month_col = next((c for c in ("month", "Month", "t") if c in df_cell.columns), None)
+        if month_col is None and not df_cell.empty:
+            # best-effort fallback
+            month_col = "month" if "month" in df_cell.columns else df_cell.columns[0]
+
+        total_capex_loan = 0.0
+        total_opex_loan  = 0.0
+ 
+        if not df_cell.empty:
+            if loan_mode == "staged":
+                # Sum actual staged tranches recorded by the simulator
+                if "loan_tranche_draw" in df_cell.columns:
+                    total_capex_loan = float(df_cell["loan_tranche_draw"].sum())
+                total_opex_loan = 0.0
+            else:
+                # Upfront mode: principals are constant across rows; read once
+                first_row = df_cell.iloc[0]
+                total_capex_loan = float(first_row["loan_principal_504"]) if "loan_principal_504" in df_cell.columns else 0.0
+                total_opex_loan  = float(first_row["loan_principal_7a"])  if "loan_principal_7a"  in df_cell.columns else 0.0
+ 
+        loan_cols = st.columns(2)
+        loan_cols[0].metric("Total CapEx Loan Used ($)", f"{total_capex_loan:,.0f}")
+        loan_cols[1].metric("Total OpEx Loan Used ($)",  f"{total_opex_loan:,.0f}")
+        st.caption("• CapEx = 504 principal (upfront) or sum of staged tranches.  • OpEx = 7(a) principal (upfront).")
+        
         # -------------------------------------------------------------------------
         
         # Figure out which month we actually have DSCR for (M12 or horizon if T<12)

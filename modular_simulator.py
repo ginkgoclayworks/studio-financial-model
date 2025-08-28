@@ -1572,11 +1572,14 @@ def _core_simulation_and_reports():
                                     # Wheels: add capacity by count
                                     if "wheel" in lbl:
                                         if "wheels" in _dyn_STATIONS:
-                                            base = int(_dyn_STATIONS["wheels"].get("capacity", 0))
-                                            _dyn_STATIONS["wheels"]["capacity"] = base + max(0, cnt)
-                                    # Wire racks: +3 MAX_MEMBERS per rack
+                                            curr = int(_dyn_STATIONS["wheels"].get("capacity", 0))
+                                            target = max(0, cnt)
+                                            _dyn_STATIONS["wheels"]["capacity"] = max(curr, target)
+
+                                    # Wire racks: interpret count as TOTAL racks target (not incremental)
                                     if "rack" in lbl:
-                                        _dyn_MAX_MEMBERS = max(3, _dyn_MAX_MEMBERS + 3 * max(0, cnt))
+                                        target_members = 3 * max(0, cnt)   # 3 members per rack
+                                        _dyn_MAX_MEMBERS = max(_dyn_MAX_MEMBERS, target_members)
 
                                     # Slab roller: boost handbuilding capacity (+20%) and add maintenance
                                     if "slab" in lbl and "roll" in lbl:
@@ -2523,12 +2526,16 @@ def _core_simulation_and_reports():
                                             capex_draw_this_month += total_cost
                                             # ---- Apply equipment effects based on label ----
                                             lbl = str(_item.get("label", "")).lower()
+                                           # Wheels: TOTAL wheels target
                                             if "wheel" in lbl:
                                                 if "wheels" in _dyn_STATIONS:
-                                                    base = int(_dyn_STATIONS["wheels"].get("capacity", 0))
-                                                    _dyn_STATIONS["wheels"]["capacity"] = base + max(0, cnt)
+                                                    curr = int(_dyn_STATIONS["wheels"].get("capacity", 0))
+                                                    target = max(0, cnt)
+                                                    _dyn_STATIONS["wheels"]["capacity"] = max(curr, target)
+                                            # Wire racks: TOTAL racks target
                                             if "rack" in lbl:
-                                                _dyn_MAX_MEMBERS = max(3, _dyn_MAX_MEMBERS + 3 * max(0, cnt))
+                                                target_members = 3 * max(0, cnt)
+                                                _dyn_MAX_MEMBERS = max(_dyn_MAX_MEMBERS, target_members)
                                             if "slab" in lbl and "roll" in lbl:
                                                 if "handbuilding" in _dyn_STATIONS:
                                                     hb = int(_dyn_STATIONS["handbuilding"].get("capacity", 6))

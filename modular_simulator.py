@@ -900,7 +900,7 @@ def _core_simulation_and_reports():
     
                     # Loan principal sizing
                    # ----- Split loan sizing: 504 (CapEx) + 7(a) (runway/draw/buffer) -----
-                    total_capex_for_loan = total_capex_for_loan = capex_table_total
+                    total_capex_for_loan = capex_table_total
 
                     loan_504_principal = total_capex_for_loan * (1 + LOAN_CONTINGENCY_PCT)
                     loan_7a_principal  = runway_costs + EXTRA_BUFFER
@@ -1506,7 +1506,7 @@ def _core_simulation_and_reports():
                         # ---------- Annual personal property tax (cash only unless you prefer accrual) ----------
                         property_tax_this_month = 0.0
                         if PERSONAL_PROPERTY_TAX_ANNUAL > 0 and ((month + 1) % 12 == (PERSONAL_PROPERTY_TAX_BILL_MONTH % 12)):
-                            property_tax_this_month = PERSONAL_PROPERTY_TAX_ANNUAL
+                            property_tax_this_month = PERSONAL_PROPERTY_TAX_ANNUAL/12
     
                         # ---------- Quarterly remittances (cash) ----------
                         tax_payments_this_month = 0.0
@@ -1579,6 +1579,8 @@ def _core_simulation_and_reports():
                             
                         # Generalized staged CapEx (month-based or membership-based)
                         capex_draw_this_month = 0.0
+                        loan_tranche_draw_this_month = 0.0
+                        
                         if _capex_queue:
                             current_members = len(active_members)
                             for _item in _capex_queue:
@@ -1724,6 +1726,7 @@ def _core_simulation_and_reports():
                             "capex_I_cost": capex_I_cost,
                             "capex_II_cost": capex_II_cost,
                             "capex_draw": float(capex_draw_this_month) if 'capex_draw_this_month' in locals() else 0.0,
+                            "loan_tranche_draw": float(loan_tranche_draw_this_month) if 'loan_tranche_draw_this_month' in locals() else 0.0,
                             "runway_costs": sized_runway_costs,
                             "dscr": dscr,
                             "dscr_cash": dscr_cash,
@@ -2611,6 +2614,7 @@ def _core_simulation_and_reports():
                                                 tranche = min(tranche, float(mx))
                                             if tranche > 0.0:
                                                 cash_balance += tranche
+                                                loan_tranche_draw_this_month = tranche
                                                 _add_staged_tranche_into_array(
                                                     loan_payment_total_ts, month,
                                                     tranche,

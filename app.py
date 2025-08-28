@@ -625,24 +625,6 @@ def build_overrides(env: dict, strat: dict) -> dict:
                 pass
     else:
         ov["CLASSES_CALENDAR_MODE"] = "monthly"
-
-    # Translate "classes per semester" (UI) -> per-month cohorts during class months
-    # If user didn’t explicitly set CLASS_COHORTS_PER_MONTH, derive it.
-        # --- Classes: map UI semester knobs to simulator ---
-    use_sem = bool(ov.get("USE_SEMESTER_SCHEDULE", False))
-    if use_sem:
-        ov["CLASSES_CALENDAR_MODE"] = "semester"
-        ov["CLASS_SEMESTER_LENGTH_MONTHS"] = 3
-        ov["CLASS_SEMESTER_START_MONTHS"] = [0, 3, 6, 9]  # Jan, Apr, Jul, Oct
-        # Derive monthly cohorts if user supplied per-semester and left monthly unset
-        if "CLASS_COHORTS_PER_MONTH" not in ov and "CLASSES_PER_SEMESTER" in ov:
-            try:
-                cps = int(ov.get("CLASSES_PER_SEMESTER", 0))
-                ov["CLASS_COHORTS_PER_MONTH"] = max(0, int(math.ceil(cps / 3.0)))
-            except Exception:
-                pass
-    else:
-        ov["CLASSES_CALENDAR_MODE"] = "monthly"
             
     # --- Back-compat: map legacy monthly class knobs to workshops if workshops unset ---
     if "WORKSHOPS_PER_MONTH" not in ov and "CLASS_COHORTS_PER_MONTH" in ov:
@@ -1428,7 +1410,22 @@ with st.sidebar:
 
     scen_sel  = st.selectbox("Scenario preset", scen_names, index=0)
     strat_sel = st.selectbox("Strategy preset", strat_names, index=0)
-    seed      = 42
+    # --- Simulation settings ---
+    with st.expander("Simulation settings", expanded=False):
+        sim_count = st.slider(
+            "Simulations per run",
+            min_value=5, max_value=300, step=5,
+            value=int(st.session_state.get("N_SIMULATIONS", 100)),
+            help="Higher = smoother bands but slower. Use 20–60 for exploration, 150–300 for final exhibits."
+        )
+        seed = st.number_input(
+            "Random seed",
+            min_value=0, max_value=10_000_000, step=1,
+            value=int(st.session_state.get("RANDOM_SEED", 42)),
+            help="Fix this to make runs reproducible."
+        )
+    st.session_state["N_SIMULATIONS"] = int(sim_count)
+    st.session_state["RANDOM_SEED"]   = int(seed)
 
     # After scen_sel / strat_sel are created:
     if "last_scen_sel" not in st.session_state:
@@ -1439,6 +1436,7 @@ with st.sidebar:
     # Deep copies of the chosen presets
     env  = json.loads(json.dumps(next(s for s in SCENARIOS  if s["name"] == scen_sel)))
     strat = json.loads(json.dumps(next(s for s in STRATEGIES if s["name"] == strat_sel)))
+    strat["N_SIMULATIONS"] = int(st.session_state.get("N_SIMULATIONS", 100))
     
     if scen_sel != st.session_state["last_scen_sel"]:
         _push_preset_to_widgets(env,   prefix="env_macro",    keys=GROUPS["macro"])

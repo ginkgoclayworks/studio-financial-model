@@ -1570,6 +1570,26 @@ with st.sidebar:
         )
     
         strat["CAPEX_ITEMS"] = _normalize_capex_items(capex_df)
+
+
+        # --- Live total for selected equipment (CapEx) --
+        try:
+            df_cap = capex_df.copy()
+            # Resolve column names across possible schemas
+            enabled_col = "enabled" if "enabled" in df_cap.columns else ("Include" if "Include" in df_cap.columns else None)
+            count_col   = "count"   if "count"   in df_cap.columns else ("Count"    if "Count"    in df_cap.columns else None)
+            unit_col    = "unit_cost" if "unit_cost" in df_cap.columns else ("Unit cost" if "Unit cost" in df_cap.columns else None)
+            if enabled_col and count_col and unit_col:
+                df_cap[count_col] = df_cap[count_col].fillna(0).astype(float)
+                df_cap[unit_col]  = df_cap[unit_col].fillna(0).astype(float)
+                df_cap["_row_total"] = df_cap[count_col] * df_cap[unit_col]
+                total_capex_selected = float(df_cap.loc[df_cap[enabled_col].fillna(False), "_row_total"].sum())
+                st.metric("Selected equipment total (CapEx)", f"${total_capex_selected:,.0f}")
+            else:
+                st.caption("⚠️ Couldn’t compute CapEx total — expected Include/enabled, Count, Unit cost.")
+        except Exception as e:
+            st.caption(f"⚠️ CapEx total error: {e}")
+        
         if strat["CAPEX_ITEMS"]:
             st.success(f"{len(strat['CAPEX_ITEMS'])} equipment purchases configured.", icon="🛠️")
         else:

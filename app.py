@@ -1534,12 +1534,12 @@ with st.sidebar:
             {"enabled": True,  "label": "Wheels",       "count": 4,  "unit_cost": 2000,  "month": 0,   "member_threshold": None, "finance_504": True},
             {"enabled": True,  "label": "Wire racks",   "count": 5,  "unit_cost": 150,  "month": 0,   "member_threshold": None, "finance_504": True},
             {"enabled": True,  "label": "Clay traps",   "count": 1,  "unit_cost": 160,  "month": 0,   "member_threshold": None, "finance_504": True},
-            {"enabled": False, "label": "Kiln #2",      "count": 1,  "unit_cost": 8000, "month": 6,   "member_threshold": None, "finance_504": True},
-            {"enabled": False, "label": "Wire racks",   "count": 7,  "unit_cost": 150,  "month": 0,   "member_threshold": None, "finance_504": True},
-            {"enabled": False, "label": "Wheels",       "count": 10, "unit_cost": 800,  "month": 6,   "member_threshold": None, "finance_504": True},
-            {"enabled": False, "label": "Slab roller",  "count": 1,  "unit_cost": 4000, "month": None,"member_threshold": 50, "finance_504": True},
-            {"enabled": False, "label": "Peter Pugger VPM-60",     "count": 1,  "unit_cost": 10000, "month": 3,"member_threshold": None, "finance_504": True},
-            {"enabled": False, "label": "Bakers racks for ware",     "count": 10,  "unit_cost": 100, "month": 0,"member_threshold": None, "finance_504": True},
+            {"enabled": True, "label": "Kiln #2",      "count": 1,  "unit_cost": 8000, "month": 6,   "member_threshold": None, "finance_504": True},
+            {"enabled": True, "label": "Wire racks",   "count": 7,  "unit_cost": 150,  "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": True, "label": "Wheels",       "count": 10, "unit_cost": 800,  "month": 6,   "member_threshold": None, "finance_504": True},
+            {"enabled": True, "label": "Slab roller",  "count": 1,  "unit_cost": 4000, "month": None,"member_threshold": 50, "finance_504": True},
+            {"enabled": True, "label": "Peter Pugger VPM-60",     "count": 1,  "unit_cost": 10000, "month": 3,"member_threshold": None, "finance_504": True},
+            {"enabled": True, "label": "Bakers racks for ware",     "count": 10,  "unit_cost": 100, "month": 0,"member_threshold": None, "finance_504": True},
         ])
         for col in ["enabled","label","count","unit_cost","month","member_threshold", "finance_504"]:
             if col not in capex_df_default.columns:

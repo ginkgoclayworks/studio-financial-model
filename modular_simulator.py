@@ -923,28 +923,26 @@ def _core_simulation_and_reports():
                         fees_cash_outflow += fees_504_total
                     # ---- end SBA fees ----
                     # Build per-month payment schedules
-                    if LOAN_MODE == "upfront":
-                        # If UI provided an explicit amount, use a single generic schedule for that amount.
-                        if (globals().get("LOAN_UPFRONT_PROCEEDS") is not None
-                            and float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0) > 0.0):
-                            _amt = float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0)
-                            loan_payment_total_ts = build_loan_schedule(
-                                _amt, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
-                            )
-                            loan_504_principal = 0.0
-                            loan_7a_principal  = _amt
-                        else:
-                            # Fall back to computed split (504 + 7a)
-                            loan_payment_504_ts = build_loan_schedule(
-                                loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS, IO_MONTHS_504, MONTHS
-                            )
-                            loan_payment_7a_ts = build_loan_schedule(
-                                loan_7a_principal, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
-                            )
-                            loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
+                    # If UI provided an explicit amount, replace both loans with a single schedule
+                    if (globals().get("LOAN_UPFRONT_PROCEEDS") is not None
+                        and float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0) > 0.0):
+                        _amt = float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0)
+                        loan_payment_504_ts = np.zeros(MONTHS, dtype=float)
+                        loan_payment_7a_ts  = build_loan_schedule(
+                            _amt, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
+                        )
+                        loan_payment_total_ts = loan_payment_7a_ts
+                        loan_504_principal = 0.0
+                        loan_7a_principal  = _amt
                     else:
-                        # staged: start with zeros; we add tranches when CAPEX executes
-                        loan_payment_total_ts = np.zeros(MONTHS, dtype=float)
+                        # Fall back to computed split (504 + 7a)
+                        loan_payment_504_ts = build_loan_schedule(
+                            loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS, IO_MONTHS_504, MONTHS
+                        )
+                        loan_payment_7a_ts = build_loan_schedule(
+                            loan_7a_principal, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
+                        )
+                        loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
                     
 
 

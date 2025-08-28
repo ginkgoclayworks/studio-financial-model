@@ -9,6 +9,14 @@ from typing import Dict, Any, Tuple, Optional
 import numpy as np
 import pandas as pd
 
+
+
+# --- Safe boolean parser: handles strings like "false", "0", "no" correctly ---
+def _to_bool(x) -> bool:
+    if isinstance(x, str):
+        return x.strip().lower() in {"1","true","t","yes","y"}
+    return bool(x)
+
 # Try to import the modular entrypoint (preferred path).
 try:
     from modular_simulator import run_from_cfg as _run_modular
@@ -102,7 +110,7 @@ def _row_to_overrides(row: pd.Series) -> dict:
             }:
                 ov[internal_key] = int(val)
             elif external_key in {"EVENTS_ENABLED", "CLASSES_ENABLED", "WORKSHOPS_ENABLED"}:
-                ov[internal_key] = bool(val)
+                ov[internal_key] = _to_bool(val)
             elif external_key in {"ATTENDEES_PER_EVENT_RANGE", "EVENT_MUG_COST_RANGE"}:
                 v = row[external_key]
                 if isinstance(v, str):

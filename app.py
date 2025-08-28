@@ -41,7 +41,7 @@ PARAM_SPECS = {
     "MAX_ONBOARD_PER_MONTH":  {"type": "int",   "min": 1, "max": 200, "step": 1, "label": "Max onboarding / mo"},
     # -------- Strategy --------
     "RENT":                   {"type": "int",   "min": 1000, "max": 10_000, "step": 50, "label": "Rent ($/mo)"},
-    "RENT_GROWTH_PCT":       {"type": "float", "min": 0.0,   "max": 15.0,   "step": 0.25, "label": "Rent increase per year (%)","default": 0.05},
+    "RENT_GROWTH_PCT":       {"type": "float", "min": 0.0,   "max": 15.0,   "step": 0.25, "label": "Rent increase per year (%)","default": 5},
     "OWNER_DRAW":             {"type": "int",   "min": 0, "max": 5000, "step": 50, "label": "Owner draw ($/mo)"},
     "BASE_EVENTS_PER_MONTH_LAMBDA": {"type": "float", "min": 0.0, "max": 20.0, "step": 0.5, "label": "Events λ", "default": 4},
     "EVENTS_MAX_PER_MONTH":   {"type": "int",   "min": 0, "max": 20, "step": 1, "label": "Events max / mo", "default": 4},
@@ -51,7 +51,7 @@ PARAM_SPECS = {
     "CLASS_CAP_PER_COHORT":   {"type": "int",   "min": 1, "max": 30, "step": 1, "label": "Class cap / cohort", "default": 10},
     "CLASS_PRICE":            {"type": "int",   "min": 0, "max": 1000, "step": 10, "label": "Class price", "default": 600},
     "CLASS_CONV_RATE":        {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Class→Member conv", "default": 0.10},
-    "CLASS_CONV_LAG_MO":      {"type": "int",   "min": 0, "max": 12, "step": 1, "label": "Class conv lag (mo)"},
+    "CLASS_CONV_LAG_MO":      {"type": "int",   "min": 0, "max": 12, "step": 1, "label": "Class conv lag (mo)", "default": 2},
     "MEMBER_CAP": {"type": "int", "min": -1, "max": 500, "step": 1, "label": "Member cap (hard limit)"},
     "EXPANSION_THRESHOLD": {"type": "int", "min": 0, "max": 200, "step": 1, "label": "Expansion threshold (members)"},
     # --- Semester schedule controls (Strategy) ---

@@ -351,6 +351,12 @@ except NameError:
     }
 
 
+# If provided via overrides, this amount replaces computed principals for "upfront" mode.
+try:
+    LOAN_UPFRONT_PROCEEDS
+except NameError:
+    LOAN_UPFRONT_PROCEEDS = None  # None = use computed 504+7a sizing
+
 # -------------------------------------------------------------------------
 # Operating Expenses (recurring)
 # -------------------------------------------------------------------------
@@ -918,13 +924,24 @@ def _core_simulation_and_reports():
                     # ---- end SBA fees ----
                     # Build per-month payment schedules
                     if LOAN_MODE == "upfront":
-                        loan_payment_504_ts = build_loan_schedule(
-                            loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS, IO_MONTHS_504, MONTHS
-                        )
-                        loan_payment_7a_ts = build_loan_schedule(
-                            loan_7a_principal, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
-                        )
-                        loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
+                        # If UI provided an explicit amount, use a single generic schedule for that amount.
+                        if (globals().get("LOAN_UPFRONT_PROCEEDS") is not None
+                            and float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0) > 0.0):
+                            _amt = float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0)
+                            loan_payment_total_ts = build_loan_schedule(
+                                _amt, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
+                            )
+                            loan_504_principal = 0.0
+                            loan_7a_principal  = _amt
+                        else:
+                            # Fall back to computed split (504 + 7a)
+                            loan_payment_504_ts = build_loan_schedule(
+                                loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS, IO_MONTHS_504, MONTHS
+                            )
+                            loan_payment_7a_ts = build_loan_schedule(
+                                loan_7a_principal, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
+                            )
+                            loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
                     else:
                         # staged: start with zeros; we add tranches when CAPEX executes
                         loan_payment_total_ts = np.zeros(MONTHS, dtype=float)
@@ -1545,20 +1562,23 @@ def _core_simulation_and_reports():
                         
                         dscr_cash = (cfads / loan_payment_total_ts[month]) if loan_payment_total_ts[month] > 0 else np.nan
     
-                        # Month 0 loan proceeds
+                        # Month 0 loan proceeds (de-staged)
                         if month == 0:
                             if LOAN_MODE == "upfront":
-                                # If a custom CAPEX schedule is provided, do not subtract any "upfront" CapEx here.
-                                upfront_capex = 0.0 if _capex_queue else capex_I_cost
-                                cash_balance += loan_principal_total - upfront_capex
-                                cumulative_after_capex -= upfront_capex
-                                # If fees were configured to be cash-paid, remove now
+                                # Prefer explicit UI amount if provided
+                                if (globals().get("LOAN_UPFRONT_PROCEEDS") is not None
+                                    and float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0) > 0.0):
+                                    cash_balance += float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0)
+                                else:
+                                    # Fall back to computed 504+7a principal total
+                                    cash_balance += float(loan_7a_principal + loan_504_principal)
+                                # No "upfront CapEx" subtraction — CapEx spends only when CAPEX_ITEMS fire
                                 if 'fees_cash_outflow' in locals() and fees_cash_outflow > 0:
-                                    cash_balance -= fees_cash_outflow
+                                    cash_balance -= float(fees_cash_outflow)
                             else:
-                                # staged: no proceeds at t=0; draws occur when purchases execute
+                            # staged: no proceeds at t=0; draws occur when purchases execute
                                 pass
-
+                            
                         # Generalized staged CapEx (month-based or membership-based)
                         capex_draw_this_month = 0.0
                         if _capex_queue:

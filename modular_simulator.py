@@ -1406,7 +1406,7 @@ def _core_simulation_and_reports():
     
                         # ---------- OpEx (pre-tax) ----------
                         # Annual rent increase (compounded once per year)
-                        _rent_growth = float(globals().get("RENT_GROWTH_PCT", 0.0))
+                        _rent_growth = float(globals().get("RENT_GROWTH_PCT", 0.0))/100
                         _year_index = (month // 12)
                         rent_this_month = fixed_rent * ((1.0 + _rent_growth) ** _year_index)
                         

@@ -874,10 +874,8 @@ def _core_simulation_and_reports():
                 for sim in range(N_SIMULATIONS):
                     ss = SeedSequence([RANDOM_SEED, int(fixed_rent), int(owner_draw), int(scen_index), int(sim)])
                     rng = default_rng(ss)
+                    
                     # CapEx
-                    # capex_I_cost = sample_capex(STAGE_I_CAPEX, rng)
-                    # capex_II_cost = sample_capex(STAGE_II_CAPEX, rng)
-    
                     capex_I_cost = 0.0
                     capex_II_cost = 0.0
     
@@ -888,14 +886,17 @@ def _core_simulation_and_reports():
                      # Table-driven CapEx total (unit_cost × count, or amount fallback)
                     capex_table_total = 0.0
                     for _it in CAPEX_ITEMS:
+                        if _it.get("enabled") is False:
+                            continue
                         unit = float(_it.get("unit_cost", 0.0) or 0.0)
                         cnt  = int(_it.get("count", 1) or 1)
-                        if unit > 0:
-                            capex_table_total += unit * max(1, cnt)
-                        else:
-                            amt = _it.get("amount", None)
-                            if amt is not None:
-                                capex_table_total += float(amt)
+                        total_cost = unit * max(1, cnt)
+                        if total_cost <= 0:
+                            amt = _it.get("amount")
+                            if amt is None:
+                                continue
+                            total_cost = float(amt)
+                        capex_table_total += total_cost
     
     
                     # Loan principal sizing
@@ -948,12 +949,17 @@ def _core_simulation_and_reports():
                     _capex_queue = []
                     try:
                         for _it in CAPEX_ITEMS:
+                            # honor enabled flag if present (older presets may omit it)
+                            if _it.get("enabled") is False:
+                                continue
                             unit = float(_it.get("unit_cost", 0.0) or 0.0)
                             cnt  = int(_it.get("count", 1) or 1)
                             mth  = _it.get("month", None)
                             thr  = _it.get("member_threshold", None)
                             lbl  = _it.get("label", "")
-                            total_cost = (unit * max(1, cnt)) if unit > 0 else float(_it.get("amount", 0.0) or 0.0)
+                            total_cost = (unit * max(1, cnt))
+                            if total_cost <= 0:
+                                total_cost = float(_it.get("amount", 0.0) or 0.0)
                             if total_cost > 0 and (mth is not None or thr is not None):
                                 _capex_queue.append({
                                     "unit_cost": unit,
@@ -962,6 +968,7 @@ def _core_simulation_and_reports():
                                     "member_threshold": thr,
                                     "label": lbl,
                                     "purchased": False,
+                                    "enabled": True,
                                 })
                     except Exception:
                         _capex_queue = []

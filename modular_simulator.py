@@ -2389,7 +2389,7 @@ def _core_simulation_and_reports():
                                 
                                 monthly_heating_cost = HEATING_COST_WINTER if month % 12 in [10,11,0,1,2,3] else HEATING_COST_SUMMER
     
-                                _rent_growth = float(globals().get("RENT_GROWTH_PCT", 0.0))
+                                _rent_growth = float(globals().get("RENT_GROWTH_PCT", 0.0))/100
                                 _year_index = (month // 12)
                                 rent_this_month = fixed_rent * ((1.0 + _rent_growth) ** _year_index)
                                 

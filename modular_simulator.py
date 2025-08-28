@@ -75,7 +75,7 @@ MONTHLY FLOW (t = 0..T-1)
    Operating profit = Revenues - (Fixed + Variable).
    Cash OpEx = Fixed + Variable + loan_payment + owner_draw (optionally tapered).
    Cash_t+1 = Cash_t + (Revenues - Cash OpEx); add grants on grant_month.
-   Stage-II CapEx triggers when N_t ≥ EXPANSION_TRIGGER_MEMBERS (staged scenario).
+   Member-triggered purchases are driven by CAPEX_ITEMS (e.g., by month or member thresholds).
 
 CAPACITY (soft cap)
 SoftCap = min over stations s of:
@@ -319,42 +319,37 @@ OWNER_DRAW_SCENARIOS = [0, 1000, 2000, 3000]
 
 RENT_GROWTH_PCT = 0.0 # Annual rent escalation, as a fraction (e.g., 0.03 = 3%/yr). Defaults to 0.
 
-# -------------------------------------------------------------------------
-# Capital Expenditures (triangular distributions)
-# -------------------------------------------------------------------------
-STAGE_I_CAPEX = {
-    'kiln_1': (3500, 3800, 4200),
-    'wheels_1_to_4': (900, 1200, 1500),
-    'handbuilding_tables': (800, 1000, 1200),
-    'slab_roller': (1000, 1200, 1400),
-    'wire_racks_initial': (130, 140, 160),
-    'glaze_table': (400, 500, 600),
-    'clay_storage': (250, 300, 375),
-    'industrial_sink_and_trap': (900, 1000, 1100),
-    'ventilation': (1300, 1500, 1700),
-    'electrical_setup': (2500, 3000, 3500),
-    'misc_tools': (800, 1000, 1200),
-}
-STAGE_II_CAPEX = {
-    'kiln_2': (6000, 6500, 7000),
-    'wheels_5_to_8': (900, 1200, 1500),
-    'wire_racks_expansion': (130, 140, 160),
-    'spray_booth': (2000, 2500, 3000),
-    'pugmill': (3900, 5000, 6500),
-    'photo_booth': (250, 300, 350),
-}
 
 # -------------------------------------------------------------------------
 # Generalized CapEx schedule (optional).
 # Each item may trigger by month, by membership threshold, or either:
 #   {"amount": 8000, "month": 6, "label": "Kiln #2"}
 #   {"amount": 4000, "member_threshold": 50, "label": "Slab Roller"}
-# If CAPEX_ITEMS is empty/undefined, the model uses existing Stage I/II behavior.
+# If CAPEX_ITEMS is empty/undefined, no scheduled purchases are executed.
 # -------------------------------------------------------------------------
 try:
     CAPEX_ITEMS
 except NameError:
-    CAPEX_ITEMS = []  # default: use current Stage I/II behavior
+    CAPEX_ITEMS = []  # default: no scheduled purchases
+
+# ==== De-Staged loan timing knobs ===========================================
+# "upfront": full proceeds at t=0; prebuilt 504/7a schedules apply
+# "staged":  draw tranches when purchases execute; payments begin next month
+try:
+    LOAN_MODE
+except NameError:
+    LOAN_MODE = "upfront"   # "upfront" | "staged"
+
+# Staged-draw rule (only used if LOAN_MODE == "staged")
+try:
+    LOAN_STAGED_RULE
+except NameError:
+    LOAN_STAGED_RULE = {
+        "draw_pct_of_purchase": 1.00,   # 100% of this month's CAPEX funded by debt
+        "min_tranche": 0.0,             # floor
+        "max_tranche": None,            # optional cap
+    }
+
 
 # -------------------------------------------------------------------------
 # Operating Expenses (recurring)
@@ -380,10 +375,6 @@ BASE_FIRINGS_PER_MONTH = 10
 REFERENCE_MEMBERS_FOR_BASE_FIRINGS = 12
 MIN_FIRINGS_PER_MONTH = 4
 MAX_FIRINGS_PER_MONTH = 12
-KILN2_AFTER_EXPANSION_SCENARIO_II = True
-KILN2_AFTER_THRESHOLD_SCENARIO_I = True
-
-
 
 # -------------------------------------------------------------------------
 # --- Beginner Classes (opt-in offering) ---
@@ -464,7 +455,6 @@ SEASONALITY_WEIGHTS_NORM = (
 # Revenue: Add-ons
 # -------------------------------------------------------------------------
 RETAIL_CLAY_PRICE_PER_BAG = 25
-EXPANSION_TRIGGER_MEMBERS = 20
 
 # Designated Studios
 DESIGNATED_STUDIO_COUNT = 2
@@ -602,10 +592,7 @@ MARKETING_RAMP_MULTIPLIER = 2.0
 # Scenarios (with grants)
 # -------------------------------------------------------------------------
 SCENARIO_CONFIGS = [
-    {"name": "I_all_upfront",               "capex_timing": "all",    "grant_amount": 0.0,    "grant_month": None},
-    {"name": "II_staged",                   "capex_timing": "staged", "grant_amount": 0.0,    "grant_month": None},
-    {"name": "III_all_upfront_grant25k_m4", "capex_timing": "all",    "grant_amount": 25_000, "grant_month": 4},
-    {"name": "IV_staged_grant15k_m9",       "capex_timing": "staged", "grant_amount": 15_000, "grant_month": 9},
+    {"name": "Base", "grant_amount": 0.0, "grant_month": None},
 ]
 
 
@@ -713,22 +700,6 @@ def in_owner_draw_window(month_idx: int) -> bool:
 def sample_capex(capex_dict, rng):
     return sum(rng.triangular(low, mode, high) for (low, mode, high) in capex_dict.values())
 
-def capex_from_choices(rng):
-    """
-    Count-aware CapEx for Stage I, driven by equipment choices.
-    Includes baseline Stage I items once; multiplies per-unit items.
-    """
-    def tri(val):
-        low, mode, high = val
-        return rng.triangular(low, mode, high)
-    total = 0.0
-    # Baseline Stage I items (exclude items replaced by counts)
-    exclude = {"wheels_1_to_4", "wire_racks_initial", "slab_roller", "industrial_sink_and_trap"}
-    for k, val in STAGE_I_CAPEX.items():
-        if k in exclude:
-            continue
-        total += tri(val)
-    return float(total)
 
 def draw_adopters(remaining_pool, monthly_intent, rng):
     """
@@ -784,6 +755,28 @@ def compute_firing_fee(clay_lbs):
     if clay_lbs <= 20: return clay_lbs * 3
     elif clay_lbs <= 40: return 20 * 3 + (clay_lbs - 20) * 4
     else: return 20 * 3 + 20 * 4 + (clay_lbs - 40) * 5
+
+
+
+def _add_staged_tranche_into_array(arr: np.ndarray, start_month: int, principal: float,
+                                   annual_rate: float, amort_years: int, io_months: int, total_months: int):
+    """
+    Build a per-month payment array for a new tranche and add it into `arr`,
+    with payments beginning the month *after* the draw (start_month + 1).
+    """
+    if principal <= 0:
+        return
+    # Build schedule relative to month 0
+    sched = build_loan_schedule(principal, annual_rate, amort_years, io_months, total_months)
+    # Shift by +1 so first payment is next month
+    start = min(total_months, max(0, start_month + 1))
+    end   = min(total_months, start + len(sched))
+    seg_len = end - start
+    if seg_len > 0:
+        arr[start:end] += sched[:seg_len]
+
+
+
 
 def firings_this_month(n_active_members):
     if not DYNAMIC_FIRINGS:
@@ -923,15 +916,21 @@ def _core_simulation_and_reports():
                     else:
                         fees_cash_outflow += fees_504_total
                     # ---- end SBA fees ----
+                    # Build per-month payment schedules
+                    if LOAN_MODE == "upfront":
+                        loan_payment_504_ts = build_loan_schedule(
+                            loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS, IO_MONTHS_504, MONTHS
+                        )
+                        loan_payment_7a_ts = build_loan_schedule(
+                            loan_7a_principal, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
+                        )
+                        loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
+                    else:
+                        # staged: start with zeros; we add tranches when CAPEX executes
+                        loan_payment_total_ts = np.zeros(MONTHS, dtype=float)
+                    
 
-                    # Build per-month payment schedules (IO -> amortization)
-                    loan_payment_504_ts = build_loan_schedule(
-                        loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS, IO_MONTHS_504, MONTHS
-                    )
-                    loan_payment_7a_ts = build_loan_schedule(
-                        loan_7a_principal, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
-                    )
-                    loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
+
                     # (scalar monthly_loan_payment_* replaced by per-month schedules)
     
                     loan_principal_total = loan_504_principal + loan_7a_principal
@@ -944,6 +943,8 @@ def _core_simulation_and_reports():
                     cumulative_after_capex = 0.0
                     expansion_triggered = False
                     active_members = []
+                    # Dynamic equipment state: count kilns purchased so far
+                    _dyn_KILN_COUNT = 0
                     
                     # Generalized CapEx trigger state (copy globals → per-sim queue)
                     _capex_queue = []
@@ -1366,11 +1367,9 @@ def _core_simulation_and_reports():
                         variable_clay_cost *= float(globals().get("CLAY_COGS_MULT", 1.0))
                         water_cost = total_clay_lbs / 25 * GALLONS_PER_BAG_CLAY * WATER_COST_PER_GALLON
     
-                        # Electricity
-                        if "I_all_upfront" in scen_name:
-                            kiln2_on = (len(active_members) >= EXPANSION_TRIGGER_MEMBERS) if KILN2_AFTER_THRESHOLD_SCENARIO_I else True
-                        else:
-                            kiln2_on = expansion_triggered if KILN2_AFTER_EXPANSION_SCENARIO_II else True
+                        
+                        # Electricity (De-Staged): turn on second-kiln draw only when at least 2 kilns purchased
+                        kiln2_on = (_dyn_KILN_COUNT >= 2)
     
                         firings = firings_this_month(len(active_members))
                         kwh_per_firing = KWH_PER_FIRING_KMT1027 + (KWH_PER_FIRING_KMT1427 if kiln2_on else 0)
@@ -1546,18 +1545,19 @@ def _core_simulation_and_reports():
                         
                         dscr_cash = (cfads / loan_payment_total_ts[month]) if loan_payment_total_ts[month] > 0 else np.nan
     
-                        # Month 0 loan & capex (use split principals; cash = total proceeds − upfront CapEx spend − any cash-paid fees)
+                        # Month 0 loan proceeds
                         if month == 0:
-                            # If a custom CAPEX schedule is provided, do not subtract "upfront_capex" here.
-                            if _capex_queue:
-                                upfront_capex = 0.0
+                            if LOAN_MODE == "upfront":
+                                # If a custom CAPEX schedule is provided, do not subtract any "upfront" CapEx here.
+                                upfront_capex = 0.0 if _capex_queue else capex_I_cost
+                                cash_balance += loan_principal_total - upfront_capex
+                                cumulative_after_capex -= upfront_capex
+                                # If fees were configured to be cash-paid, remove now
+                                if 'fees_cash_outflow' in locals() and fees_cash_outflow > 0:
+                                    cash_balance -= fees_cash_outflow
                             else:
-                                if "all_upfront" in scen_name:
-                                    upfront_capex = (capex_I_cost + capex_II_cost)
-                                else:
-                                    upfront_capex = capex_I_cost
-                            cash_balance += loan_principal_total - upfront_capex
-                            cumulative_after_capex -= upfront_capex
+                                # staged: no proceeds at t=0; draws occur when purchases execute
+                                pass
 
                         # Generalized staged CapEx (month-based or membership-based)
                         capex_draw_this_month = 0.0
@@ -1573,9 +1573,13 @@ def _core_simulation_and_reports():
                                     unit = float(_item.get("unit_cost", 0) or 0.0)
                                     total_cost = unit * cnt
                                     capex_draw_this_month += total_cost
+                                    
                                     # ---- Apply equipment effects based on label ----
                                     lbl = str(_item.get("label", "")).lower()
                                     cnt = int(_item.get("count", 1) or 1)
+                                    # Kilns: track count (drives electricity for kiln #2)
+                                    if "kiln" in lbl:
+                                        _dyn_KILN_COUNT += max(1, cnt)
                                     # Wheels: add capacity by count
                                     if "wheel" in lbl:
                                         if "wheels" in _dyn_STATIONS:
@@ -1602,7 +1606,30 @@ def _core_simulation_and_reports():
                             if capex_draw_this_month > 0.0:
                                 cash_balance -= capex_draw_this_month
                                 cumulative_after_capex -= capex_draw_this_month
-                                # ---- Write back dynamic globals so downstream code sees the changes ----
+                                # If staged loans are enabled, draw a tranche and install its schedule starting next month
+                                if LOAN_MODE == "staged":
+                                    draw_pct = float(LOAN_STAGED_RULE.get("draw_pct_of_purchase", 1.0))
+                                    tranche = capex_draw_this_month * max(0.0, min(draw_pct, 1.0))
+                                    tranche = max(tranche, float(LOAN_STAGED_RULE.get("min_tranche", 0.0)))
+                                    mx = LOAN_STAGED_RULE.get("max_tranche", None)
+                                    if mx is not None:
+                                        tranche = min(tranche, float(mx))
+                                    if tranche > 0.0:
+                                        # Proceeds this month
+                                        cash_balance += tranche
+                                        # Add this tranche's payment schedule into the preallocated array, from next month onward
+                                        _add_staged_tranche_into_array(
+                                            loan_payment_total_ts,
+                                            month,
+                                            tranche,
+                                            LOAN_7A_ANNUAL_RATE,   # reuse your 7(a) rate as generic staged debt
+                                            LOAN_7A_TERM_YEARS,
+                                            IO_MONTHS_7A,
+                                            MONTHS
+                                        )
+                                
+                            
+                            # ---- Write back dynamic globals so downstream code sees the changes ----
                             STATIONS.update(_dyn_STATIONS)
                             globals()["MAX_MEMBERS"] = int(_dyn_MAX_MEMBERS)
                             globals()["CLAY_COGS_MULT"] = float(_dyn_CLAY_COGS_MULT)
@@ -2328,8 +2355,7 @@ def _core_simulation_and_reports():
     
                                 # Revenues (simplified calc consistent with main code)
                                
-                                # Stage-II legacy spend removed — table-driven CapEx only
-                                revenue_membership = sum(m["monthly_fee"] for m in active_members)
+                                 # Legacy staged spend removed — table-driven CapEx only                                revenue_membership = sum(m["monthly_fee"] for m in active_members)
                                 revenue_clay = 0.0; revenue_firing = 0.0; total_clay_lbs = 0.0
                                 for m in active_members:
                                     bags = rng.choice(m["clay_bags"]); revenue_clay += bags * RETAIL_CLAY_PRICE_PER_BAG
@@ -2377,11 +2403,8 @@ def _core_simulation_and_reports():
                                     BASE_FIRINGS_PER_MONTH * (len(active_members) / max(1, REFERENCE_MEMBERS_FOR_BASE_FIRINGS))
                                 )))
     
-                                # Match main sim’s kiln-2 behavior
-                                if "I_all_upfront" in scen_name:
-                                    kiln2_on = (len(active_members) >= EXPANSION_TRIGGER_MEMBERS) if KILN2_AFTER_THRESHOLD_SCENARIO_I else True
-                                else:
-                                    kiln2_on = expansion_triggered if KILN2_AFTER_EXPANSION_SCENARIO_II else True
+                                 # Electricity (De-Staged): kiln-2 only if at least 2 kilns purchased
+                                kiln2_on = (_dyn_KILN_COUNT >= 2)
     
                                 kwh_per_firing = KWH_PER_FIRING_KMT1027 + (KWH_PER_FIRING_KMT1427 if kiln2_on else 0)
                                 electricity_cost = firings * kwh_per_firing * COST_PER_KWH
@@ -2514,8 +2537,12 @@ def _core_simulation_and_reports():
                                 # Month 0 loan proceeds / CapEx / cash-paid fees (match main sim; use total of 504 + 7(a))
 
                                 if month == 0:
-                                    upfront_capex = 0
-                                    cash_balance += loan_principal_total - upfront_capex - (fees_cash_outflow if 'fees_cash_outflow' in locals() else 0.0)
+                                    if LOAN_MODE == "upfront":
+                                        upfront_capex = 0
+                                        cash_balance += loan_principal_total - upfront_capex - (fees_cash_outflow if 'fees_cash_outflow' in locals() else 0.0)
+                                    else:
+                                        # staged: no proceeds at t=0 in lightweight path either
+                                        pass
                                 
                                 # ---- Staged CapEx purchases (month- or membership-triggered) ----
                                 capex_draw_this_month = 0.0
@@ -2535,6 +2562,8 @@ def _core_simulation_and_reports():
                                             lbl = str(_item.get("label", "")).lower()
                                            # Wheels: TOTAL wheels target
                                             if "wheel" in lbl:
+                                                if "kiln" in lbl:
+                                                    _dyn_KILN_COUNT += max(1, cnt)
                                                 if "wheels" in _dyn_STATIONS:
                                                     curr = int(_dyn_STATIONS["wheels"].get("capacity", 0))
                                                     target = max(0, cnt)
@@ -2554,7 +2583,23 @@ def _core_simulation_and_reports():
                                             _item["purchased"] = True
                                     if capex_draw_this_month > 0.0:
                                         cash_balance -= capex_draw_this_month
-                                        # Update dynamic globals so downstream code sees the changes next month
+                                        # If staged loans: draw tranche and install payment schedule starting next month
+                                        if LOAN_MODE == "staged":
+                                            draw_pct = float(LOAN_STAGED_RULE.get("draw_pct_of_purchase", 1.0))
+                                            tranche = capex_draw_this_month * max(0.0, min(draw_pct, 1.0))
+                                            tranche = max(tranche, float(LOAN_STAGED_RULE.get("min_tranche", 0.0)))
+                                            mx = LOAN_STAGED_RULE.get("max_tranche", None)
+                                            if mx is not None:
+                                                tranche = min(tranche, float(mx))
+                                            if tranche > 0.0:
+                                                cash_balance += tranche
+                                                _add_staged_tranche_into_array(
+                                                    loan_payment_total_ts, month,
+                                                    tranche,
+                                                    LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
+                                                )
+
+                                        
                                         STATIONS.update(_dyn_STATIONS)
                                         globals()["MAX_MEMBERS"] = int(_dyn_MAX_MEMBERS)
                                         globals()["CLAY_COGS_MULT"] = float(_dyn_CLAY_COGS_MULT)
@@ -2805,7 +2850,7 @@ def _core_simulation_and_reports():
     
     # ---- Example call (choose one configuration to render) ----
     # Update these three to the combo you want to present:
-    scenario_focus   = "II_staged"
+    scenario_focus   = "Base"
     rent_focus       = 3500
     owner_draw_focus = 0
     

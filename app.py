@@ -557,18 +557,17 @@ def build_overrides(env: dict, strat: dict) -> dict:
         except Exception:
             ov.pop("LEAD_TO_JOIN_RATE", None)
 
-    # ----- Scenario configs: grant + capex timing
+    # ----- Scenario configs: grant 
     gm = env.get("grant_month", None)
     # support UI convention: -1 means "no grant"
     if isinstance(gm, (int, np.integer)) and gm < 0:
         gm = None
     sc_name = env.get("name", "Scenario")
-    capex_timing = "all" if ("all_upfront" in str(strat.get("name", ""))) else "staged"
+    # De-Staged: only pass through neutral scenario configs; no capex_timing
     ov["SCENARIO_CONFIGS"] = [{
         "name": sc_name,
-        "capex_timing": capex_timing,
-        "grant_amount": float(env.get("grant_amount", 0.0) or 0.0),
-        "grant_month": gm,
+        "grant_amount": float(env.get("grant_amount", 0.0)),
+        "grant_month": env.get("grant_month", None),
     }]
         # Forward staged CapEx schedule if present
     try:
@@ -637,6 +636,21 @@ def build_overrides(env: dict, strat: dict) -> dict:
         ov["WORKSHOP_CONV_RATE"] = float(ov.get("CLASS_CONV_RATE", 0.0))
     if "WORKSHOP_CONV_LAG_MO" not in ov and "CLASS_CONV_LAG_MO" in ov:
         ov["WORKSHOP_CONV_LAG_MO"] = int(ov.get("CLASS_CONV_LAG_MO", 1))
+    
+    # --- Loan mode knobs ---
+    if "loan_mode" in st.session_state:
+        ov["LOAN_MODE"] = st.session_state["loan_mode"]
+        if ov["LOAN_MODE"] == "upfront":
+            ov["LOAN_UPFRONT_PROCEEDS"] = float(st.session_state.get("loan_upfront", 0.0))
+        else:
+            ov["LOAN_STAGED_RULE"] = {
+                "draw_pct_of_purchase": float(st.session_state.get("draw_pct", 1.0)),
+                "min_tranche": float(st.session_state.get("min_tr", 0.0)),
+                "max_tranche": (None if st.session_state.get("max_tr", 0)==0 else float(st.session_state["max_tr"])),
+            }
+        
+        
+        
     # sensible default if missing:
     ov.setdefault("WORKSHOPS_ENABLED", True)
     ov.setdefault("WORKSHOP_COST_PER_EVENT", 50.0)
@@ -1311,10 +1325,11 @@ SCENARIOS = [
         },
     },
 ]
+
 STRATEGIES = [
-    {"name":"I_all_upfront_Base", "RENT":4000, "OWNER_DRAW":2000, "PRICE": 185,
+    {"name":"Base_A", "RENT":4000, "OWNER_DRAW":2000, "PRICE": 185,
      "USE_SEMESTER_SCHEDULE": True, "CLASSES_PER_SEMESTER": 2},
-    {"name":"II_staged_Base",     "RENT":4000, "OWNER_DRAW":2000, "PRICE": 185,
+    {"name":"Base_B", "RENT":4000, "OWNER_DRAW":2000, "PRICE": 185,
      "USE_SEMESTER_SCHEDULE": True, "CLASSES_PER_SEMESTER": 2},
 ]
 
@@ -1410,6 +1425,18 @@ with st.sidebar:
 
     scen_sel  = st.selectbox("Scenario preset", scen_names, index=0)
     strat_sel = st.selectbox("Strategy preset", strat_names, index=0)
+    
+    
+    # --- Loan controls (De-Staged) ---
+    loan_mode = st.radio("Loan Mode", ["upfront","staged"], index=0, horizontal=True)
+    if loan_mode == "upfront":
+        loan_upfront = st.number_input("Upfront Loan Proceeds", min_value=0, step=1000, value=35000)
+    else:
+        draw_pct  = st.slider("Staged Draw % of purchase", 0.0, 1.0, 1.0, 0.05)
+        min_tr    = st.number_input("Staged Min Tranche ($)", min_value=0, step=500, value=0)
+        max_tr    = st.number_input("Staged Max Tranche ($, 0=None)", min_value=0, step=500, value=0)
+    
+    
     # --- Simulation settings ---
     with st.expander("Simulation settings", expanded=False):
         sim_count = st.slider(

@@ -379,7 +379,8 @@ def _normalize_capex_items(df):
                     "unit_cost": unit,        # per-unit cost
                     "count": cnt,             # units purchased when triggered
                     "month": mth,
-                    "member_threshold": thr
+                    "member_threshold": thr,
+                    "finance_504": bool(r.get("finance_504", False)),
                 })
         except Exception:
             continue
@@ -1479,17 +1480,17 @@ with st.sidebar:
     
         capex_existing = strat.get("CAPEX_ITEMS", [])
         capex_df_default = pd.DataFrame(capex_existing) if capex_existing else pd.DataFrame([
-            {"enabled": True,  "label": "Kiln #1",      "count": 1,  "unit_cost": 4000, "month": 0,   "member_threshold": None},
-            {"enabled": True,  "label": "Wheels",       "count": 4,  "unit_cost": 800,  "month": 0,   "member_threshold": None},
-            {"enabled": True,  "label": "Wire racks",   "count": 5,  "unit_cost": 150,  "month": 0,   "member_threshold": None},
-            {"enabled": True,  "label": "Clay traps",   "count": 1,  "unit_cost": 300,  "month": 0,   "member_threshold": None},
-            {"enabled": False, "label": "Kiln #2",      "count": 1,  "unit_cost": 8000, "month": 6,   "member_threshold": None},
-            {"enabled": False, "label": "Wire racks",   "count": 7,  "unit_cost": 150,  "month": 0,   "member_threshold": None},
-            {"enabled": False, "label": "Wheels",       "count": 10, "unit_cost": 800,  "month": 6,   "member_threshold": None},
-            {"enabled": False, "label": "Slab roller",  "count": 1,  "unit_cost": 4000, "month": None,"member_threshold": 50},
-            {"enabled": False, "label": "Pug mill",     "count": 1,  "unit_cost": 5000, "month": None,"member_threshold": 60},
+            {"enabled": True,  "label": "Kiln #1",      "count": 1,  "unit_cost": 4000, "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": True,  "label": "Wheels",       "count": 4,  "unit_cost": 800,  "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": True,  "label": "Wire racks",   "count": 5,  "unit_cost": 150,  "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": True,  "label": "Clay traps",   "count": 1,  "unit_cost": 300,  "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": False, "label": "Kiln #2",      "count": 1,  "unit_cost": 8000, "month": 6,   "member_threshold": None, "finance_504": True},
+            {"enabled": False, "label": "Wire racks",   "count": 7,  "unit_cost": 150,  "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": False, "label": "Wheels",       "count": 10, "unit_cost": 800,  "month": 6,   "member_threshold": None, "finance_504": True},
+            {"enabled": False, "label": "Slab roller",  "count": 1,  "unit_cost": 4000, "month": None,"member_threshold": 50, "finance_504": True},
+            {"enabled": False, "label": "Pug mill",     "count": 1,  "unit_cost": 5000, "month": None,"member_threshold": 60, "finance_504": True},
         ])
-        for col in ["enabled","label","count","unit_cost","month","member_threshold"]:
+        for col in ["enabled","label","count","unit_cost","month","member_threshold", "finance_504"]:
             if col not in capex_df_default.columns:
                 capex_df_default[col] = [False] if col == "enabled" else [None]
         capex_df_default = capex_df_default[["enabled","label","count","unit_cost","month","member_threshold"]]
@@ -1504,7 +1505,7 @@ with st.sidebar:
                 "count": st.column_config.NumberColumn("Count", min_value=1, step=1),
                 "unit_cost": st.column_config.NumberColumn("Unit cost ($)", min_value=0, step=10),
                 "month": st.column_config.NumberColumn("Trigger month", min_value=0, step=1, help="Month after launch"),
-                "member_threshold": st.column_config.NumberColumn("Trigger members", min_value=0, step=1, help="Active members ≥ this"),
+                "member_threshold": st.column_config.NumberColumn("Trigger members", min_value=0, step=1, help="Purchase once active members ≥ this"),"finance_504": st.column_config.CheckboxColumn("Finance via 504"),
             },
             key="capex_items_editor",
         )

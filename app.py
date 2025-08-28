@@ -429,17 +429,18 @@ def _make_cache_key(env: dict, strat: dict, seed: int) -> str:
     # include loan controls so cache invalidates when they change
     try:
         import streamlit as st
-        loan_mode    = st.session_state.get("loan_mode", None)
-        loan_upfront = st.session_state.get("loan_upfront", None)
+        loan_mode = st.session_state.get("loan_mode", None)
+        loan_504  = st.session_state.get("loan_504", None)
+        loan_7a   = st.session_state.get("loan_7a", None)
         draw_pct     = st.session_state.get("draw_pct", None)
         min_tr       = st.session_state.get("min_tr", None)
         max_tr       = st.session_state.get("max_tr", None)
     except Exception:
-        loan_mode = loan_upfront = draw_pct = min_tr = max_tr = None
+        loan_mode = loan_504 = loan_7a = draw_pct = min_tr = max_tr = None
     return (
-        f"v5|{_canon(env)}|{_canon(strat)}|{seed}|"
-        f"{loan_mode}|{loan_upfront}|{draw_pct}|{min_tr}|{max_tr}"
+        f"v5|{_canon(env)}|{_canon(strat)}|{seed}|{loan_mode}|{loan_504}|{loan_7a}|{draw_pct}|{min_tr}|{max_tr}"
     )
+
 def _push_preset_to_widgets(preset: dict, *, prefix: str, keys: list):
     """
     Push preset values into st.session_state for all widgets in `keys`
@@ -650,16 +651,19 @@ def build_overrides(env: dict, strat: dict) -> dict:
         ov["WORKSHOP_CONV_LAG_MO"] = int(ov.get("CLASS_CONV_LAG_MO", 1))
     
     # --- Loan mode knobs ---
-    if "loan_mode" in st.session_state:
-        ov["LOAN_MODE"] = st.session_state["loan_mode"]
-        if ov["LOAN_MODE"] == "upfront":
-            ov["LOAN_UPFRONT_PROCEEDS"] = float(st.session_state.get("loan_upfront", 0.0))
-        else:
-            ov["LOAN_STAGED_RULE"] = {
-                "draw_pct_of_purchase": float(st.session_state.get("draw_pct", 1.0)),
-                "min_tranche": float(st.session_state.get("min_tr", 0.0)),
-                "max_tranche": (None if st.session_state.get("max_tr", 0)==0 else float(st.session_state["max_tr"])),
-            }
+    ov["LOAN_MODE"] = st.session_state.get("loan_mode", "upfront")
+    if ov["LOAN_MODE"] == "upfront":
+        # Explicit split between 504 (equipment) and 7a (working capital)
+        ov["LOAN_OVERRIDE_504"] = float(st.session_state.get("loan_504", 0.0))
+        ov["LOAN_OVERRIDE_7A"]  = float(st.session_state.get("loan_7a", 0.0))
+        # Ensure old single-proceeds path is not used
+        ov["LOAN_UPFRONT_PROCEEDS"] = None
+    else:
+        ov["LOAN_STAGED_RULE"] = {
+            "draw_pct_of_purchase": float(st.session_state.get("draw_pct", 1.0)),
+            "min_tranche": float(st.session_state.get("min_tr", 0.0)),
+            "max_tranche": (None if st.session_state.get("max_tr", 0)==0 else float(st.session_state["max_tr"])),
+        }
         
         
         
@@ -1442,7 +1446,9 @@ with st.sidebar:
     # --- Loan controls (De-Staged) ---
     loan_mode = st.radio("Loan Mode", ["upfront","staged"], index=0, horizontal=True)
     if loan_mode == "upfront":
-        loan_upfront = st.number_input("Upfront Loan Proceeds", min_value=0, step=1000, value=35000)
+        # Split the upfront loan into equipment (504) and working capital (7a)
+        loan_504 = st.number_input("Upfront CapEx Loan (504)", min_value=0, step=1000, value=0)
+        loan_7a  = st.number_input("Upfront OpEx Loan (7a)",  min_value=0, step=1000, value=0)
     else:
         draw_pct  = st.slider("Staged Draw % of purchase", 0.0, 1.0, 1.0, 0.05)
         min_tr    = st.number_input("Staged Min Tranche ($)", min_value=0, step=500, value=0)
@@ -1451,12 +1457,14 @@ with st.sidebar:
      # --- persist loan controls so build_overrides can forward them ---
     st.session_state["loan_mode"] = loan_mode
     if loan_mode == "upfront":
-        st.session_state["loan_upfront"] = float(loan_upfront)
+        st.session_state["loan_504"] = float(loan_504)
+        st.session_state["loan_7a"]  = float(loan_7a)
         st.session_state["draw_pct"] = None
         st.session_state["min_tr"]   = None
         st.session_state["max_tr"]   = None
     else:
-        st.session_state["loan_upfront"] = 0.0
+        st.session_state["loan_504"] = 0.0
+        st.session_state["loan_7a"]  = 0.0
         st.session_state["draw_pct"]     = float(draw_pct)
         st.session_state["min_tr"]       = float(min_tr)
         st.session_state["max_tr"]       = float(max_tr)

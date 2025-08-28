@@ -1539,13 +1539,13 @@ with st.sidebar:
         capex_existing = strat.get("CAPEX_ITEMS", [])
         capex_df_default = pd.DataFrame(capex_existing) if capex_existing else pd.DataFrame([
             {"enabled": True,  "label": "Kiln #1",      "count": 1,  "unit_cost": 2200, "month": 0,   "member_threshold": None, "finance_504": True},
-            {"enabled": True,  "label": "Wheels",       "count": 4,  "unit_cost": 3000,  "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": True,  "label": "Wheels",       "count": 12,  "unit_cost": 3000,  "month": 0,   "member_threshold": None, "finance_504": True},
             {"enabled": True,  "label": "Wire racks",   "count": 5,  "unit_cost": 150,  "month": 0,   "member_threshold": None, "finance_504": True},
             {"enabled": True,  "label": "Clay traps",   "count": 1,  "unit_cost": 160,  "month": 0,   "member_threshold": None, "finance_504": True},
-            {"enabled": True, "label": "Kiln #2",      "count": 1,  "unit_cost": 8000, "month": 6,   "member_threshold": None, "finance_504": True},
+            {"enabled": True, "label": "Kiln #2",      "count": 1,  "unit_cost": 5400, "month": 6,   "member_threshold": None, "finance_504": True},
             {"enabled": True, "label": "Wire racks",   "count": 7,  "unit_cost": 150,  "month": 0,   "member_threshold": None, "finance_504": True},
-            {"enabled": True, "label": "Wheels",       "count": 10, "unit_cost": 800,  "month": 6,   "member_threshold": None, "finance_504": True},
-            {"enabled": True, "label": "Slab roller",  "count": 1,  "unit_cost": 4000, "month": None,"member_threshold": 50, "finance_504": True},
+            {"enabled": False, "label": "Wheels",       "count": 10, "unit_cost": 800,  "month": 6,   "member_threshold": None, "finance_504": True},
+            {"enabled": True, "label": "Slab roller",  "count": 1,  "unit_cost": 1800, "month": None,"member_threshold": 50, "finance_504": True},
             {"enabled": True, "label": "Peter Pugger VPM-60",     "count": 1,  "unit_cost": 5049, "month": 3,"member_threshold": None, "finance_504": True},
             {"enabled": True, "label": "Bakers racks for ware",     "count": 10,  "unit_cost": 100, "month": 0,"member_threshold": None, "finance_504": True},
         ])

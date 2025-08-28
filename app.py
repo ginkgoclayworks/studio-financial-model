@@ -426,8 +426,20 @@ def _canon(o):
     return json.dumps(o, sort_keys=True, separators=(",", ":"), default=_default)
 
 def _make_cache_key(env: dict, strat: dict, seed: int) -> str:
-    return f"v4|{_canon(env)}|{_canon(strat)}|{seed}"
-
+    # include loan controls so cache invalidates when they change
+    try:
+        import streamlit as st
+        loan_mode    = st.session_state.get("loan_mode", None)
+        loan_upfront = st.session_state.get("loan_upfront", None)
+        draw_pct     = st.session_state.get("draw_pct", None)
+        min_tr       = st.session_state.get("min_tr", None)
+        max_tr       = st.session_state.get("max_tr", None)
+    except Exception:
+        loan_mode = loan_upfront = draw_pct = min_tr = max_tr = None
+    return (
+        f"v5|{_canon(env)}|{_canon(strat)}|{seed}|"
+        f"{loan_mode}|{loan_upfront}|{draw_pct}|{min_tr}|{max_tr}"
+    )
 def _push_preset_to_widgets(preset: dict, *, prefix: str, keys: list):
     """
     Push preset values into st.session_state for all widgets in `keys`
@@ -1725,6 +1737,15 @@ with tab_run:
     st.caption("Runs a single run simulation with values indicated in the slider")
     run_btn = st.button("Run simulation")
     if run_btn:
+        # auto-bust caches when the user explicitly runs
+        try:
+            run_cell_cached.clear()
+        except Exception:
+            pass
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
         with st.spinner("Running simulator…"):
             env_norm = _normalize_env(env)
             cache_key = _make_cache_key(env_norm, strat, seed)
@@ -1828,6 +1849,15 @@ with tab_run:
 with tab_matrix:
     st.caption("Runs all presets in SCENARIOS × STRATEGIES with independent seeds.")
     if st.button("Build matrix"):
+        # auto-bust caches when building the matrix
+        try:
+            run_cell_cached.clear()
+        except Exception:
+            pass
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
         with st.spinner("Running matrix…"):
             runs = []        # keep raw dfs so we can recompute DSCR at a uniform month
             horizons = []    # track each run's horizon (max month)

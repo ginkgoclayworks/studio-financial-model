@@ -1944,7 +1944,7 @@ with tab_run:
             T = 0
         
         
-        # --- Loan repayment plot (outstanding balance over time) ---
+        +        # --- Loan repayment plot (outstanding balance over time) ---
         try:
             # Determine month column and sort
             df_cell_sorted = df_cell.sort_values(month_col).copy()
@@ -1954,90 +1954,64 @@ with tab_run:
                 else np.arange(len(df_cell_sorted))
             )
 
-            # Principals (constant per run, taken from the first row)
-            principal_504 = float(
-                df_cell_sorted.loc[df_cell_sorted.index[0], "loan_principal_504"]
-            ) if "loan_principal_504" in df_cell_sorted.columns else 0.0
-            principal_7a = float(
-                df_cell_sorted.loc[df_cell_sorted.index[0], "loan_principal_7a"]
-            ) if "loan_principal_7a" in df_cell_sorted.columns else 0.0
+            # Prefer balances emitted by the simulator; fall back to local reconstruction only if missing
+            if {"loan_balance_504","loan_balance_7a"} <= set(df_cell_sorted.columns):
+                bal504 = df_cell_sorted["loan_balance_504"].to_numpy()
+                bal7a  = df_cell_sorted["loan_balance_7a"].to_numpy()
+                bal_total = bal504 + bal7a
+            else:
+                # Principals (constant per run, taken from the first row)
+                principal_504 = float(df_cell_sorted.iloc[0]["loan_principal_504"]) if "loan_principal_504" in df_cell_sorted.columns else 0.0
+                principal_7a  = float(df_cell_sorted.iloc[0]["loan_principal_7a"])  if "loan_principal_7a"  in df_cell_sorted.columns else 0.0
+                # Monthly payments emitted by the simulator
+                pay_504 = df_cell_sorted["loan_payment_504"].to_numpy() if "loan_payment_504" in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
+                pay_7a  = df_cell_sorted["loan_payment_7a"].to_numpy()  if "loan_payment_7a"  in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
+                # Parameters from UI/preset
+                r504 = float(st.session_state.get("LOAN_504_ANNUAL_RATE", strat.get("LOAN_504_ANNUAL_RATE", 0.0)))
+                r7a  = float(st.session_state.get("LOAN_7A_ANNUAL_RATE",  strat.get("LOAN_7A_ANNUAL_RATE",  0.0)))
+                term504_m = int(12 * int(st.session_state.get("LOAN_504_TERM_YEARS", strat.get("LOAN_504_TERM_YEARS", 0)))) if len(pay_504 := pay_504) else 0
+                term7a_m  = int(12 * int(st.session_state.get("LOAN_7A_TERM_YEARS",  strat.get("LOAN_7A_TERM_YEARS",  0)))) if len(pay_7a := pay_7a) else 0
+                io504 = int(st.session_state.get("IO_MONTHS_504", strat.get("IO_MONTHS_504", 0)))
+                io7a  = int(st.session_state.get("IO_MONTHS_7A",  strat.get("IO_MONTHS_7A",  0)))
 
-            # Monthly payments emitted by the simulator
-            pay_504 = (
-                df_cell_sorted["loan_payment_504"].to_numpy()
-                if "loan_payment_504" in df_cell_sorted.columns
-                else np.zeros(len(df_cell_sorted))
-            )
-            pay_7a = (
-                df_cell_sorted["loan_payment_7a"].to_numpy()
-                if "loan_payment_7a" in df_cell_sorted.columns
-                else np.zeros(len(df_cell_sorted))
-            )
+                # Reconstruction helper
+                def _balances_from_schedule(principal, payments, apr, io_m, term_m):
+                    if principal <= 0 or payments is None or len(payments) == 0:
+                        return np.zeros(len(months_arr), dtype=float)
+                    r_m = float(apr) / 12.0
+                    n = len(payments)
+                    try:
+                        term_m = int(term_m)
+                    except Exception:
+                        term_m = n
+                    if term_m <= 0 or term_m > n:
+                        term_m = n
+                    try:
+                        io_m = int(io_m)
+                    except Exception:
+                        io_m = 0
+                    io_m = max(0, min(io_m, term_m))
+                    bal = float(principal)
+                    out = np.zeros(n, dtype=float)
+                    for m in range(n):
+                        if m >= term_m:
+                            bal = 0.0
+                        else:
+                            interest = bal * r_m
+                            principal_paid = 0.0 if m < io_m else max(0.0, float(payments[m]) - interest)
+                            bal = max(0.0, bal - principal_paid)
+                        out[m] = bal
+                    return out
 
-            # Loan parameters from UI/session
-            r504 = float(st.session_state.get("LOAN_504_ANNUAL_RATE", strat.get("LOAN_504_ANNUAL_RATE", 0.0)))
-            r7a  = float(st.session_state.get("LOAN_7A_ANNUAL_RATE",  strat.get("LOAN_7A_ANNUAL_RATE",  0.0)))
-            term504_m = int(12 * int(st.session_state.get("LOAN_504_TERM_YEARS", strat.get("LOAN_504_TERM_YEARS", 0))))
-            term7a_m  = int(12 * int(st.session_state.get("LOAN_7A_TERM_YEARS",  strat.get("LOAN_7A_TERM_YEARS",  0))))
-            io504 = int(st.session_state.get("IO_MONTHS_504", strat.get("IO_MONTHS_504", 0)))
-            io7a  = int(st.session_state.get("IO_MONTHS_7A",  strat.get("IO_MONTHS_7A",  0)))
+                bal504 = _balances_from_schedule(principal_504, pay_504, r504, io504, term504_m)
+                bal7a  = _balances_from_schedule(principal_7a,  pay_7a,  r7a,  io7a,  term7a_m)
+                bal_total = bal504 + bal7a
 
-            # --- Outstanding balances computed rigorously from payment schedule ---
-            def _balances_from_schedule(principal, payments, apr, io_m, term_m):
-                """
-                Compute outstanding balance over time from a scheduled payment stream.
-            
-                Assumptions (matches simulator logic):
-                  - payments[m] is the total scheduled payment (interest + principal) for month m
-                  - First `io_m` months are interest-only (no principal reduction)
-                  - Amortization runs until `term_m`; after that, balance is 0
-                """
-                import numpy as np
-            
-                # Guards
-                if principal <= 0 or payments is None or len(payments) == 0:
-                    return np.zeros(0, dtype=float)
-                r_m = float(apr) / 12.0
-                n = len(payments)
-            
-                # Fallback if term_m not set: default to full length of provided schedule
-                try:
-                    term_m = int(term_m)
-                except Exception:
-                    term_m = n
-                if term_m <= 0 or term_m > n:
-                    term_m = n
-            
-                try:
-                    io_m = int(io_m)
-                except Exception:
-                    io_m = 0
-                io_m = max(0, min(io_m, term_m))
-            
-                bal = float(principal)
-                out = np.zeros(n, dtype=float)
-            
-                for m in range(n):
-                    if m >= term_m:
-                        bal = 0.0
-                    else:
-                        interest = bal * r_m
-                        # During IO months, principal_paid = 0. After IO, subtract only the principal portion.
-                        principal_paid = 0.0 if m < io_m else max(0.0, float(payments[m]) - interest)
-                        bal = max(0.0, bal - principal_paid)
-                    out[m] = bal
-            
-                return out
-            
-            bal504 = _balances_from_schedule(principal_504, pay_504, r504, io504, term504_m)
-            bal7a  = _balances_from_schedule(principal_7a,  pay_7a,  r7a,  io7a,  term7a_m)
-            bal_total = bal504 + bal7a
-            
             with st.expander("Loan repayment over time", expanded=True):
                 fig, ax = plt.subplots(figsize=(8, 4))
                 ax.plot(months_arr, bal_total, label="Total outstanding")
-                if principal_504 > 0: ax.plot(months_arr, bal504, label="504 outstanding")
-                if principal_7a  > 0: ax.plot(months_arr, bal7a,  label="7(a) outstanding")
+                if len(bal504) == len(months_arr): ax.plot(months_arr, bal504, label="504 outstanding")
+                if len(bal7a)  == len(months_arr): ax.plot(months_arr, bal7a,  label="7(a) outstanding")
                 ax.set_xlabel("Month"); ax.set_ylabel("Outstanding balance ($)")
                 ax.set_title("Loan repayment over time")
                 ax.legend()

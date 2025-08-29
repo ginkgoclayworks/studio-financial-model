@@ -73,8 +73,8 @@ PARAM_SPECS = {
     "IO_MONTHS_7A":         {"type": "int",   "min": 0,    "max": 18,   "step": 1,     "label": "7(a) interest-only (mo)", "desc": "Planned interest-only months before amortization. (Phase 1 UI only)"},
     "LOAN_CONTINGENCY_PCT": {"type": "float", "min": 0.00, "max": 0.25, "step": 0.01,  "label": "CapEx contingency (%)"},
     "RUNWAY_MONTHS":        {"type": "int",   "min": 0,    "max": 24,   "step": 1,     "label": "Runway months (7a sizing)"},
-    "EXTRA_BUFFER":         {"type": "int",   "min": 0,    "max": 200000, "step": 1000, "label": "Extra buffer ($)"},
-    "RESERVE_FLOOR":        {"type": "int",   "min": 0,    "max": 200000, "step": 1000, "label": "Reserve floor ($)", "desc": "Minimum cash buffer for LOC sizing; not yet used by simulator."}, 
+    "EXTRA_BUFFER":         {"type": "int",   "min": 0,    "max": 20000, "step": 1000, "label": "Extra buffer ($)"},
+    "RESERVE_FLOOR":        {"type": "int",   "min": 0,    "max": 20000, "step": 1000, "label": "Reserve floor ($)", "desc": "Minimum cash buffer for LOC sizing; not yet used by simulator."}, 
 
     # --- SBA fees (Phase 2) ---
     "FEES_UPFRONT_PCT_7A": {"type": "float", "min": 0.00, "max": 0.08, "step": 0.001, "label": "7(a) upfront fees (%)"},

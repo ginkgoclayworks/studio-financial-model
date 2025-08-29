@@ -47,8 +47,8 @@ PARAM_SPECS = {
     "EVENTS_MAX_PER_MONTH":   {"type": "int",   "min": 0, "max": 20, "step": 1, "label": "Events max / mo", "default": 4},
     "TICKET_PRICE":           {"type": "int",   "min": 0, "max": 500, "step": 5, "label": "Ticket price", "default": 75},
     "CLASSES_ENABLED":        {"type": "bool",  "label": "Classes enabled", "default": True},
-    "CLASS_COHORTS_PER_MONTH": {"type": "int", "min": 0, "max": 12, "step": 1, "label": "Cohorts_per_launch","default": 1},
-    "CLASS_CAP_PER_COHORT":   {"type": "int",   "min": 1, "max": 30, "step": 1, "label": "Class cap / cohort", "default": 10},
+    "CLASS_CAP_PER_COHORT":   {"type": "int",   "min": 1, "max": 30, "step": 1, "label": "Class cap / cohort", "default": 10},    
+    "CLASS_COHORTS_PER_MONTH": {"type": "int", "min": 0, "max": 12, "step": 1, "label": "Cohorts per launch","default": 1},
     "CLASS_PRICE":            {"type": "int",   "min": 0, "max": 1000, "step": 10, "label": "Class price", "default": 600},
     "CLASS_CONV_RATE":        {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Class→Member conv", "default": 0.10},
     "CLASS_CONV_LAG_MO":      {"type": "int",   "min": 0, "max": 12, "step": 1, "label": "Class conv lag (mo)", "default": 2},
@@ -1720,26 +1720,41 @@ with st.sidebar:
         # merge `workshops_cfg` into the env/strat/cfg you pass to the simulator
     
     with st.expander("Beginner Classes", expanded=False):
-        strat_classes = render_param_controls(
-            "Beginner Classes", _subset(strat, GROUPS["classes"]),
-            group_keys=GROUPS["classes"], prefix="strat_classes"
-        )
+                # Render toggles first, then conditionally render the right knobs
+        base_keys = ["CLASSES_ENABLED", "USE_SEMESTER_SCHEDULE"]
+        base = render_param_controls("Beginner Classes", _subset(strat, base_keys),
+                                     group_keys=base_keys, prefix="strat_classes_base")
+        use_sem = bool(base.get("USE_SEMESTER_SCHEDULE", False))
+
+        if use_sem:
+            class_keys = ["CLASSES_PER_SEMESTER", "CLASS_CAP_PER_COHORT",
+                          "CLASS_PRICE", "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO"]
+        else:
+            class_keys = ["CLASS_COHORTS_PER_MONTH", "CLASS_CAP_PER_COHORT",
+                          "CLASS_PRICE", "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO"]
+
+        opts = render_param_controls("Beginner Classes", _subset(strat, class_keys),
+                                     group_keys=class_keys, prefix="strat_classes")
+
+        # Merge base + opts into one dict the simulator will see
+        strat_classes = {**base, **opts}
+
         st.caption("Adds class net revenue now; converts a fraction of students into members after a delay.")
         try:
             if bool(strat_classes.get("CLASSES_ENABLED", False)):
-                use_sem   = bool(strat_classes.get("USE_SEMESTER_SCHEDULE", False))
-                cap       = float(strat_classes.get("CLASS_CAP_PER_COHORT", 0))
-                price     = float(strat_classes.get("CLASS_PRICE", 0))
-                conv      = float(strat_classes.get("CLASS_CONV_RATE", 0))
-                lag       = int(strat_classes.get("CLASS_CONV_LAG_MO", 1))
-    
+                cap   = float(strat_classes.get("CLASS_CAP_PER_COHORT", 0))
+                price = float(strat_classes.get("CLASS_PRICE", 0))
+                conv  = float(strat_classes.get("CLASS_CONV_RATE", 0))
+                lag   = int(strat_classes.get("CLASS_CONV_LAG_MO", 1))
+
                 if use_sem:
-                    cps = float(strat_classes.get("CLASSES_PER_SEMESTER", 0))
                     # Distribute evenly across the 3 months in a term
+                    cps   = float(strat_classes.get("CLASSES_PER_SEMESTER", 0))
                     import math
                     coh_pm = int(math.ceil(cps / 3.0))
-                    # Ensure the monthly knob reflects this derived value for downstream use
+                    # ensure downstream value is set explicitly
                     strat_classes["CLASS_COHORTS_PER_MONTH"] = coh_pm
+
                     students = int(round(coh_pm * cap))
                     gross    = int(round(students * price))
                     converts = int(round(students * conv))
@@ -1755,8 +1770,7 @@ with st.sidebar:
                     gross    = int(round(students * price))
                     converts = int(round(students * conv))
                     st.markdown(
-                        f"• **Starts 4×/yr** (months **1, 4, 7, 10**). "
-                        f"Each intake starts **{int(coh)}** cohort(s) ⇒ ≈ **{students}** students at start; "
+                        f"• **Monthly mode:** each month you start **{int(coh)}** cohort(s) ⇒ ≈ **{students}** students; "
                         f"gross ≈ **${gross:,}**; **{converts}** convert after **{lag}** mo."
                     )
         except Exception:

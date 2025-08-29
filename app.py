@@ -1456,7 +1456,7 @@ with st.sidebar:
     
     
     # --- Loan controls (De-Staged) ---
-    +    st.subheader("Loans")
+    st.subheader("Loans")
     colA, colB = st.columns(2)
     with colA:
         capex_mode = st.radio("CapEx Loan (504) Mode", ["upfront","staged"], index=0, horizontal=True)

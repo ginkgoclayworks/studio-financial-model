@@ -1038,8 +1038,11 @@ def _core_simulation_and_reports():
                     # Upfront principals (overrides from UI)
                     ov504 = globals().get("LOAN_OVERRIDE_504", None)
                     ov7a  = globals().get("LOAN_OVERRIDE_7A",  None)
-                    loan_504_principal = float(ov504 or 0.0)
-                    loan_7a_principal  = float(ov7a  or 0.0)
+                    # Only override if a value was actually provided; otherwise keep the sized amounts
+                    if ov504 is not None:
+                        loan_504_principal = float(ov504)
+                    if ov7a is not None:
+                        loan_7a_principal = float(ov7a)
             
                     # Build fixed amortization only for the modes that are upfront
                     if CAPEX_MODE == "upfront" and loan_504_principal > 0:

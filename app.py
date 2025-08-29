@@ -47,7 +47,7 @@ PARAM_SPECS = {
     "EVENTS_MAX_PER_MONTH":   {"type": "int",   "min": 0, "max": 20, "step": 1, "label": "Events max / mo", "default": 4},
     "TICKET_PRICE":           {"type": "int",   "min": 0, "max": 500, "step": 5, "label": "Ticket price", "default": 75},
     "CLASSES_ENABLED":        {"type": "bool",  "label": "Classes enabled", "default": True},
-    "CLASS_COHORTS_PER_MONTH": {"type": "int", "min": 0, "max": 12, "step": 1, "label": "Cohorts_per_launch","default": 2},
+    "CLASS_COHORTS_PER_MONTH": {"type": "int", "min": 0, "max": 12, "step": 1, "label": "Cohorts_per_launch","default": 1},
     "CLASS_CAP_PER_COHORT":   {"type": "int",   "min": 1, "max": 30, "step": 1, "label": "Class cap / cohort", "default": 10},
     "CLASS_PRICE":            {"type": "int",   "min": 0, "max": 1000, "step": 10, "label": "Class price", "default": 600},
     "CLASS_CONV_RATE":        {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Class→Member conv", "default": 0.10},

@@ -1071,6 +1071,19 @@ def _core_simulation_and_reports():
                     loan_principal_total = loan_504_principal + loan_7a_principal
                     sized_runway_costs = runway_costs  # keep for reporting
                     
+                     # --- Running loan balances for correct staged tracking ---
+                    loan_balance_504_ts = np.zeros(MONTHS, dtype=float)
+                    loan_balance_7a_ts  = np.zeros(MONTHS, dtype=float)
+                    _bal504 = 0.0
+                    _bal7a  = 0.0
+                    if CAPEX_MODE == "upfront" and loan_504_principal > 0:
+                        _bal504 = float(loan_504_principal)
+                        loan_balance_504_ts[0] = _bal504
+                    if OPEX_MODE == "upfront" and loan_7a_principal > 0:
+                        _bal7a = float(loan_7a_principal)
+                        loan_balance_7a_ts[0] = _bal7a
+                    _r504 = float(LOAN_504_ANNUAL_RATE) / 12.0
+                    _r7a  = float(LOAN_7A_ANNUAL_RATE)  / 12.0
     
                     # Tracking
                     cash_balance = 0.0
@@ -1871,6 +1884,24 @@ def _core_simulation_and_reports():
                         _workshop_attendees = int(round(_wpm * _avg_n))
                         _gross_ws = float(_workshop_attendees * _fee)
                         _cost_ws  = float(_wpm * _cost)
+                        
+                         # --- Update running loan balances (after any staged draws this month) ---
+                        _draw504 = float(loan_tranche_draw_capex) if 'loan_tranche_draw_capex' in locals() else 0.0
+                        _draw7a  = float(loan_tranche_draw_opex)  if 'loan_tranche_draw_opex'  in locals() else 0.0
+                        _pay504  = float(loan_payment_504_ts[month]) if month < len(loan_payment_504_ts) else 0.0
+                        _pay7a   = float(loan_payment_7a_ts[month])  if month < len(loan_payment_7a_ts)  else 0.0
+                        # Add any draws first
+                        _bal504 += _draw504
+                        _bal7a  += _draw7a
+                         # Split payment into interest + principal on current balances
+                        _int504  = _bal504 * _r504
+                        _int7a   = _bal7a  * _r7a
+                        _prin504 = max(0.0, _pay504 - _int504)
+                        _prin7a  = max(0.0, _pay7a  - _int7a)
+                        _bal504  = max(0.0, _bal504 - _prin504)
+                        _bal7a   = max(0.0, _bal7a  - _prin7a)
+                        loan_balance_504_ts[month] = _bal504
+                        loan_balance_7a_ts[month]  = _bal7a
                         
                         # Store row
                         rows.append({

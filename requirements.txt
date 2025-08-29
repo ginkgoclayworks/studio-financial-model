@@ -5,7 +5,7 @@ matplotlib>=3.8
 seaborn>=0.13
 requests>=2.31
 python-dateutil>=2.9
-
+openpyxl>=3.1.2
 # Google Trends client (works on 3.13 up to 4.9.2)
 pytrends==4.9.2
 

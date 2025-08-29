@@ -922,40 +922,34 @@ def _core_simulation_and_reports():
                     else:
                         fees_cash_outflow += fees_504_total
                     # ---- end SBA fees ----
-                    # Build per-month payment schedules
-                    # Prefer explicit UI overrides (split 504 / 7a); fall back to legacy single-proceeds, else computed split.
+                    # Independent modes
+                    CAPEX_MODE = str(globals().get("CAPEX_LOAN_MODE", "upfront")).lower()
+                    OPEX_MODE  = str(globals().get("OPEX_LOAN_MODE",  "upfront")).lower()
+            
+                    # Initialize schedules
+                    loan_payment_504_ts = np.zeros(MONTHS, dtype=float)
+                    loan_payment_7a_ts  = np.zeros(MONTHS, dtype=float)
+            
+                    # Upfront principals (overrides from UI)
                     ov504 = globals().get("LOAN_OVERRIDE_504", None)
-                    ov7a  = globals().get("LOAN_OVERRIDE_7A", None)
-                    if (ov504 is not None) or (ov7a is not None):
-                        loan_504_principal = float(ov504 or 0.0)
-                        loan_7a_principal  = float(ov7a  or 0.0)
+                    ov7a  = globals().get("LOAN_OVERRIDE_7A",  None)
+                    loan_504_principal = float(ov504 or 0.0)
+                    loan_7a_principal  = float(ov7a  or 0.0)
+            
+                    # Build fixed amortization only for the modes that are upfront
+                    if CAPEX_MODE == "upfront" and loan_504_principal > 0:
                         loan_payment_504_ts = build_loan_schedule(
                             loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS, IO_MONTHS_504, MONTHS
                         )
-                        loan_payment_7a_ts  = build_loan_schedule(
-                            loan_7a_principal, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
-                        )
-                        loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
-                    elif (globals().get("LOAN_UPFRONT_PROCEEDS") is not None
-                          and float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0) > 0.0):
-                        _amt = float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0)
-                        loan_payment_504_ts = np.zeros(MONTHS, dtype=float)
-                        loan_payment_7a_ts  = build_loan_schedule(
-                            _amt, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
-                        )
-                        loan_payment_total_ts = loan_payment_7a_ts
-                        loan_504_principal = 0.0
-                        loan_7a_principal  = _amt
-                    else:
-                        # Computed split (504 + 7a)
-                        loan_payment_504_ts = build_loan_schedule(
-                            loan_504_principal, LOAN_504_ANNUAL_RATE, LOAN_504_TERM_YEARS, IO_MONTHS_504, MONTHS
-                        )
+                    if OPEX_MODE == "upfront" and loan_7a_principal > 0:
                         loan_payment_7a_ts = build_loan_schedule(
                             loan_7a_principal, LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
                         )
-                        loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
-                    
+                    loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
+                    # --- Staged OpEx facility state (if enabled) ---
+                    opex_rule = globals().get("LOAN_STAGED_RULE_OPEX", {}) or {}
+                    opex_facility_limit = float(opex_rule.get("facility_limit", 0.0) or 0.0)
+                    opex_remaining = opex_facility_limit            
 
 
                     # (scalar monthly_loan_payment_* replaced by per-month schedules)
@@ -1574,30 +1568,24 @@ def _core_simulation_and_reports():
     
                         # Month 0 loan proceeds (de-staged)
                         if month == 0:
-                            if LOAN_MODE == "upfront":
-                                # Prefer explicit UI split (504 + 7a) for proceeds; else fallback to legacy single-proceeds; else computed split
-                                ov504 = globals().get("LOAN_OVERRIDE_504", None)
-                                ov7a  = globals().get("LOAN_OVERRIDE_7A", None)
-                                if (ov504 is not None) or (ov7a is not None):
-                                    cash_balance += float(ov504 or 0.0) + float(ov7a or 0.0)
-                                elif (globals().get("LOAN_UPFRONT_PROCEEDS") is not None
-                                      and float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0) > 0.0):
-                                    cash_balance += float(globals().get("LOAN_UPFRONT_PROCEEDS") or 0.0)
-                                else:
-                                    # Computed 504+7a total
-                                    cash_balance += float(loan_7a_principal + loan_504_principal)
- 
-                                    
+                            # Month 0: add only the upfront portions for each loan
+                            if month == 0:
+                                if CAPEX_MODE == "upfront" and loan_504_principal > 0:
+                                    cash_balance += float(loan_504_principal)
+                                if OPEX_MODE == "upfront" and loan_7a_principal > 0:
+                                    cash_balance += float(loan_7a_principal)
+           
                                 # No "upfront CapEx" subtraction — CapEx spends only when CAPEX_ITEMS fire
                                 if 'fees_cash_outflow' in locals() and fees_cash_outflow > 0:
                                     cash_balance -= float(fees_cash_outflow)
                             else:
-                            # staged: no proceeds at t=0; draws occur when purchases execute
+                                # staged: no proceeds at t=0; draws occur when purchases execute
                                 pass
                             
                         # Generalized staged CapEx (month-based or membership-based)
                         capex_draw_this_month = 0.0
-                        loan_tranche_draw_this_month = 0.0
+                        loan_tranche_draw_capex  = 0.0
+                        loan_tranche_draw_opex  = 0.0
                         
                         if _capex_queue:
                             current_members = len(active_members)
@@ -1645,27 +1633,57 @@ def _core_simulation_and_reports():
                                 cash_balance -= capex_draw_this_month
                                 cumulative_after_capex -= capex_draw_this_month
                                 # If staged loans are enabled, draw a tranche and install its schedule starting next month
-                                if LOAN_MODE == "staged":
-                                    draw_pct = float(LOAN_STAGED_RULE.get("draw_pct_of_purchase", 1.0))
-                                    tranche = capex_draw_this_month * max(0.0, min(draw_pct, 1.0))
-                                    tranche = max(tranche, float(LOAN_STAGED_RULE.get("min_tranche", 0.0)))
-                                    mx = LOAN_STAGED_RULE.get("max_tranche", None)
-                                    if mx is not None:
-                                        tranche = min(tranche, float(mx))
-                                    if tranche > 0.0:
-                                        # Proceeds this month
-                                        cash_balance += tranche
-                                        # Add this tranche's payment schedule into the preallocated array, from next month onward
+                            # Compute staged CapEx tranche amount from this month's purchase
+                            draw_rule = globals().get("LOAN_STAGED_RULE", {}) or {}
+                            draw_pct = float(draw_rule.get("draw_pct_of_purchase", 1.0))
+                            tranche = capex_draw_this_month * max(0.0, min(draw_pct, 1.0))
+                            tranche = max(tranche, float(draw_rule.get("min_tranche", 0.0)))
+                            _mx = draw_rule.get("max_tranche", None)
+                            if _mx is not None:
+                                tranche = min(tranche, float(_mx))
+
+                            if CAPEX_MODE == "staged":
+                                # CapEx staged tranche
+                                cash_balance += tranche
+                                loan_tranche_draw_capex = tranche
+                                _add_staged_tranche_into_array(
+                                    loan_payment_504_ts,
+                                    month,
+                                    tranche,
+                                    LOAN_504_ANNUAL_RATE,
+                                    LOAN_504_TERM_YEARS,
+                                    IO_MONTHS_504,
+                                    MONTHS,
+                                )
+                                loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
+                                
+                            if OPEX_MODE == "staged":
+                                rule = globals().get("LOAN_STAGED_RULE_OPEX", {}) or {}
+                                facility_limit = float(rule.get("facility_limit", 0.0) or 0.0)
+                                min_draw = float(rule.get("min_draw", 0.0) or 0.0)
+                                max_draw_raw = rule.get("max_draw", None)
+                                max_draw = None if (max_draw_raw in (None, 0)) else float(max_draw_raw)
+                                reserve_floor = float(rule.get("reserve_floor", 0.0) or 0.0)
+                                if cash_balance < reserve_floor and opex_remaining > 0:
+                                    needed = reserve_floor - cash_balance
+                                    draw_amt = max(needed, min_draw)
+                                    if max_draw is not None:
+                                        draw_amt = min(draw_amt, max_draw)
+                                    draw_amt = min(draw_amt, opex_remaining)
+                                    if draw_amt > 0:
+                                        cash_balance += draw_amt
+                                        opex_remaining -= draw_amt
+                                        loan_tranche_draw_opex = draw_amt
                                         _add_staged_tranche_into_array(
-                                            loan_payment_total_ts,
+                                            loan_payment_7a_ts,
                                             month,
-                                            tranche,
-                                            LOAN_7A_ANNUAL_RATE,   # reuse your 7(a) rate as generic staged debt
+                                            draw_amt,
+                                            LOAN_7A_ANNUAL_RATE,
                                             LOAN_7A_TERM_YEARS,
                                             IO_MONTHS_7A,
-                                            MONTHS
+                                            MONTHS,
                                         )
-                                
+                                        loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
                             
                             # ---- Write back dynamic globals so downstream code sees the changes ----
                             STATIONS.update(_dyn_STATIONS)
@@ -1744,6 +1762,8 @@ def _core_simulation_and_reports():
                             "capex_I_cost": capex_I_cost,
                             "capex_II_cost": capex_II_cost,
                             "capex_draw": float(capex_draw_this_month) if 'capex_draw_this_month' in locals() else 0.0,
+                            "loan_tranche_draw_capex": float(loan_tranche_draw_capex) if 'loan_tranche_draw_capex' in locals() else 0.0,
+                            "loan_tranche_draw_opex":  float(loan_tranche_draw_opex)  if 'loan_tranche_draw_opex'  in locals() else 0.0,
                             "runway_costs": sized_runway_costs,
                             "dscr": dscr,
                             "dscr_cash": dscr_cash,
@@ -1760,7 +1780,6 @@ def _core_simulation_and_reports():
                             "property_tax": property_tax_this_month,
                             "owner_salary_expense": owner_salary_expense,
                             # staged-only: amount of loan tranche drawn this month (0 in upfront months)
-                            "loan_tranche_draw": float(loan_tranche_draw_this_month) if 'loan_tranche_draw_this_month' in locals() else 0.0,
                             "employer_payroll_tax": employer_payroll_tax,
                             "entity_type": ENTITY_TYPE,
                             "owner_draw_paid": owner_draw_now,

@@ -659,9 +659,17 @@ def build_overrides(env: dict, strat: dict) -> dict:
     # --- Independent loan modes ---
     ov["CAPEX_LOAN_MODE"] = st.session_state.get("capex_mode", "upfront")
     ov["OPEX_LOAN_MODE"]  = st.session_state.get("opex_mode",  "upfront")
+    
     # Upfront overrides
-    ov["LOAN_OVERRIDE_504"] = float(st.session_state.get("loan_504", 0.0))
-    ov["LOAN_OVERRIDE_7A"]  = float(st.session_state.get("loan_7a",  0.0))
+    val_504 = st.session_state.get("loan_504", None)
+    if val_504 not in (None, "", 0, 0.0):  # only set if user provided a non-zero value
+        ov["LOAN_OVERRIDE_504"] = float(val_504)
+    
+    val_7a = st.session_state.get("loan_7a", None)
+    if val_7a not in (None, "", 0, 0.0):
+        ov["LOAN_OVERRIDE_7A"] = float(val_7a)
+    
+    
     # Staged rules
     if ov["CAPEX_LOAN_MODE"] == "staged":
         # Simulator expects 'LOAN_STAGED_RULE' (CapEx staged draws)

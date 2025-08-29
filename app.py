@@ -1984,32 +1984,50 @@ with tab_run:
 
             # --- Outstanding balances computed rigorously from payment schedule ---
             def _balances_from_schedule(principal, payments, apr, io_m, term_m):
-                # Guard: empty or no principal
-                if principal <= 0 or len(payments) == 0:
-                    return np.zeros_like(payments, dtype=float)
+                """
+                Compute outstanding balance over time from a scheduled payment stream.
             
+                Assumptions (matches simulator logic):
+                  - payments[m] is the total scheduled payment (interest + principal) for month m
+                  - First `io_m` months are interest-only (no principal reduction)
+                  - Amortization runs until `term_m`; after that, balance is 0
+                """
+                import numpy as np
+            
+                # Guards
+                if principal <= 0 or payments is None or len(payments) == 0:
+                    return np.zeros(0, dtype=float)
                 r_m = float(apr) / 12.0
                 n = len(payments)
             
-                # Fallback: if term not set, infer by trailing zeros in the schedule
-                if not isinstance(term_m, int) or term_m <= 0:
+                # Fallback if term_m not set: default to full length of provided schedule
+                try:
+                    term_m = int(term_m)
+                except Exception:
                     term_m = n
-                    for i in range(n):
-                        if np.all(np.isclose(payments[i:], 0.0)):
-                            term_m = i
-                            break
+                if term_m <= 0 or term_m > n:
+                    term_m = n
+            
+                try:
+                    io_m = int(io_m)
+                except Exception:
+                    io_m = 0
+                io_m = max(0, min(io_m, term_m))
             
                 bal = float(principal)
-                out = []
+                out = np.zeros(n, dtype=float)
+            
                 for m in range(n):
                     if m >= term_m:
                         bal = 0.0
                     else:
                         interest = bal * r_m
-                        principal_paid = 0.0 if m < int(io_m) else max(0.0, float(payments[m]) - interest)
+                        # During IO months, principal_paid = 0. After IO, subtract only the principal portion.
+                        principal_paid = 0.0 if m < io_m else max(0.0, float(payments[m]) - interest)
                         bal = max(0.0, bal - principal_paid)
-                    out.append(bal)
-                return np.array(out, dtype=float)
+                    out[m] = bal
+            
+                return out
             
             bal504 = _balances_from_schedule(principal_504, pay_504, r504, io504, term504_m)
             bal7a  = _balances_from_schedule(principal_7a,  pay_7a,  r7a,  io7a,  term7a_m)

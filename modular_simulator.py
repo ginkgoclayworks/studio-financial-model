@@ -2809,8 +2809,8 @@ def _core_simulation_and_reports():
                                             _item["purchased"] = True
                                     if capex_draw_this_month > 0.0:
                                         cash_balance -= capex_draw_this_month
-                                        # If staged loans: draw tranche and install payment schedule starting next month
-                                        if LOAN_MODE == "staged":
+                                        # If staged CapEx: draw tranche into the 504 schedule and start payments next month
+                                        if CAPEX_MODE == "staged":
                                             draw_pct = float(LOAN_STAGED_RULE.get("draw_pct_of_purchase", 1.0))
                                             tranche = capex_draw_this_month * max(0.0, min(draw_pct, 1.0))
                                             tranche = max(tranche, float(LOAN_STAGED_RULE.get("min_tranche", 0.0)))
@@ -2819,12 +2819,18 @@ def _core_simulation_and_reports():
                                                 tranche = min(tranche, float(mx))
                                             if tranche > 0.0:
                                                 cash_balance += tranche
-                                                loan_tranche_draw_this_month = tranche
+                                                loan_tranche_draw_capex = tranche  # <-- expose per-month 504 draw
                                                 _add_staged_tranche_into_array(
-                                                    loan_payment_total_ts, month,
+                                                    loan_payment_504_ts,  # <-- write into the 504 schedule
+                                                    month,
                                                     tranche,
-                                                    LOAN_7A_ANNUAL_RATE, LOAN_7A_TERM_YEARS, IO_MONTHS_7A, MONTHS
+                                                    LOAN_504_ANNUAL_RATE,  # <-- 504 rate
+                                                    LOAN_504_TERM_YEARS,   # <-- 504 term
+                                                    IO_MONTHS_504,         # <-- 504 IO months
+                                                    MONTHS
                                                 )
+                                                # keep 'total' in sync after changing a component schedule
+                                                loan_payment_total_ts = loan_payment_504_ts + loan_payment_7a_ts
 
                                         
                                         STATIONS.update(_dyn_STATIONS)

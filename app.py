@@ -2120,7 +2120,7 @@ with tab_run:
                 ax.plot(months_arr, bal_total, label="Total outstanding")
                 if principal_504 > 0 or staged_504: ax.plot(months_arr, bal504, label="504 outstanding")
                 if principal_7a  > 0 or staged_7a:  ax.plot(months_arr, bal7a,  label="7(a) outstanding")
-               ax.set_xlabel("Month"); ax.set_ylabel("Outstanding balance ($)")
+                ax.set_xlabel("Month"); ax.set_ylabel("Outstanding balance ($)")
                 ax.set_title("Loan repayment over time")
                 ax.legend()
                 st.pyplot(fig)

@@ -1870,9 +1870,16 @@ with tab_run:
  
         if not df_cell.empty:
             if loan_mode == "staged":
-                # Sum actual staged tranches recorded by the simulator
-                if "loan_tranche_draw" in df_cell.columns:
-                    total_capex_loan = float(df_cell["loan_tranche_draw"].sum())
+                # Sum staged CAPEX tranches without scaling by # of simulations:
+                # take one value per month, then sum.
+                mcol = month_col or ("month" if "month" in df_cell.columns else df_cell.columns[0])
+                if "loan_tranche_draw_capex" in df_cell.columns:
+                    tmp = (df_cell[[mcol, "loan_tranche_draw_capex"]]
+                           .sort_values(mcol)
+                           .drop_duplicates(subset=[mcol]))
+                    total_capex_loan = float(tmp["loan_tranche_draw_capex"].sum())
+                else:
+                    total_capex_loan = 0.0
                 total_opex_loan = 0.0
             else:
                 # Upfront mode: principals are constant across rows; read once
@@ -1887,13 +1894,17 @@ with tab_run:
                 capex_needed = float(st.session_state.get("loan_504", 0.0))
                 opex_needed  = float(st.session_state.get("loan_7a",  0.0))
             else:
-                # In staged mode, approximate CapEx need as total planned equipment spend observed in the sim
+                # In staged mode, base CapEx NEED on planned equipment spend,
+                # not on the number of simulations. Take first value per month.
+                mcol = month_col or ("month" if "month" in df_cell.columns else df_cell.columns[0])
                 capex_needed = 0.0
-                if "capex_I_cost" in df_cell.columns:
-                    capex_needed += float(df_cell["capex_I_cost"].sum())
-                if "capex_II_cost" in df_cell.columns:
-                    capex_needed += float(df_cell["capex_II_cost"].sum())
-                # OpEx staged is not modeled as a facility here; show 0
+                for col in ("capex_I_cost", "capex_II_cost"):
+                    if col in df_cell.columns:
+                        tmp = (df_cell[[mcol, col]]
+                               .sort_values(mcol)
+                               .drop_duplicates(subset=[mcol]))
+                        capex_needed += float(tmp[col].sum())
+                # OpEx staged facility not modeled here; keep at 0 for NEED
                 opex_needed = 0.0
         except Exception:
             capex_needed = 0.0

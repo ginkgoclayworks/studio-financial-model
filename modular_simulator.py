@@ -1831,18 +1831,18 @@ def _core_simulation_and_reports():
     # Global membership (median + band) with cap
     g = results_df.groupby("month")["active_members"]
     med = g.median(); p10 = g.quantile(0.10); p90 = g.quantile(0.90)
-    plt.figure(figsize=(10,6))
-    plt.plot(med.index, med.values, linewidth=2, label="Median")
-    plt.fill_between(med.index, p10.values, p90.values, alpha=0.12, label="10–90% range")
-    plt.axhline(MEMBERSHIP_SOFT_CAP, linestyle="--", linewidth=1.5, label=f"Soft cap ≈ {MEMBERSHIP_SOFT_CAP:.0f}")
-    # Optional hard cap (if MAX_MEMBERS is set)
-    try:
-        plt.axhline(MAX_MEMBERS, linestyle=":", linewidth=1.5, color="orange", label=f"Hard cap = {int(MAX_MEMBERS)}")
-    except Exception:
-        pass
-    plt.title("Projected Membership Over Time — Capacity-aware")
-    plt.xlabel("Month"); plt.ylabel("Active Members")
-    plt.legend(); plt.tight_layout(); plt.show()
+    # plt.figure(figsize=(10,6))
+    # plt.plot(med.index, med.values, linewidth=2, label="Median")
+    # plt.fill_between(med.index, p10.values, p90.values, alpha=0.12, label="10–90% range")
+    # plt.axhline(MEMBERSHIP_SOFT_CAP, linestyle="--", linewidth=1.5, label=f"Soft cap ≈ {MEMBERSHIP_SOFT_CAP:.0f}")
+    # # Optional hard cap (if MAX_MEMBERS is set)
+    # try:
+    #     plt.axhline(MAX_MEMBERS, linestyle=":", linewidth=1.5, color="orange", label=f"Hard cap = {int(MAX_MEMBERS)}")
+    # except Exception:
+    #     pass
+    # plt.title("Projected Membership Over Time — Capacity-aware")
+    # plt.xlabel("Month"); plt.ylabel("Active Members")
+    # plt.legend(); plt.tight_layout(); plt.show()
     
     # Cash balance overlays per (scenario, rent)
     for scen in results_df["scenario"].unique():
@@ -2024,12 +2024,12 @@ def _core_simulation_and_reports():
             
     # Net adds histograms + probability of negative months (global simplified view)
     vals = results_df["net_adds"].values
-    plt.figure(figsize=(10,6))
-    plt.hist(vals, bins=range(int(vals.min())-1, int(vals.max())+2), alpha=0.5)
-    plt.axvline(0, color="black", linestyle=":")
-    plt.title("Distribution of Monthly Net Adds — All configurations")
-    plt.xlabel("Net Adds (Joins − Departures) per Month"); plt.ylabel("Frequency")
-    plt.tight_layout(); plt.show()
+    # plt.figure(figsize=(10,6))
+    # plt.hist(vals, bins=range(int(vals.min())-1, int(vals.max())+2), alpha=0.5)
+    # plt.axvline(0, color="black", linestyle=":")
+    # plt.title("Distribution of Monthly Net Adds — All configurations")
+    # plt.xlabel("Net Adds (Joins − Departures) per Month"); plt.ylabel("Frequency")
+    # plt.tight_layout(); plt.show()
     
     neg_prob = (results_df["net_adds"] < 0).mean()
     print(f"Probability of a negative net-adds month (global): {neg_prob:.1%}")

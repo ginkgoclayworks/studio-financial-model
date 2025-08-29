@@ -620,9 +620,9 @@ def build_overrides(env: dict, strat: dict) -> dict:
         thr_val = None
 
     if thr_val is not None and thr_val >= 0:
-        ov["EXPANSION_THRESHOLD"] = thr_val
+        ov["STAFF_EXPANSION_THRESHOLD"] = thr_val
     else:
-        ov.pop("EXPANSION_THRESHOLD", None)
+        ov.pop("STAFF_EXPANSION_THRESHOLD", None)
         
         # --- Classes: fixed intake months (0-indexed Jan=0) -> months 1,4,7,10 === [0,3,6,9]
     ov["CLASS_START_MONTHS"] = [0, 3, 6, 9]
@@ -664,7 +664,8 @@ def build_overrides(env: dict, strat: dict) -> dict:
     ov["LOAN_OVERRIDE_7A"]  = float(st.session_state.get("loan_7a",  0.0))
     # Staged rules
     if ov["CAPEX_LOAN_MODE"] == "staged":
-        ov["LOAN_STAGED_RULE_CAPEX"] = {
+        # Simulator expects 'LOAN_STAGED_RULE' (CapEx staged draws)
+        ov["LOAN_STAGED_RULE"] = {
             "draw_pct_of_purchase": float(st.session_state.get("capex_draw_pct", 1.0)),
             "min_tranche": float(st.session_state.get("capex_min_tr", 0.0)),
             "max_tranche": (None if (st.session_state.get("capex_max_tr", 0)==0) else float(st.session_state["capex_max_tr"])),

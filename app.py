@@ -1982,36 +1982,39 @@ with tab_run:
             io504 = int(st.session_state.get("IO_MONTHS_504", strat.get("IO_MONTHS_504", 0)))
             io7a  = int(st.session_state.get("IO_MONTHS_7A",  strat.get("IO_MONTHS_7A",  0)))
 
-            # Compute balances using principal portions; IO months keep balance flat
-            def _balances(principal, payments, apr, io_m, term_m):
+            # --- Outstanding balances computed rigorously from payment schedule ---
+            def _balances_from_schedule(principal, payments, apr, io_m, term_m):
+                # Guard: empty or no principal
                 if principal <= 0 or len(payments) == 0:
                     return np.zeros_like(payments, dtype=float)
+            
                 r_m = float(apr) / 12.0
                 n = len(payments)
-                # Fallback: infer term from trailing zeros in the payment stream
+            
+                # Fallback: if term not set, infer by trailing zeros in the schedule
                 if not isinstance(term_m, int) or term_m <= 0:
-                    # first index where remaining payments are all ~0 -> term
                     term_m = n
                     for i in range(n):
                         if np.all(np.isclose(payments[i:], 0.0)):
                             term_m = i
                             break
+            
                 bal = float(principal)
                 out = []
                 for m in range(n):
                     if m >= term_m:
                         bal = 0.0
                     else:
-                        interest = bal * r_m if bal > 0 else 0.0
+                        interest = bal * r_m
                         principal_paid = 0.0 if m < int(io_m) else max(0.0, float(payments[m]) - interest)
                         bal = max(0.0, bal - principal_paid)
                     out.append(bal)
                 return np.array(out, dtype=float)
-
-            bal504 = _balances(principal_504, pay_504, r504, io504, term504_m)
-            bal7a  = _balances(principal_7a,  pay_7a,  r7a,  io7a,  term7a_m)
+            
+            bal504 = _balances_from_schedule(principal_504, pay_504, r504, io504, term504_m)
+            bal7a  = _balances_from_schedule(principal_7a,  pay_7a,  r7a,  io7a,  term7a_m)
             bal_total = bal504 + bal7a
-
+            
             with st.expander("Loan repayment over time", expanded=True):
                 fig, ax = plt.subplots(figsize=(8, 4))
                 ax.plot(months_arr, bal_total, label="Total outstanding")

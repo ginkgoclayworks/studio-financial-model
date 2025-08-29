@@ -1944,7 +1944,7 @@ with tab_run:
             T = 0
         
         
-        # --- Loan repayment plot (outstanding balance over time) ---
+       # --- Loan repayment plot (outstanding balance over time) ---
         try:
             if df_cell.empty:
                 raise ValueError("No data for this cell; loan plot skipped.")
@@ -1957,26 +1957,25 @@ with tab_run:
                 else np.arange(len(df_cell_sorted))
             )
         
-            # 1) Prefer balances directly from the simulator (no reconstruction).
+            # 1) Prefer balances directly from the simulator (most robust).
             if {"loan_balance_504", "loan_balance_7a"} <= set(df_cell_sorted.columns):
                 bal504 = df_cell_sorted["loan_balance_504"].to_numpy()
                 bal7a  = df_cell_sorted["loan_balance_7a"].to_numpy()
                 bal_total = bal504 + bal7a
         
             else:
-                # 2) Fall back to reconstruction with safety nets.
+                # 2) Fallback path: reconstruct safely from payments (+ staged draws).
         
-                # Principals (constant per run, from first row)
+                # Principals (from first row)
                 principal_504 = float(df_cell_sorted.iloc[0]["loan_principal_504"]) if "loan_principal_504" in df_cell_sorted.columns else 0.0
                 principal_7a  = float(df_cell_sorted.iloc[0]["loan_principal_7a"])  if "loan_principal_7a"  in df_cell_sorted.columns else 0.0
         
-                # Payments (may be cumulative in some cached runs → convert to monthly)
+                # Payments: may be cumulative in some cached runs → convert to monthly
                 pay_504 = df_cell_sorted["loan_payment_504"].to_numpy() if "loan_payment_504" in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
                 pay_7a  = df_cell_sorted["loan_payment_7a"].to_numpy()  if "loan_payment_7a"  in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
         
                 def _to_monthly(p):
                     if len(p) == 0: return p
-                    # treat as cumulative if non-decreasing and ends above start
                     is_cum = np.all(np.diff(p) >= -1e-9) and (p[-1] > p[0])
                     return np.clip(np.diff(np.r_[0.0, p]), 0.0, None) if is_cum else p
         
@@ -2030,10 +2029,10 @@ with tab_run:
                     out = np.zeros(n, dtype=float)
                     bal = 0.0
                     for m in range(n):
-                        bal += float(draws[m]) if m < len(draws) else 0.0  # step-up on tranche
+                        bal += float(draws[m]) if m < len(draws) else 0.0   # step-up on tranche
                         interest = bal * r_m
                         principal_paid = max(0.0, float(payments[m]) - interest)
-                        principal_paid = min(bal, principal_paid)  # clamp
+                        principal_paid = min(bal, principal_paid)          # clamp
                         bal = max(0.0, bal - principal_paid)
                         out[m] = bal
                     return out

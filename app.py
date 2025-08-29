@@ -429,16 +429,22 @@ def _make_cache_key(env: dict, strat: dict, seed: int) -> str:
     # include loan controls so cache invalidates when they change
     try:
         import streamlit as st
-        loan_mode = st.session_state.get("loan_mode", None)
+        capex_mode = st.session_state.get("capex_mode", None)
+        opex_mode  = st.session_state.get("opex_mode",  None)
+        
         loan_504  = st.session_state.get("loan_504", None)
         loan_7a   = st.session_state.get("loan_7a", None)
-        draw_pct     = st.session_state.get("draw_pct", None)
-        min_tr       = st.session_state.get("min_tr", None)
-        max_tr       = st.session_state.get("max_tr", None)
+        capex_draw_pct = st.session_state.get("capex_draw_pct", None)
+        capex_min_tr   = st.session_state.get("capex_min_tr", None)
+        capex_max_tr   = st.session_state.get("capex_max_tr", None)
+        opex_facility  = st.session_state.get("opex_facility", None)
+        opex_min_tr    = st.session_state.get("opex_min_tr", None)
+        opex_max_tr    = st.session_state.get("opex_max_tr", None)
+        reserve_floor  = st.session_state.get("reserve_floor", None)
     except Exception:
-        loan_mode = loan_504 = loan_7a = draw_pct = min_tr = max_tr = None
+        capex_mode = opex_mode = loan_504 = loan_7a = capex_draw_pct = capex_min_tr = capex_max_tr = opex_facility = opex_min_tr = opex_max_tr = reserve_floor = None
     return (
-        f"v5|{_canon(env)}|{_canon(strat)}|{seed}|{loan_mode}|{loan_504}|{loan_7a}|{draw_pct}|{min_tr}|{max_tr}"
+        f"v6|{_canon(env)}|{_canon(strat)}|{seed}|{capex_mode}|{opex_mode}|{loan_504}|{loan_7a}|{capex_draw_pct}|{capex_min_tr}|{capex_max_tr}|{opex_facility}|{opex_min_tr}|{opex_max_tr}|{reserve_floor}"
     )
 
 def _push_preset_to_widgets(preset: dict, *, prefix: str, keys: list):
@@ -650,19 +656,25 @@ def build_overrides(env: dict, strat: dict) -> dict:
     if "WORKSHOP_CONV_LAG_MO" not in ov and "CLASS_CONV_LAG_MO" in ov:
         ov["WORKSHOP_CONV_LAG_MO"] = int(ov.get("CLASS_CONV_LAG_MO", 1))
     
-    # --- Loan mode knobs ---
-    ov["LOAN_MODE"] = st.session_state.get("loan_mode", "upfront")
-    if ov["LOAN_MODE"] == "upfront":
-        # Explicit split between 504 (equipment) and 7a (working capital)
-        ov["LOAN_OVERRIDE_504"] = float(st.session_state.get("loan_504", 0.0))
-        ov["LOAN_OVERRIDE_7A"]  = float(st.session_state.get("loan_7a", 0.0))
-        # Ensure old single-proceeds path is not used
-        ov["LOAN_UPFRONT_PROCEEDS"] = None
-    else:
-        ov["LOAN_STAGED_RULE"] = {
-            "draw_pct_of_purchase": float(st.session_state.get("draw_pct", 1.0)),
-            "min_tranche": float(st.session_state.get("min_tr", 0.0)),
-            "max_tranche": (None if st.session_state.get("max_tr", 0)==0 else float(st.session_state["max_tr"])),
+    # --- Independent loan modes ---
+    ov["CAPEX_LOAN_MODE"] = st.session_state.get("capex_mode", "upfront")
+    ov["OPEX_LOAN_MODE"]  = st.session_state.get("opex_mode",  "upfront")
+    # Upfront overrides
+    ov["LOAN_OVERRIDE_504"] = float(st.session_state.get("loan_504", 0.0))
+    ov["LOAN_OVERRIDE_7A"]  = float(st.session_state.get("loan_7a",  0.0))
+    # Staged rules
+    if ov["CAPEX_LOAN_MODE"] == "staged":
+        ov["LOAN_STAGED_RULE_CAPEX"] = {
+            "draw_pct_of_purchase": float(st.session_state.get("capex_draw_pct", 1.0)),
+            "min_tranche": float(st.session_state.get("capex_min_tr", 0.0)),
+            "max_tranche": (None if (st.session_state.get("capex_max_tr", 0)==0) else float(st.session_state["capex_max_tr"])),
+        }
+    if ov["OPEX_LOAN_MODE"] == "staged":
+        ov["LOAN_STAGED_RULE_OPEX"] = {
+            "facility_limit": float(st.session_state.get("opex_facility", 0.0)),
+            "min_draw": float(st.session_state.get("opex_min_tr", 0.0)),
+            "max_draw": (None if (st.session_state.get("opex_max_tr", 0)==0) else float(st.session_state["opex_max_tr"])),
+            "reserve_floor": float(st.session_state.get("reserve_floor", 0.0)),
         }
         
         
@@ -1444,30 +1456,52 @@ with st.sidebar:
     
     
     # --- Loan controls (De-Staged) ---
-    loan_mode = st.radio("Loan Mode", ["upfront","staged"], index=0, horizontal=True)
-    if loan_mode == "upfront":
-        # Split the upfront loan into equipment (504) and working capital (7a)
-        loan_504 = st.number_input("Upfront CapEx Loan (504)", min_value=0, step=1000, value=0)
-        loan_7a  = st.number_input("Upfront OpEx Loan (7a)",  min_value=0, step=1000, value=0)
-    else:
-        draw_pct  = st.slider("Staged Draw % of purchase", 0.0, 1.0, 1.0, 0.05)
-        min_tr    = st.number_input("Staged Min Tranche ($)", min_value=0, step=500, value=0)
-        max_tr    = st.number_input("Staged Max Tranche ($, 0=None)", min_value=0, step=500, value=0)
+    +    st.subheader("Loans")
+    colA, colB = st.columns(2)
+    with colA:
+        capex_mode = st.radio("CapEx Loan (504) Mode", ["upfront","staged"], index=0, horizontal=True)
+        if capex_mode == "upfront":
+            loan_504 = st.number_input("Upfront CapEx Loan (504)", min_value=0, step=1000, value=0)
+        else:
+            capex_draw_pct = st.slider("CapEx: Staged Draw % of purchase", 0.0, 1.0, 1.0, 0.05)
+            capex_min_tr   = st.number_input("CapEx: Min Tranche ($)", min_value=0, step=500, value=0)
+            capex_max_tr   = st.number_input("CapEx: Max Tranche ($, 0=None)", min_value=0, step=500, value=0)
+    with colB:
+        opex_mode = st.radio("OpEx Loan (7a) Mode", ["upfront","staged"], index=0, horizontal=True)
+        if opex_mode == "upfront":
+            loan_7a  = st.number_input("Upfront OpEx Loan (7a)",  min_value=0, step=1000, value=0)
+        else:
+            opex_facility = st.number_input("OpEx: Staged Facility Limit ($)", min_value=0, step=1000, value=0, help="Maximum 7(a) staged working-capital facility.")
+            opex_min_tr   = st.number_input("OpEx: Min Monthly Draw ($)",     min_value=0, step=500,  value=0)
+            opex_max_tr   = st.number_input("OpEx: Max Monthly Draw ($)",     min_value=0, step=500,  value=0, help="0 = unlimited per month")
+            reserve_floor = st.number_input("OpEx: Cash Floor Trigger ($)",    min_value=0, step=500,  value=0, help="If cash dips below this, staged OpEx can draw.")
+
     
      # --- persist loan controls so build_overrides can forward them ---
-    st.session_state["loan_mode"] = loan_mode
-    if loan_mode == "upfront":
+    st.session_state["capex_mode"] = capex_mode
+    st.session_state["opex_mode"]  = opex_mode
+    if capex_mode == "upfront":
         st.session_state["loan_504"] = float(loan_504)
-        st.session_state["loan_7a"]  = float(loan_7a)
-        st.session_state["draw_pct"] = None
-        st.session_state["min_tr"]   = None
-        st.session_state["max_tr"]   = None
+        st.session_state["capex_draw_pct"] = None
+        st.session_state["capex_min_tr"]   = None
+        st.session_state["capex_max_tr"]   = None
     else:
         st.session_state["loan_504"] = 0.0
-        st.session_state["loan_7a"]  = 0.0
-        st.session_state["draw_pct"]     = float(draw_pct)
-        st.session_state["min_tr"]       = float(min_tr)
-        st.session_state["max_tr"]       = float(max_tr)
+        st.session_state["capex_draw_pct"] = float(capex_draw_pct)
+        st.session_state["capex_min_tr"]   = float(capex_min_tr)
+        st.session_state["capex_max_tr"]   = float(capex_max_tr)
+    if opex_mode == "upfront":
+        st.session_state["loan_7a"] = float(loan_7a)
+        st.session_state["opex_facility"]  = None
+        st.session_state["opex_min_tr"]    = None
+        st.session_state["opex_max_tr"]    = None
+        st.session_state["reserve_floor"]  = None
+    else:
+        st.session_state["loan_7a"] = 0.0
+        st.session_state["opex_facility"]  = float(opex_facility)
+        st.session_state["opex_min_tr"]    = float(opex_min_tr)
+        st.session_state["opex_max_tr"]    = float(opex_max_tr)
+        st.session_state["reserve_floor"]  = float(reserve_floor)
    
     
     # --- Simulation settings ---

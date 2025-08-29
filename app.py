@@ -1982,28 +1982,25 @@ with tab_run:
             io504 = int(st.session_state.get("IO_MONTHS_504", strat.get("IO_MONTHS_504", 0)))
             io7a  = int(st.session_state.get("IO_MONTHS_7A",  strat.get("IO_MONTHS_7A",  0)))
 
-            def _balances(principal, payments, apr, io_m, term_m):
+            def _balances(principal, payments):
+                """
+                Track remaining principal using the simulator's payment stream.
+                Assumes `payments` already reflect IO vs amortization.
+                """
                 bal = float(principal)
-                r = float(apr)
                 out = []
-                for m, pay in enumerate(payments):
-                    if m >= term_m:
-                        bal = 0.0
-                    else:
-                        interest = bal * (r / 12.0) if bal > 0 else 0.0
-                        if m < int(io_m):
-                            principal_paid = 0.0
-                        else:
-                            principal_paid = max(0.0, float(pay) - interest)
-                        bal = max(0.0, bal - principal_paid)
+                for pay in payments:
+                    # payments are totals; treat them as reducing principal,
+                    # because interest handling is already in the schedule.
+                    bal = max(0.0, bal - float(pay))
                     out.append(bal)
                 return np.array(out, dtype=float)
 
-            bal504 = _balances(principal_504, pay_504, r504, io504, term504_m) if principal_504 > 0 else np.zeros_like(pay_504)
-            bal7a  = _balances(principal_7a,  pay_7a,  r7a,  io7a,  term7a_m)  if principal_7a  > 0 else np.zeros_like(pay_7a)
+            bal504 = _balances(principal_504, pay_504) if principal_504 > 0 else np.zeros_like(pay_504)
+            bal7a  = _balances(principal_7a,  pay_7a)  if principal_7a  > 0 else np.zeros_like(pay_7a)
             bal_total = bal504 + bal7a
 
-            with st.expander("Loan repayment over time", expanded=False):
+            with st.expander("Loan repayment over time", expanded=True):
                 fig, ax = plt.subplots(figsize=(8, 4))
                 ax.plot(months_arr, bal_total, label="Total outstanding")
                 if principal_504 > 0: ax.plot(months_arr, bal504, label="504 outstanding")

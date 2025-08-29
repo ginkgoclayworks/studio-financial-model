@@ -1943,6 +1943,80 @@ with tab_run:
         else:
             T = 0
         
+        
+        # --- Loan repayment plot (outstanding balance over time) ---
+        try:
+            # Determine month column and sort
+            df_cell_sorted = df_cell.sort_values(month_col).copy()
+            months_arr = (
+                df_cell_sorted[month_col].to_numpy()
+                if month_col in df_cell_sorted.columns
+                else np.arange(len(df_cell_sorted))
+            )
+
+            # Principals (constant per run, taken from the first row)
+            principal_504 = float(
+                df_cell_sorted.loc[df_cell_sorted.index[0], "loan_principal_504"]
+            ) if "loan_principal_504" in df_cell_sorted.columns else 0.0
+            principal_7a = float(
+                df_cell_sorted.loc[df_cell_sorted.index[0], "loan_principal_7a"]
+            ) if "loan_principal_7a" in df_cell_sorted.columns else 0.0
+
+            # Monthly payments emitted by the simulator
+            pay_504 = (
+                df_cell_sorted["loan_payment_504"].to_numpy()
+                if "loan_payment_504" in df_cell_sorted.columns
+                else np.zeros(len(df_cell_sorted))
+            )
+            pay_7a = (
+                df_cell_sorted["loan_payment_7a"].to_numpy()
+                if "loan_payment_7a" in df_cell_sorted.columns
+                else np.zeros(len(df_cell_sorted))
+            )
+
+            # Loan parameters from UI/session
+            r504 = float(st.session_state.get("LOAN_504_ANNUAL_RATE", strat.get("LOAN_504_ANNUAL_RATE", 0.0)))
+            r7a  = float(st.session_state.get("LOAN_7A_ANNUAL_RATE",  strat.get("LOAN_7A_ANNUAL_RATE",  0.0)))
+            term504_m = int(12 * int(st.session_state.get("LOAN_504_TERM_YEARS", strat.get("LOAN_504_TERM_YEARS", 0))))
+            term7a_m  = int(12 * int(st.session_state.get("LOAN_7A_TERM_YEARS",  strat.get("LOAN_7A_TERM_YEARS",  0))))
+            io504 = int(st.session_state.get("IO_MONTHS_504", strat.get("IO_MONTHS_504", 0)))
+            io7a  = int(st.session_state.get("IO_MONTHS_7A",  strat.get("IO_MONTHS_7A",  0)))
+
+            def _balances(principal, payments, apr, io_m, term_m):
+                bal = float(principal)
+                r = float(apr)
+                out = []
+                for m, pay in enumerate(payments):
+                    if m >= term_m:
+                        bal = 0.0
+                    else:
+                        interest = bal * (r / 12.0) if bal > 0 else 0.0
+                        if m < int(io_m):
+                            principal_paid = 0.0
+                        else:
+                            principal_paid = max(0.0, float(pay) - interest)
+                        bal = max(0.0, bal - principal_paid)
+                    out.append(bal)
+                return np.array(out, dtype=float)
+
+            bal504 = _balances(principal_504, pay_504, r504, io504, term504_m) if principal_504 > 0 else np.zeros_like(pay_504)
+            bal7a  = _balances(principal_7a,  pay_7a,  r7a,  io7a,  term7a_m)  if principal_7a  > 0 else np.zeros_like(pay_7a)
+            bal_total = bal504 + bal7a
+
+            with st.expander("Loan repayment over time", expanded=False):
+                fig, ax = plt.subplots(figsize=(8, 4))
+                ax.plot(months_arr, bal_total, label="Total outstanding")
+                if principal_504 > 0: ax.plot(months_arr, bal504, label="504 outstanding")
+                if principal_7a  > 0: ax.plot(months_arr, bal7a,  label="7(a) outstanding")
+                ax.set_xlabel("Month"); ax.set_ylabel("Outstanding balance ($)")
+                ax.set_title("Loan repayment over time")
+                ax.legend()
+                st.pyplot(fig)
+        except Exception as _e:
+            st.info(f"Loan repayment plot unavailable: {_e}")
+        
+        
+        
         # Figure out checkpoints
         m_for_dscr  = 12 if T >= 12 else T
         m_for_dscr2 = 60 if T >= 60 else T

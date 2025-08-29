@@ -1881,6 +1881,29 @@ with tab_run:
                 total_opex_loan  = float(first_row["loan_principal_7a"])  if "loan_principal_7a"  in df_cell.columns else 0.0
  
         loan_cols = st.columns(2)
+               # --- Loan NEEDS (what to request from lender) ---
+        try:
+            if loan_mode == "upfront":
+                capex_needed = float(st.session_state.get("loan_504", 0.0))
+                opex_needed  = float(st.session_state.get("loan_7a",  0.0))
+            else:
+                # In staged mode, approximate CapEx need as total planned equipment spend observed in the sim
+                capex_needed = 0.0
+                if "capex_I_cost" in df_cell.columns:
+                    capex_needed += float(df_cell["capex_I_cost"].sum())
+                if "capex_II_cost" in df_cell.columns:
+                    capex_needed += float(df_cell["capex_II_cost"].sum())
+                # OpEx staged is not modeled as a facility here; show 0
+                opex_needed = 0.0
+        except Exception:
+            capex_needed = 0.0
+            opex_needed  = 0.0
+
+        need_cols = st.columns(2)
+        need_cols[0].metric("Total CapEx Loan Needed ($)", f"{capex_needed:,.0f}")
+        need_cols[1].metric("Total OpEx Loan Needed ($)",  f"{opex_needed:,.0f}")
+
+        loan_cols = st.columns(2)       
         loan_cols[0].metric("Total CapEx Loan Used ($)", f"{total_capex_loan:,.0f}")
         loan_cols[1].metric("Total OpEx Loan Used ($)",  f"{total_opex_loan:,.0f}")
         st.caption("• CapEx = 504 principal (upfront) or sum of staged tranches.  • OpEx = 7(a) principal (upfront).")

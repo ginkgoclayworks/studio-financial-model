@@ -124,6 +124,12 @@ def _row_to_overrides(row: pd.Series) -> dict:
                 ov[internal_key] = float(row[external_key])
             else:
                 ov[internal_key] = float(val) if isinstance(val, (int, float, np.integer, np.floating)) else val
+    # Map UI semester toggle to simulator calendar
+    try:
+        if "USE_SEMESTER_SCHEDULE" in row:
+            ov["CLASSES_CALENDAR_MODE"] = "semester" if _to_bool(row["USE_SEMESTER_SCHEDULE"]) else "monthly"
+    except Exception:
+        pass
     return ov
 
 

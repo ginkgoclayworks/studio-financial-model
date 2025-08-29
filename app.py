@@ -1944,7 +1944,7 @@ with tab_run:
             T = 0
         
         
-        +        # --- Loan repayment plot (outstanding balance over time) ---
+        # --- Loan repayment plot (outstanding balance over time) ---
         try:
             # Determine month column and sort
             df_cell_sorted = df_cell.sort_values(month_col).copy()

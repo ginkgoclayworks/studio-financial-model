@@ -948,6 +948,24 @@ def _core_simulation_and_reports():
                     # Initialize schedules
                     loan_payment_504_ts = np.zeros(MONTHS, dtype=float)
                     loan_payment_7a_ts  = np.zeros(MONTHS, dtype=float)
+                    
+                    # Helper: balance series consistent with payment schedule
+                    def _balance_series(principal, payments, apr, io_m, term_years, months):
+                        if principal <= 0:
+                            return np.zeros(months, dtype=float)
+                        r_m = float(apr) / 12.0
+                        term_m = int(12 * int(term_years))
+                        bal = float(principal)
+                        out = np.zeros(months, dtype=float)
+                        for m in range(months):
+                            if m >= term_m:
+                                bal = 0.0
+                            else:
+                                interest = bal * r_m
+                                principal_paid = 0.0 if m < int(io_m) else max(0.0, float(payments[m]) - interest)
+                                bal = max(0.0, bal - principal_paid)
+                            out[m] = bal
+                        return out
             
                     # Upfront principals (overrides from UI)
                     ov504 = globals().get("LOAN_OVERRIDE_504", None)
@@ -972,7 +990,13 @@ def _core_simulation_and_reports():
 
 
                     # (scalar monthly_loan_payment_* replaced by per-month schedules)
-    
+                                        # Corresponding balances (upfront modes)
+                    loan_balance_504_ts = _balance_series(
+                        loan_504_principal, loan_payment_504_ts, LOAN_504_ANNUAL_RATE, IO_MONTHS_504, LOAN_504_TERM_YEARS, MONTHS
+                    )
+                    loan_balance_7a_ts = _balance_series(
+                        loan_7a_principal, loan_payment_7a_ts, LOAN_7A_ANNUAL_RATE, IO_MONTHS_7A, LOAN_7A_TERM_YEARS, MONTHS
+                    )
                     loan_principal_total = loan_504_principal + loan_7a_principal
                     sized_runway_costs = runway_costs  # keep for reporting
                     
@@ -1784,6 +1808,8 @@ def _core_simulation_and_reports():
                             "loan_tranche_draw_capex": float(loan_tranche_draw_capex) if 'loan_tranche_draw_capex' in locals() else 0.0,
                             "loan_tranche_draw_opex":  float(loan_tranche_draw_opex)  if 'loan_tranche_draw_opex'  in locals() else 0.0,
                             "runway_costs": sized_runway_costs,
+                            "loan_balance_504": float(loan_balance_504_ts[month]),
+                            "loan_balance_7a": float(loan_balance_7a_ts[month]),
                             "dscr": dscr,
                             "dscr_cash": dscr_cash,
                             "staff_cost": staff_cost,

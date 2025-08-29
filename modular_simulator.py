@@ -2204,10 +2204,28 @@ def _core_simulation_and_reports():
                 for owner_draw in OWNER_DRAW_SCENARIOS:
                     for scen_cfg in SCENARIO_CONFIGS:
                         scen_name = scen_cfg["name"]
+                                                # --- Snapshot baseline mutable globals so each simulation starts identical ---
+                        _BASE_STATIONS    = copy.deepcopy(STATIONS)
+                        _BASE_MAX_MEMBERS = int(MAX_MEMBERS)
+                        _BASE_CLAY_COGS   = float(globals().get("CLAY_COGS_MULT", 1.0))
+                        _BASE_PUG_MAINT   = float(globals().get("PUGMILL_MAINT_COST_PER_MONTH", 0.0))
+                        _BASE_SLAB_MAINT  = float(globals().get("SLAB_ROLLER_MAINT_COST_PER_MONTH", 0.0))
+                        
                         for sim in range(N_SIMULATIONS):
                             scen_index = next(i for i, s in enumerate(SCENARIO_CONFIGS) if s["name"] == scen_name)
                             ss = SeedSequence([RANDOM_SEED, int(fixed_rent), int(owner_draw), int(scen_index), int(sim)])
                             rng = default_rng(ss)
+                            
+                                                    # --- Reset mutable globals to the baseline for reproducibility ---
+                            if isinstance(STATIONS, dict):
+                                STATIONS.clear()
+                                STATIONS.update(copy.deepcopy(_BASE_STATIONS))
+                            else:
+                                globals()["STATIONS"] = copy.deepcopy(_BASE_STATIONS)
+                            globals()["MAX_MEMBERS"] = _BASE_MAX_MEMBERS
+                            globals()["CLAY_COGS_MULT"] = _BASE_CLAY_COGS
+                            globals()["PUGMILL_MAINT_COST_PER_MONTH"] = _BASE_PUG_MAINT
+                            globals()["SLAB_ROLLER_MAINT_COST_PER_MONTH"] = _BASE_SLAB_MAINT
                             
                             # --- Pricing elasticity setup (fixed baseline) ---
                             price = float(globals().get("PRICE", 165.0))

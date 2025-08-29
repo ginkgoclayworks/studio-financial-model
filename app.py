@@ -17,6 +17,9 @@ import streamlit as st
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns  # for heatmaps
+# --- SBA export helper ---
+from sba_export import export_to_sba_workbook
+import os
 
 # Your adapter: must expose run_original_once(script_path, overrides_dict)
 from final_batch_adapter import run_original_once
@@ -860,6 +863,129 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
 
     # (no inner expanders; called inside parent expander)
     return out
+
+
+
+# -------- SBA export paths / file-handling helpers --------
+import os, json, shutil, tempfile, hashlib, datetime
+from pathlib import Path
+
+def _project_root() -> Path:
+    """Best-effort project root: climb from this file until we find a marker; fallback to parent."""
+    here = Path(__file__).resolve()
+    for p in [here] + list(here.parents):
+        if (p / ".git").exists() or (p / "pyproject.toml").exists() or (p / "requirements.txt").exists():
+            return p
+    return here.parent
+
+def _short_hash(obj) -> str:
+    try:
+        s = json.dumps(obj, sort_keys=True, default=str)
+    except Exception:
+        s = str(obj)
+    return hashlib.sha1(s.encode("utf-8")).hexdigest()[:8]
+
+def _timestamp() -> str:
+    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+def resolve_export_root(session_state) -> Path:
+    """
+    Resolution order:
+      1) st.session_state["SBA_EXPORT_ROOT"]
+      2) ENV SBA_EXPORT_ROOT
+      3) <project_root>/runs/sba
+      4) /tmp/sba_runs (last resort)
+    """
+    # 1) session override
+    v = session_state.get("SBA_EXPORT_ROOT")
+    if v:
+        return Path(v).expanduser().resolve()
+
+    # 2) env override
+    env = os.environ.get("SBA_EXPORT_ROOT")
+    if env:
+        return Path(env).expanduser().resolve()
+
+    # 3) repo-local default
+    pr = _project_root()
+    runs_dir = pr / "runs" / "sba"
+    try:
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        return runs_dir
+    except Exception:
+        pass
+
+    # 4) last resort
+    fallback = Path("/tmp/sba_runs")
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+def make_run_dir(export_root: Path, config_snapshot: dict, seed_like=None) -> Path:
+    """
+    Create a per-run directory:
+      runs/sba/YYYYMMDD/HHMMSS_hash/
+    """
+    date_dir = export_root / datetime.datetime.now().strftime("%Y%m%d")
+    date_dir.mkdir(parents=True, exist_ok=True)
+    rid = f"{_timestamp()}_{_short_hash({'cfg': config_snapshot, 'seed': seed_like})}"
+    run_dir = date_dir / rid
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
+
+def atomic_write_bytes(dst: Path, data: bytes):
+    """Write bytes atomically (tempfile + rename)."""
+    tmp = dst.with_suffix(dst.suffix + ".tmp")
+    with open(tmp, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, dst)
+
+def atomic_write_text(dst: Path, text: str):
+    atomic_write_bytes(dst, text.encode("utf-8"))
+
+def zip_run_folder(run_dir: Path) -> Path:
+    """Create a zip archive of the run folder (sibling .zip)."""
+    zip_path = run_dir.with_suffix(".zip")
+    if zip_path.exists():
+        zip_path.unlink()
+    shutil.make_archive(str(run_dir), "zip", root_dir=run_dir)
+    return zip_path
+
+def prune_old_runs(export_root: Path, keep_per_day: int = 10, keep_days: int = 14):
+    """
+    Keep at most `keep_per_day` newest runs per day dir, and drop day dirs older than `keep_days`.
+    Safe no-op if anything fails.
+    """
+    try:
+        today = datetime.date.today()
+        for day_dir in sorted((p for p in export_root.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True):
+            # Drop very old day folders
+            try:
+                dt = datetime.datetime.strptime(day_dir.name, "%Y%m%d").date()
+                if (today - dt).days > keep_days:
+                    shutil.rmtree(day_dir, ignore_errors=True)
+                    continue
+            except Exception:
+                pass
+
+            # Keep only the newest N run folders
+            run_folders = sorted((p for p in day_dir.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True)
+            for old in run_folders[keep_per_day:]:
+                shutil.rmtree(old, ignore_errors=True)
+    except Exception:
+        pass
+# -------- end helpers --------
+
+
+
+
+
+
+
+
+
+
 
 # ---- capture all plt.show() calls from your modular_simulator without touching it
 class FigureCapture:
@@ -2353,4 +2479,175 @@ with tab_matrix:
                            data=matrix.to_csv(index=False).encode("utf-8"),
                            file_name="matrix_summary.csv", mime="text/csv")
 
+# ========================= SBA EXPORT =========================
+with st.expander("📤 Export to SBA Financial Projections", expanded=False):
+    st.write("Creates a timestamped run folder with the filled SBA workbook, the monthly timeseries CSV, and a metadata JSON for reproducibility.")
 
+    # Resolve default root and let the user override it
+    default_root = str(resolve_export_root(st.session_state))
+    export_root_str = st.text_input("Export base folder", value=default_root, help="Base directory; each export creates a dated subfolder.")
+    st.session_state["SBA_EXPORT_ROOT"] = export_root_str
+    export_root = Path(export_root_str).expanduser().resolve()
+
+    # Optional retention policy
+    colk1, colk2 = st.columns(2)
+    with colk1:
+        keep_per_day = int(st.number_input("Keep per day", min_value=1, max_value=200, value=10, step=1,
+                                           help="Max number of run folders to keep per day directory"))
+    with colk2:
+        keep_days = int(st.number_input("Keep days", min_value=1, max_value=365, value=14, step=1,
+                                        help="Delete day directories older than this many days"))
+
+    # Equity / WC inputs
+    colA, colB = st.columns(2)
+    with colA:
+        equity_injection = float(st.number_input("Equity injection ($)", min_value=0.0,
+                                                 value=float(st.session_state.get("EQUITY_INJECTION", 0.0)), step=1000.0))
+    with colB:
+        working_capital_target = float(st.number_input("Working capital / OpEx buffer ($)", min_value=0.0,
+                                                       value=float(st.session_state.get("WORKING_CAPITAL_TARGET", 45000.0)), step=1000.0))
+
+    # Template path
+    template_path = st.text_input("SBA Template file", value="/mnt/data/Financial Projections Template (2).xlsx")
+
+    # Owner salary / payroll tax knobs
+    col1, col2 = st.columns(2)
+    with col1:
+        owner_salary_monthly = float(st.number_input("Owner salary (monthly)", min_value=0.0,
+                                                     value=float(st.session_state.get("OWNER_SALARY_MONTHLY", 0.0)), step=100.0))
+    with col2:
+        payroll_tax_rate = float(st.number_input("Payroll tax & benefits (%)", min_value=0.0, max_value=50.0,
+                                                 value=float(st.session_state.get("PAYROLL_TAX_RATE", 12.0)), step=0.5)) / 100.0
+
+    staff_roles = st.session_state.get("STAFF_ROLES", [])
+
+    # Build capex_items (best-effort)
+    capex_items = []
+    try:
+        if 'capex_df' in locals():
+            for _, r in capex_df.iterrows():
+                if bool(r.get("enabled", True)):
+                    amt = float((r.get("count") or 1) * (r.get("unit_cost") or 0.0))
+                    cat = (r.get("category") or "equipment")
+                    capex_items.append({"label": str(r.get("label")), "amount": amt, "category": cat})
+    except Exception:
+        pass
+
+    # Loans snapshot (handles staged/upfront)
+    def _sum_col(df_, name):
+        return float(df_[name].sum()) if (df_ is not None and name in df_.columns) else 0.0
+
+    loans = {
+        "504": {
+            "principal_used": _sum_col(df, "loan_draw_504") or float(st.session_state.get("LOAN_504_PRINCIPAL", 0.0)),
+            "rate": float(st.session_state.get("LOAN_504_ANNUAL_RATE", 0.0)),
+            "term_years": int(st.session_state.get("LOAN_504_TERM_YEARS", 0)),
+            "io_months": int(st.session_state.get("IO_MONTHS_504", 0)),
+        },
+        "7a": {
+            "principal_used": _sum_col(df, "loan_draw_7a") or float(st.session_state.get("LOAN_7A_PRINCIPAL", 0.0)),
+            "rate": float(st.session_state.get("LOAN_7A_ANNUAL_RATE", 0.0)),
+            "term_years": int(st.session_state.get("LOAN_7A_TERM_YEARS", 0)),
+            "io_months": int(st.session_state.get("IO_MONTHS_7A", 0)),
+        },
+    }
+
+    payroll_cfg = {
+        "owner_salary_monthly": owner_salary_monthly,
+        "payroll_tax_rate": payroll_tax_rate,
+        "staff": staff_roles,
+    }
+
+    # Snap config for reproducibility (pack upper-case session keys)
+    config_snapshot = {k: v for k, v in st.session_state.items() if isinstance(k, str) and k.isupper()}
+    config_snapshot.update({
+        "N_SIMS": int(st.session_state.get("N_SIMS", 100)),
+        "SCENARIO_NAME": st.session_state.get("SCENARIO_NAME", "default"),
+    })
+
+    # Export button
+    do_export = st.button("Export SBA Workbook", type="primary")
+
+    if do_export:
+        try:
+            export_root.mkdir(parents=True, exist_ok=True)
+            # Per-run folder
+            run_dir = make_run_dir(export_root, config_snapshot, seed_like=st.session_state.get("SEED"))
+            # Call exporter (uses your sba_export.export_to_sba_workbook)
+            info = export_to_sba_workbook(
+                df_monthly=df,
+                template_path=template_path,
+                output_root=str(export_root),   # exporter will still create its own run folder; we’ll prefer ours
+                config_snapshot=config_snapshot,
+                capex_items=capex_items,
+                loans=loans,
+                payroll_cfg=payroll_cfg,
+                working_capital=working_capital_target,
+                equity_injection=equity_injection,
+                lease_years=int(st.session_state.get("LEASE_YEARS", 10)),
+                dep_life_equipment_years=int(st.session_state.get("DEP_LIFE_EQUIP_YEARS", 5)),
+                dep_life_furniture_years=int(st.session_state.get("DEP_LIFE_FURN_YEARS", 7)),
+                run_seed=st.session_state.get("SEED"),
+            )
+
+            # If your exporter creates its own run folder under export_root, prefer that.
+            # Otherwise, fall back to our run_dir and copy files in.
+            out_dir = Path(info.get("out_dir", run_dir))
+            if out_dir != run_dir and out_dir.exists():
+                # Optionally mirror or just reference the path; we’ll just show the exporter path
+                pass
+            else:
+                out_dir = run_dir
+
+            st.success(f"SBA export created at: {out_dir}")
+
+            # Optional: zip the run folder for a single-click download
+            zip_path = zip_run_folder(out_dir)
+            with open(zip_path, "rb") as f:
+                st.download_button(
+                    "Download entire run folder (.zip)",
+                    f.read(),
+                    file_name=zip_path.name,
+                    mime="application/zip",
+                    key=f"zip_{zip_path.name}"
+                )
+
+            # Offer individual files if present
+            xlsx_path = Path(info.get("xlsx", out_dir / "Financial_Projections_Filled.xlsx"))
+            meta_path = Path(info.get("metadata", out_dir / "metadata.json"))
+            csv_path  = out_dir / "monthly_timeseries.csv"
+
+            if xlsx_path.exists():
+                with open(xlsx_path, "rb") as f:
+                    st.download_button(
+                        "Download filled SBA workbook (XLSX)",
+                        f.read(),
+                        file_name=xlsx_path.name,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"xlsx_{xlsx_path.name}"
+                    )
+            if meta_path.exists():
+                with open(meta_path, "rb") as f:
+                    st.download_button(
+                        "Download metadata (JSON)",
+                        f.read(),
+                        file_name=meta_path.name,
+                        mime="application/json",
+                        key=f"meta_{meta_path.name}"
+                    )
+            if csv_path.exists():
+                with open(csv_path, "rb") as f:
+                    st.download_button(
+                        "Download monthly timeseries (CSV)",
+                        f.read(),
+                        file_name=csv_path.name,
+                        mime="text/csv",
+                        key=f"csv_{csv_path.name}"
+                    )
+
+            # Prune old runs (best-effort)
+            prune_old_runs(export_root, keep_per_day=keep_per_day, keep_days=keep_days)
+
+        except Exception as e:
+            st.error(f"Export failed: {e}")
+# ======================= END SBA EXPORT =======================

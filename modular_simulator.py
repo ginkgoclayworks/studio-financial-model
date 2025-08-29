@@ -350,6 +350,73 @@ except NameError:
         "max_tranche": None,            # optional cap
     }
 
+# Optional: how many months to lump together when turning the CapEx table into a schedule
+try:
+    CAPEX_LUMP_WINDOW_MONTHS
+except NameError:
+    CAPEX_LUMP_WINDOW_MONTHS = 2  # "a couple of months"
+
+from collections import defaultdict
+import numpy as np
+
+def _lump_capex_table(rows, horizon, window_months=2, staged_pct=1.0, label_months=None, default_month=0):
+    """
+    Turn a raw equipment table into a lumped month-by-month purchase schedule.
+    Returns (purchases_ts, eligible_ts, details_by_anchor, anchor_map_per_label).
+    """
+    if label_months is None:
+        label_months = {}
+    items = []
+    for r in rows:
+        if not r.get('enabled', True):
+            continue
+        qty = int(r.get('count', 0) or 0)
+        u   = float(r.get('unit_cost', 0.0) or 0.0)
+        if qty <= 0 or u <= 0:
+            continue
+        m   = int(label_months.get(r.get('label', ''), r.get('month', default_month) or default_month))
+        cost = float(qty * u)
+        items.append((m, r.get('label', ''), cost))
+
+    wnd = max(1, int(window_months))
+    buckets, details, anchors = defaultdict(float), defaultdict(list), {}
+    for m, label, cost in items:
+        anchor = (int(m) // wnd) * wnd
+        anchors[label] = anchor
+        buckets[anchor] += cost
+        details[anchor].append((label, cost, int(m)))
+
+    purchases = np.zeros(int(horizon), dtype=float)
+    for anchor, amt in buckets.items():
+        if 0 <= anchor < len(purchases):
+            purchases[anchor] += amt
+
+    eligible = staged_pct * purchases
+    return purchases, eligible, details, anchors
+
+
+def _tranche_from_schedule(eligible, min_tranche, max_tranche=None, tail_policy="draw"):
+    """
+    Bucket accumulate 'eligible' until >= min_tranche; fire capped draws (<= max_tranche).
+    Returns monthly draws array.
+    """
+    n = len(eligible)
+    draws = np.zeros(n, dtype=float)
+    bucket = 0.0
+    cap = float(max_tranche) if (max_tranche not in (None, 0)) else float("inf")
+    floor = float(min_tranche)
+
+    for m in range(n):
+        bucket += float(eligible[m])
+        while bucket >= floor:
+            take = min(bucket, cap)
+            draws[m] += take
+            bucket   -= take
+
+    if tail_policy == "draw" and bucket > 0 and n > 0:
+        draws[-1] += bucket
+        bucket = 0.0
+    return draws
 
 # If provided via overrides, this amount replaces computed principals for "upfront" mode.
 try:
@@ -840,6 +907,7 @@ def month_churn_prob(arch, tenure_mo):
         return base                    # steady state
     return base * 0.7                  # long-stay sticky
 
+
 # =============================================================================
 # Simulation
 # =============================================================================
@@ -1038,6 +1106,48 @@ def _core_simulation_and_reports():
                     except Exception:
                         _capex_queue = []
                     
+                    # --- Convert the raw CapEx table into a lumped purchasing schedule ---
+                    _capex_rows_for_lumping = []
+                    for _it in _capex_queue:
+                        if _it.get("month") is None:
+                            continue  # member-threshold-driven items handled separately
+                        _capex_rows_for_lumping.append({
+                            "enabled": True,
+                            "label": _it.get("label", ""),
+                            "count": int(_it.get("count", 1) or 1),
+                            "unit_cost": float(_it.get("unit_cost", 0.0) or 0.0),
+                            "month": int(_it.get("month", 0) or 0),
+                        })
+                    
+                    _lump_window = int(globals().get("CAPEX_LUMP_WINDOW_MONTHS", 2))
+                    _draw_rule   = globals().get("LOAN_STAGED_RULE", {}) or {}
+                    _draw_pct    = float(_draw_rule.get("draw_pct_of_purchase", 1.0))
+                    _min_tranche = float(_draw_rule.get("min_tranche", 0.0) or 0.0)
+                    _max_tranche = _draw_rule.get("max_tranche", None)
+                    
+                    # Build monthly series
+                    _capex_purchases_ts, _capex_eligible_ts, _capex_dbg, _capex_anchor_map = _lump_capex_table(
+                        _capex_rows_for_lumping,
+                        horizon=MONTHS,
+                        window_months=_lump_window,
+                        staged_pct=_draw_pct,
+                    )
+                    
+                    # Precompute staged draws from the eligible series
+                    _capex_draws_ts = _tranche_from_schedule(
+                        _capex_eligible_ts,
+                        min_tranche=_min_tranche,
+                        max_tranche=_max_tranche,
+                        tail_policy="draw",
+                    )
+                    
+                    # Anchor each item’s month to its lumped bucket for consistent side-effects
+                    for _it in _capex_queue:
+                        if _it.get("month") is None:
+                            continue
+                        lbl = _it.get("label", "")
+                        if lbl in _capex_anchor_map:
+                            _it["month"] = int(_capex_anchor_map[lbl])
 
                      # --- Market pool state for this simulation ---
 
@@ -1677,13 +1787,7 @@ def _core_simulation_and_reports():
                                 cumulative_after_capex -= capex_draw_this_month
                                 # If staged loans are enabled, draw a tranche and install its schedule starting next month
                             # Compute staged CapEx tranche amount from this month's purchase
-                            draw_rule = globals().get("LOAN_STAGED_RULE", {}) or {}
-                            draw_pct = float(draw_rule.get("draw_pct_of_purchase", 1.0))
-                            tranche = capex_draw_this_month * max(0.0, min(draw_pct, 1.0))
-                            tranche = max(tranche, float(draw_rule.get("min_tranche", 0.0)))
-                            _mx = draw_rule.get("max_tranche", None)
-                            if _mx is not None:
-                                tranche = min(tranche, float(_mx))
+                            tranche = float(_capex_draws_ts[month]) if (0 <= month < len(_capex_draws_ts)) else 0.0
 
                             if CAPEX_MODE == "staged":
                                 # CapEx staged tranche

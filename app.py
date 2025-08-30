@@ -2546,12 +2546,13 @@ with st.expander("📤 Export to SBA Financial Projections", expanded=False):
     def _sum_col(df_, name):
         return float(df_[name].sum()) if (df_ is not None and name in df_.columns) else 0.0
 
-    lloans = {
+    loans = {
     "504": {
         "principal_used": (
             _sum_col(df_result, "loan_draw_504")
-            or _sum_col(df_result, "loan_tranche_draw_capex")
-            or float(st.session_state.get("LOAN_504_PRINCIPAL", 0.0))
+            or _sum_col(df_result, "loan_tranche_draw_capex")   # staged-capex fallback
+            or float(st.session_state.get("LOAN_504_PRINCIPAL", 0.0))  # upfront fallback
+            or float(df_result.get("loan_balance_504", pd.Series([0.0])).fillna(0).max())  # last fallback
         ),
         "rate": float(st.session_state.get("LOAN_504_ANNUAL_RATE", 0.0)),
         "term_years": int(st.session_state.get("LOAN_504_TERM_YEARS", 0)),
@@ -2560,14 +2561,15 @@ with st.expander("📤 Export to SBA Financial Projections", expanded=False):
     "7a": {
         "principal_used": (
             _sum_col(df_result, "loan_draw_7a")
-            or _sum_col(df_result, "loan_tranche_draw_opex")
-            or float(st.session_state.get("LOAN_7A_PRINCIPAL", 0.0))
+            or _sum_col(df_result, "loan_tranche_draw_opex")    # staged-opex fallback
+            or float(st.session_state.get("LOAN_7A_PRINCIPAL", 0.0))  # upfront fallback
+            or float(df_result.get("loan_balance_7a", pd.Series([0.0])).fillna(0).max())  # last fallback
         ),
         "rate": float(st.session_state.get("LOAN_7A_ANNUAL_RATE", 0.0)),
         "term_years": int(st.session_state.get("LOAN_7A_TERM_YEARS", 0)),
         "io_months": int(st.session_state.get("IO_MONTHS_7A", 0)),
-    },
-}
+        },
+    }
 
     # Snap config for reproducibility (pack upper-case session keys)
     config_snapshot = {k: v for k, v in st.session_state.items() if isinstance(k, str) and k.isupper()}

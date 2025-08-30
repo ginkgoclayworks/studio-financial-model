@@ -865,6 +865,12 @@ def render_param_controls(title: str, params: dict, *, group_keys: Optional[List
     return out
 
 
+def _sum_col(df_, name):
+    if df_ is None or not isinstance(df_, pd.DataFrame):
+        return 0.0
+    if name not in df_.columns:
+        return 0.0
+    return float(df_[name].fillna(0).sum())
 
 # -------- SBA export paths / file-handling helpers --------
 import os, json, shutil, tempfile, hashlib, datetime
@@ -1975,10 +1981,9 @@ with tab_run:
             env_norm = _normalize_env(env)
             cache_key = _make_cache_key(env_norm, strat, seed)
 
-
-            
             df_cell, eff, images, manifest = run_cell_cached(env_norm, strat, seed, cache_key)
-        
+            st.session_state["df_result"] = df_cell
+            
         st.subheader(f"KPIs — {env['name']} | {strat['name']}")
 
         # Core cash/dscr from cell
@@ -2481,7 +2486,11 @@ with tab_matrix:
 
 # ========================= SBA EXPORT =========================
 with st.expander("📤 Export to SBA Financial Projections", expanded=False):
-    st.write("Creates a timestamped run folder with the filled SBA workbook, the monthly timeseries CSV, and a metadata JSON for reproducibility.")
+    # Require that a simulation has run
+    df_result = locals().get("df") or st.session_state.get("df_result")
+    if df_result is None:
+        st.info("⚠️ Run a simulation first to enable export.")
+        st.stop()
 
     # Resolve default root and let the user override it
     default_root = str(resolve_export_root(st.session_state))
@@ -2537,26 +2546,28 @@ with st.expander("📤 Export to SBA Financial Projections", expanded=False):
     def _sum_col(df_, name):
         return float(df_[name].sum()) if (df_ is not None and name in df_.columns) else 0.0
 
-    loans = {
-        "504": {
-            "principal_used": _sum_col(df, "loan_draw_504") or float(st.session_state.get("LOAN_504_PRINCIPAL", 0.0)),
-            "rate": float(st.session_state.get("LOAN_504_ANNUAL_RATE", 0.0)),
-            "term_years": int(st.session_state.get("LOAN_504_TERM_YEARS", 0)),
-            "io_months": int(st.session_state.get("IO_MONTHS_504", 0)),
-        },
-        "7a": {
-            "principal_used": _sum_col(df, "loan_draw_7a") or float(st.session_state.get("LOAN_7A_PRINCIPAL", 0.0)),
-            "rate": float(st.session_state.get("LOAN_7A_ANNUAL_RATE", 0.0)),
-            "term_years": int(st.session_state.get("LOAN_7A_TERM_YEARS", 0)),
-            "io_months": int(st.session_state.get("IO_MONTHS_7A", 0)),
-        },
-    }
-
-    payroll_cfg = {
-        "owner_salary_monthly": owner_salary_monthly,
-        "payroll_tax_rate": payroll_tax_rate,
-        "staff": staff_roles,
-    }
+    lloans = {
+    "504": {
+        "principal_used": (
+            _sum_col(df_result, "loan_draw_504")
+            or _sum_col(df_result, "loan_tranche_draw_capex")
+            or float(st.session_state.get("LOAN_504_PRINCIPAL", 0.0))
+        ),
+        "rate": float(st.session_state.get("LOAN_504_ANNUAL_RATE", 0.0)),
+        "term_years": int(st.session_state.get("LOAN_504_TERM_YEARS", 0)),
+        "io_months": int(st.session_state.get("IO_MONTHS_504", 0)),
+    },
+    "7a": {
+        "principal_used": (
+            _sum_col(df_result, "loan_draw_7a")
+            or _sum_col(df_result, "loan_tranche_draw_opex")
+            or float(st.session_state.get("LOAN_7A_PRINCIPAL", 0.0))
+        ),
+        "rate": float(st.session_state.get("LOAN_7A_ANNUAL_RATE", 0.0)),
+        "term_years": int(st.session_state.get("LOAN_7A_TERM_YEARS", 0)),
+        "io_months": int(st.session_state.get("IO_MONTHS_7A", 0)),
+    },
+}
 
     # Snap config for reproducibility (pack upper-case session keys)
     config_snapshot = {k: v for k, v in st.session_state.items() if isinstance(k, str) and k.isupper()}

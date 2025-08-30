@@ -404,14 +404,20 @@ def _tranche_from_schedule(eligible, min_tranche, max_tranche=None, tail_policy=
     draws = np.zeros(n, dtype=float)
     bucket = 0.0
     cap = float(max_tranche) if (max_tranche not in (None, 0)) else float("inf")
-    floor = float(min_tranche)
+    floor = float(min_tranche or 0.0)
+
+    # If no minimum tranche, draw-as-you-go (respecting cap)
+    if floor <= 0:
+        e = np.asarray(eligible, dtype=float)
+        return np.minimum(e, cap) if np.isfinite(cap) else e.copy()
+
 
     for m in range(n):
         bucket += float(eligible[m])
-        while bucket >= floor:
+        while bucket + 1e-12 >= floor:   # tiny epsilon prevents float stalls
             take = min(bucket, cap)
-            draws[m] += take
-            bucket   -= take
+            if take <= 0:
+                break
 
     if tail_policy == "draw" and bucket > 0 and n > 0:
         draws[-1] += bucket
@@ -1150,13 +1156,16 @@ def _core_simulation_and_reports():
                     )
                     
                     # Precompute staged draws from the eligible series
-                    _capex_draws_ts = _tranche_from_schedule(
-                        _capex_eligible_ts,
-                        min_tranche=_min_tranche,
-                        max_tranche=_max_tranche,
-                        tail_policy="draw",
-                    )
-                    
+                    if CAPEX_MODE == "staged":
+                         _capex_draws_ts = _tranche_from_schedule(
+                             _capex_eligible_ts,
+                             min_tranche=_min_tranche,
+                             max_tranche=_max_tranche,
+                             tail_policy="draw",
+                         )
+                    else:
+                         _capex_draws_ts = np.zeros_like(_capex_eligible_ts)
+                                        
                     # Anchor each item’s month to its lumped bucket for consistent side-effects
                     for _it in _capex_queue:
                         if _it.get("month") is None:

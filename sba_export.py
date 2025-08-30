@@ -35,6 +35,12 @@ from openpyxl import load_workbook
 # dep_life_furniture_years: int
 # NOTE: All fields are optional; writer gracefully skips missing pieces.
 
+import pandas as pd
+
+def _ws(wb, name: str):
+    """Safe sheet accessor: returns worksheet or None."""
+    return wb[name] if name in wb.sheetnames else None
+
 def _short_hash(obj: Any) -> str:
     try:
         s = json.dumps(obj, sort_keys=True, default=str)
@@ -148,7 +154,7 @@ def export_to_sba_workbook(
     furniture_total = capex_buckets.get("furniture", 0.0)
     total_capex = equipment_total + leasehold_total + furniture_total
 
-    ws = wb.get_sheet_by_name("1.Startup Costs & Funding") if "1.Startup Costs & Funding" in wb.sheetnames else None
+    ws = _ws(wb, "1.Startup Costs & Funding") if "1.Startup Costs & Funding" in wb.sheetnames else None
     if ws:
         # NOTE: cell addresses are template-specific; adjust if needed.
         # Use-of-funds (amount column is usually "C" in many SBA templates)
@@ -167,7 +173,7 @@ def export_to_sba_workbook(
             _safe_set(ws, "C17", float(equity_injection))
 
     # ---------- 2) Sales Forecast ----------
-    ws = wb.get_sheet_by_name("2.Sales Forecast") if "2.Sales Forecast" in wb.sheetnames else None
+    ws = _ws(wb, "2.Sales Forecast") if "2.Sales Forecast" in wb.sheetnames else None
     if ws and ("revenue_total" in df_monthly.columns):
         # If you have per-stream columns (e.g., revenue_memberships, revenue_events...), list them here
         streams = [c for c in df_monthly.columns if c.startswith("revenue_") and c != "revenue_total"]
@@ -186,7 +192,7 @@ def export_to_sba_workbook(
                 row += 3  # leave space; adapt to your layout
 
     # ---------- 3) Payroll ----------
-    ws = wb.get_sheet_by_name("3.Payroll") if "3.Payroll" in wb.sheetnames else None
+    ws = _ws(wb, "3.Payroll") if "3.Payroll" in wb.sheetnames else None
     if ws and payroll_cfg:
         owner_salary = float(payroll_cfg.get("owner_salary_monthly", 0.0))
         tax_rate = float(payroll_cfg.get("payroll_tax_rate", 0.0))
@@ -207,7 +213,7 @@ def export_to_sba_workbook(
         # Payroll taxes (we’ll show % in assumptions; P&L will include tax expense via df if modeled)
 
     # ---------- 4) Profit & Loss ----------
-    ws = wb.get_sheet_by_name("4.Profit & Loss") if "4.Profit & Loss" in wb.sheetnames else None
+    ws = _ws(wb, "4.Profit & Loss") if "4.Profit & Loss" in wb.sheetnames else None
     if ws:
         rev = [ _annual_sum(df_monthly, "revenue_total", yi) for yi in range(3) ]
         cogs = [ _annual_sum(df_monthly, "cogs_total", yi) if "cogs_total" in df_monthly.columns else 0.0 for yi in range(3) ]
@@ -223,7 +229,7 @@ def export_to_sba_workbook(
             _safe_set(ws, f"C{23+yi}", intr[yi])    # Interest
 
     # ---------- 5) Monthly Cash Flow ----------
-    ws = wb.get_sheet_by_name("5.Monthly Cash Flow ") if "5.Monthly Cash Flow " in wb.sheetnames else None
+    ws = _ws(wb, "5.Monthly Cash Flow") if "5.Monthly Cash Flow" in wb.sheetnames else None
     if ws and len(df_monthly) > 0:
         # Example block: write ending cash for months 1..36 starting at row 25, col C
         for m in range(min(36, len(df_monthly))):
@@ -231,7 +237,7 @@ def export_to_sba_workbook(
             ws.cell(row=25, column=3+m, value=float(val) if val is not None else 0.0)
 
     # ---------- 6) Balance Sheet ----------
-    ws = wb.get_sheet_by_name("6.Balance Sheet") if "6.Balance Sheet" in wb.sheetnames else None
+    ws = _ws(wb, "6.Balance Sheet") if "6.Balance Sheet" in wb.sheetnames else None
     if ws:
         # Year-end cash
         for yi in range(3):
@@ -242,7 +248,7 @@ def export_to_sba_workbook(
             _safe_set(ws, f"C{21+yi}", _year_end(df_monthly, "loan_balance_7a", yi))
 
     # ---------- 7) Assumptions ----------
-    ws = wb.get_sheet_by_name("7.Assumptions") if "7.Assumptions" in wb.sheetnames else None
+    ws = _ws(wb, "7.Assumptions") if "7.Assumptions" in wb.sheetnames else None
     if ws:
         _safe_set(ws, "A2", "Sales")
         _safe_set(ws, "A5", "Operating Expenses")

@@ -1086,12 +1086,37 @@ def get_defaults_cached():
 DEFAULTS = get_default_cfg()
 
 def _num(label, key, default=None, min_value=None, max_value=None, step=None, help=None, fmt=None):
-    """Number input with safe defaults and None allowed."""
+    # Fallback if default is non-numeric (dict/list/None/etc.)
+    if not isinstance(default, (int, float)):
+        default = min_value if isinstance(min_value, (int, float)) else 0
+    # Clamp into bounds if provided
+    if isinstance(min_value, (int, float)) and default < min_value:
+        default = min_value
+    if isinstance(max_value, (int, float)) and default > max_value:
+        default = max_value
+
     kw = dict(min_value=min_value, max_value=max_value, step=step, help=help, format=fmt)
-    # Streamlit number_input requires a value; we mimic 'None' with blank via session_state
     if key not in st.session_state:
         st.session_state[key] = default
-    return st.number_input(label, key=key, value=st.session_state[key], **{k:v for k,v in kw.items() if v is not None})
+    return st.number_input(
+        label, key=key, value=st.session_state[key],
+        **{k: v for k, v in kw.items() if v is not None}
+    )
+
+def _json_or_scalar(label, key, default, help_text, scalar_type=float):
+    # Show the default as JSON if it’s composite, else as a string
+    default_str = json.dumps(default) if isinstance(default, (dict, list, tuple)) else str(default)
+    s = st.text_input(label, key=key, value=default_str, help=help_text)
+    s = s.strip()
+    if not s:
+        return None  # don't override
+    try:
+        if s.startswith("{") or s.startswith("["):
+            return json.loads(s)  # dict/list
+        return scalar_type(s)     # scalar (float/int)
+    except Exception:
+        st.caption(f"⚠️ Invalid value for {label}; keeping default.")
+        return None
 
 def render_advanced_controls(defaults: dict) -> dict:
     """
@@ -1104,29 +1129,50 @@ def render_advanced_controls(defaults: dict) -> dict:
 
     # ---- Capacity & Hours
     with st.sidebar.expander("Capacity & Hours", expanded=True):
-        # STATIONS: accept JSON mapping of type -> count
-        _st_def = defaults.get("STATIONS")
-        _st_def_str = json.dumps(_st_def) if isinstance(_st_def, (dict, list)) else str(_st_def)
-        
-        stations_str = st.text_input(
-            "Stations (JSON mapping: type -> count)",
-            key="adv_STATIONS_str",
-            value=_st_def_str,
-            help='Example: {"wheels": 12, "tables": 6}'
-        )
-        try:
-            parsed = json.loads(stations_str) if stations_str.strip() else _st_def
-            if isinstance(parsed, (dict, list, int)):
-                adv["STATIONS"] = parsed
-            else:
-                st.caption("⚠️ STATIONS must be a dict/list/int; keeping default.")
-        except Exception:
-            st.caption("⚠️ Invalid JSON for STATIONS; keeping default.")
-        adv["USAGE_SHARE"]           = _num("Usage share (0–1) for primary station type", "adv_USAGE_SHARE", defaults.get("USAGE_SHARE"), 0.0, 1.0, 0.01)
-        adv["SESSIONS_PER_WEEK"]     = _num("Sessions per week", "adv_SESSIONS_PER_WEEK", defaults.get("SESSIONS_PER_WEEK"), 1, 70, 1)
-        adv["SESSION_HOURS"]         = _num("Hours per session", "adv_SESSION_HOURS", defaults.get("SESSION_HOURS"), 0.5, 12.0, 0.5)
-        adv["OPEN_HOURS_PER_WEEK"]   = _num("Open hours per week", "adv_OPEN_HOURS_PER_WEEK", defaults.get("OPEN_HOURS_PER_WEEK"), 1, 168, 1)
-        adv["CAPACITY_DAMPING_BETA"] = _num("Capacity damping β (higher = softer cap)", "adv_CAPACITY_DAMPING_BETA", defaults.get("CAPACITY_DAMPING_BETA"), 0.0, 10.0, 0.1)
+            # STATIONS: accept JSON mapping of type -> count
+            _st_def = defaults.get("STATIONS")
+            _st_def_str = json.dumps(_st_def) if isinstance(_st_def, (dict, list)) else str(_st_def)
+    
+            stations_str = st.text_input(
+                "Stations (JSON mapping: type -> count)",
+                key="adv_STATIONS_str",
+                value=_st_def_str,
+                help='Example: {"wheels": 12, "tables": 6}'
+            )
+            try:
+                parsed = json.loads(stations_str) if stations_str.strip() else _st_def
+                if isinstance(parsed, (dict, list, int)):
+                    adv["STATIONS"] = parsed
+                else:
+                    st.caption("⚠️ STATIONS must be a dict/list/int; keeping default.")
+            except Exception:
+                st.caption("⚠️ Invalid JSON for STATIONS; keeping default.")
+    
+            # USAGE_SHARE: accept float (0–1) OR JSON mapping/list of shares per station type
+            _us_def = defaults.get("USAGE_SHARE")
+            _us_def_str = json.dumps(_us_def) if isinstance(_us_def, (dict, list, tuple)) else str(_us_def)
+    
+            usage_share_str = st.text_input(
+                "Usage share (0–1) OR JSON per station type",
+                key="adv_USAGE_SHARE_str",
+                value=_us_def_str,
+                help='Examples: 0.65  OR  {"wheels": 0.7, "handbuilding": 0.3}  OR  [0.7, 0.3]'
+            )
+            try:
+                txt = usage_share_str.strip()
+                if txt == "":
+                    pass  # keep default
+                elif txt.startswith("{") or txt.startswith("["):
+                    adv["USAGE_SHARE"] = json.loads(txt)
+                else:
+                    adv["USAGE_SHARE"] = float(txt)
+            except Exception:
+                st.caption("⚠️ Invalid value for USAGE_SHARE; keeping default.")
+    
+            adv["SESSIONS_PER_WEEK"]     = _num("Sessions per week", "adv_SESSIONS_PER_WEEK", defaults.get("SESSIONS_PER_WEEK"), 1, 70, 1)
+            adv["SESSION_HOURS"]         = _num("Hours per session", "adv_SESSION_HOURS", defaults.get("SESSION_HOURS"), 0.5, 12.0, 0.5)
+            adv["OPEN_HOURS_PER_WEEK"]   = _num("Open hours per week", "adv_OPEN_HOURS_PER_WEEK", defaults.get("OPEN_HOURS_PER_WEEK"), 1, 168, 1)
+            adv["CAPACITY_DAMPING_BETA"] = _num("Capacity damping β (higher = softer cap)", "adv_CAPACITY_DAMPING_BETA", defaults.get("CAPACITY_DAMPING_BETA"), 0.0, 10.0, 0.1)
 
     # ---- Top of Funnel & Referrals
     with st.sidebar.expander("Top-of-Funnel & Referrals", expanded=True):

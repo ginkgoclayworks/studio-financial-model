@@ -1,14 +1,11 @@
 streamlit>=1.35,<2
 pandas>=2.2
-numpy>=2.3
-matplotlib>=3.8
-seaborn>=0.13
+numpy>=2.0
+matplotlib>=3.7
 requests>=2.31
 python-dateutil>=2.9
 openpyxl>=3.1.2
-# Google Trends client (works on 3.13 up to 4.9.2)
 pytrends==4.9.2
-
 # Optional local dev extras (commented out so Cloud doesn’t try to install them)
 # pyarrow>=16.1.0
 # fastparquet>=2024.2.0

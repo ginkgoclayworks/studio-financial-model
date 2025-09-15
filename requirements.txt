@@ -6,6 +6,7 @@ requests>=2.31
 python-dateutil>=2.9
 openpyxl>=3.1.2
 pytrends==4.9.2
+seaborn>=0.13
 # Optional local dev extras (commented out so Cloud doesn’t try to install them)
 # pyarrow>=16.1.0
 # fastparquet>=2024.2.0

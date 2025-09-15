@@ -1174,13 +1174,6 @@ def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: Optional[str] 
     if cache_key is None:
         cache_key = _make_cache_key(env, strat, seed)
 
-
-    # ✅ Advanced panel: merge advanced overrides into strategy before building
-    adv_overrides = render_advanced_controls(DEFAULTS)
-    # Do not mutate original; copy then update
-    strat = dict(strat)
-    strat.update(adv_overrides)
-
     # ✅ build overrides BEFORE using ov
     ov = build_overrides(env, strat)
 
@@ -2056,6 +2049,11 @@ with st.sidebar:
     # Merge all sub-groups back into strat
     for part in (strat_pricing, strat_workshops, strat_classes, strat_events, strat_finance, strat_loans):
         _update_from(part, strat, part.keys())
+
+    # ---- Advanced controls (always visible in sidebar) ----
+    adv_overrides = render_advanced_controls(DEFAULTS)
+    strat.update(adv_overrides)
+
 
     # Preset save/load
     st.markdown("---")

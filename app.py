@@ -1095,11 +1095,39 @@ def _num(label, key, default=None, min_value=None, max_value=None, step=None, he
     if isinstance(max_value, (int, float)) and default > max_value:
         default = max_value
 
-    kw = dict(min_value=min_value, max_value=max_value, step=step, help=help, format=fmt)
+    # --- Normalize numeric types: Streamlit requires value/min/max/step be the same type ---
+    # If any of min/max/step is float (or default is float), use float for all; else use int
+    use_float = any(isinstance(x, float) for x in (min_value, max_value, step) if x is not None) or isinstance(default, float)
+    def _coerce(x):
+        if x is None:
+            return None
+        try:
+            return float(x) if use_float else int(x)
+        except Exception:
+            return None
+    default   = _coerce(default)
+    min_value = _coerce(min_value)
+    max_value = _coerce(max_value)
+    step      = _coerce(step)
+
+    # Clean up stale session_state values
+    if key in st.session_state:
+        try:
+            st.session_state[key] = _coerce(st.session_state[key])
+        except Exception:
+            del st.session_state[key]
+    if key in st.session_state and st.session_state[key] is None:
+        del st.session_state[key]
+
+    # Use default if no valid session value
     if key not in st.session_state:
         st.session_state[key] = default
+
+    kw = dict(min_value=min_value, max_value=max_value, step=step, help=help, format=fmt)
     return st.number_input(
-        label, key=key, value=st.session_state[key],
+        label,
+        key=key,
+        value=st.session_state[key],
         **{k: v for k, v in kw.items() if v is not None}
     )
 

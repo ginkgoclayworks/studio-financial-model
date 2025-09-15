@@ -29,6 +29,7 @@ from modular_simulator import get_default_cfg  # NEW
 # --- SBA export helper ---
 from sba_export import export_to_sba_workbook
 import os
+import json
 
 # Your adapter: must expose run_original_once(script_path, overrides_dict)
 from final_batch_adapter import run_original_once
@@ -1102,8 +1103,25 @@ def render_advanced_controls(defaults: dict) -> dict:
     st.sidebar.caption("Dial in details. Leave fields as-is to keep engine defaults.")
 
     # ---- Capacity & Hours
-    with st.sidebar.expander("Capacity & Hours", expanded=False):
-        adv["STATIONS"]              = _num("Stations (e.g., wheels, tables) — JSON count ok", "adv_STATIONS", defaults.get("STATIONS"))
+    with st.sidebar.expander("Capacity & Hours", expanded=True):
+        # STATIONS: accept JSON mapping of type -> count
+        _st_def = defaults.get("STATIONS")
+        _st_def_str = json.dumps(_st_def) if isinstance(_st_def, (dict, list)) else str(_st_def)
+        
+        stations_str = st.text_input(
+            "Stations (JSON mapping: type -> count)",
+            key="adv_STATIONS_str",
+            value=_st_def_str,
+            help='Example: {"wheels": 12, "tables": 6}'
+        )
+        try:
+            parsed = json.loads(stations_str) if stations_str.strip() else _st_def
+            if isinstance(parsed, (dict, list, int)):
+                adv["STATIONS"] = parsed
+            else:
+                st.caption("⚠️ STATIONS must be a dict/list/int; keeping default.")
+        except Exception:
+            st.caption("⚠️ Invalid JSON for STATIONS; keeping default.")
         adv["USAGE_SHARE"]           = _num("Usage share (0–1) for primary station type", "adv_USAGE_SHARE", defaults.get("USAGE_SHARE"), 0.0, 1.0, 0.01)
         adv["SESSIONS_PER_WEEK"]     = _num("Sessions per week", "adv_SESSIONS_PER_WEEK", defaults.get("SESSIONS_PER_WEEK"), 1, 70, 1)
         adv["SESSION_HOURS"]         = _num("Hours per session", "adv_SESSION_HOURS", defaults.get("SESSION_HOURS"), 0.5, 12.0, 0.5)
@@ -1111,7 +1129,7 @@ def render_advanced_controls(defaults: dict) -> dict:
         adv["CAPACITY_DAMPING_BETA"] = _num("Capacity damping β (higher = softer cap)", "adv_CAPACITY_DAMPING_BETA", defaults.get("CAPACITY_DAMPING_BETA"), 0.0, 10.0, 0.1)
 
     # ---- Top of Funnel & Referrals
-    with st.sidebar.expander("Top-of-Funnel & Referrals", expanded=False):
+    with st.sidebar.expander("Top-of-Funnel & Referrals", expanded=True):
         adv["BASELINE_RATE_HOME"]        = _num("Baseline join rate (Home potters)", "adv_BASELINE_RATE_HOME", defaults.get("BASELINE_RATE_HOME"), 0.0, 1.0, 0.001)
         adv["BASELINE_RATE_COMMUNITY"]   = _num("Baseline join rate (Community studio users)", "adv_BASELINE_RATE_COMMUNITY", defaults.get("BASELINE_RATE_COMMUNITY"), 0.0, 1.0, 0.001)
         adv["BASELINE_RATE_NO_ACCESS"]   = _num("Baseline join rate (No access)", "adv_BASELINE_RATE_NO_ACCESS", defaults.get("BASELINE_RATE_NO_ACCESS"), 0.0, 1.0, 0.001)

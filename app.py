@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Sep 15 17:11:14 2025
+
+@author: harshadghodke
+"""
+
 # #!/usr/bin/env python3
 # # -*- coding: utf-8 -*-
 # """
@@ -17,6 +25,7 @@ import streamlit as st
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns  # for heatmaps
+from modular_simulator import get_default_cfg  # NEW
 # --- SBA export helper ---
 from sba_export import export_to_sba_workbook
 import os
@@ -1062,15 +1071,119 @@ class FigureCapture:
         if self._orig_show:
             plt.show = self._orig_show
 
+
 # ---------- caching ----------
 @st.cache_data(show_spinner=False)
+def get_defaults_cached():
+    # local import is fine; avoids surprises if modular_simulator reloads
+    from modular_simulator import get_default_cfg
+    return get_default_cfg()
+
+
+# ----------------------------- Advanced Panel -----------------------------
+# Read engine defaults (ALL_CAPS in modular_simulator.py)
+DEFAULTS = get_default_cfg()
+
+def _num(label, key, default=None, min_value=None, max_value=None, step=None, help=None, fmt=None):
+    """Number input with safe defaults and None allowed."""
+    kw = dict(min_value=min_value, max_value=max_value, step=step, help=help, format=fmt)
+    # Streamlit number_input requires a value; we mimic 'None' with blank via session_state
+    if key not in st.session_state:
+        st.session_state[key] = default
+    return st.number_input(label, key=key, value=st.session_state[key], **{k:v for k,v in kw.items() if v is not None})
+
+def render_advanced_controls(defaults: dict) -> dict:
+    """
+    Render grouped 'Advanced' accordions and return a dict of overrides.
+    Only values differing from None are included; callers can compare to defaults if desired.
+    """
+    adv = {}
+    st.sidebar.markdown("### Advanced")
+    st.sidebar.caption("Dial in details. Leave fields as-is to keep engine defaults.")
+
+    # ---- Capacity & Hours
+    with st.sidebar.expander("Capacity & Hours", expanded=False):
+        adv["STATIONS"]              = _num("Stations (e.g., wheels, tables) — JSON count ok", "adv_STATIONS", defaults.get("STATIONS"))
+        adv["USAGE_SHARE"]           = _num("Usage share (0–1) for primary station type", "adv_USAGE_SHARE", defaults.get("USAGE_SHARE"), 0.0, 1.0, 0.01)
+        adv["SESSIONS_PER_WEEK"]     = _num("Sessions per week", "adv_SESSIONS_PER_WEEK", defaults.get("SESSIONS_PER_WEEK"), 1, 70, 1)
+        adv["SESSION_HOURS"]         = _num("Hours per session", "adv_SESSION_HOURS", defaults.get("SESSION_HOURS"), 0.5, 12.0, 0.5)
+        adv["OPEN_HOURS_PER_WEEK"]   = _num("Open hours per week", "adv_OPEN_HOURS_PER_WEEK", defaults.get("OPEN_HOURS_PER_WEEK"), 1, 168, 1)
+        adv["CAPACITY_DAMPING_BETA"] = _num("Capacity damping β (higher = softer cap)", "adv_CAPACITY_DAMPING_BETA", defaults.get("CAPACITY_DAMPING_BETA"), 0.0, 10.0, 0.1)
+
+    # ---- Top of Funnel & Referrals
+    with st.sidebar.expander("Top-of-Funnel & Referrals", expanded=False):
+        adv["BASELINE_RATE_HOME"]        = _num("Baseline join rate (Home potters)", "adv_BASELINE_RATE_HOME", defaults.get("BASELINE_RATE_HOME"), 0.0, 1.0, 0.001)
+        adv["BASELINE_RATE_COMMUNITY"]   = _num("Baseline join rate (Community studio users)", "adv_BASELINE_RATE_COMMUNITY", defaults.get("BASELINE_RATE_COMMUNITY"), 0.0, 1.0, 0.001)
+        adv["BASELINE_RATE_NO_ACCESS"]   = _num("Baseline join rate (No access)", "adv_BASELINE_RATE_NO_ACCESS", defaults.get("BASELINE_RATE_NO_ACCESS"), 0.0, 1.0, 0.001)
+        adv["HOME_INFLOW"]               = _num("Monthly inflow (Home)", "adv_HOME_INFLOW", defaults.get("HOME_INFLOW"), 0, 100000, 10)
+        adv["COMMUNITY_INFLOW"]          = _num("Monthly inflow (Community)", "adv_COMMUNITY_INFLOW", defaults.get("COMMUNITY_INFLOW"), 0, 100000, 10)
+        adv["NO_ACCESS_INFLOW"]          = _num("Monthly inflow (No access)", "adv_NO_ACCESS_INFLOW", defaults.get("NO_ACCESS_INFLOW"), 0, 100000, 10)
+        adv["REFERRAL_RATE_PER_MEMBER"]  = _num("Referrals per member per month", "adv_REFERRAL_RATE_PER_MEMBER", defaults.get("REFERRAL_RATE_PER_MEMBER"), 0.0, 2.0, 0.01)
+        adv["REFERRAL_CONV"]             = _num("Referral conversion rate (0–1)", "adv_REFERRAL_CONV", defaults.get("REFERRAL_CONV"), 0.0, 1.0, 0.01)
+        adv["MARKETING_COST_BASE"]       = _num("Marketing base cost ($/mo)", "adv_MARKETING_COST_BASE", defaults.get("MARKETING_COST_BASE"), 0, 50000, 50)
+        adv["MARKETING_RAMP_MONTHS"]     = _num("Marketing ramp months", "adv_MARKETING_RAMP_MONTHS", defaults.get("MARKETING_RAMP_MONTHS"), 0, 36, 1)
+        adv["MARKETING_RAMP_MULTIPLIER"] = _num("Marketing ramp multiplier", "adv_MARKETING_RAMP_MULTIPLIER", defaults.get("MARKETING_RAMP_MULTIPLIER"), 0.0, 10.0, 0.1)
+
+    # ---- Firing & Utilities
+    with st.sidebar.expander("Firing & Utilities", expanded=False):
+        adv["BASE_FIRINGS_PER_MONTH"]              = _num("Base firings / month", "adv_BASE_FIRINGS_PER_MONTH", defaults.get("BASE_FIRINGS_PER_MONTH"), 0, 60, 1)
+        adv["MIN_FIRINGS_PER_MONTH"]               = _num("Min firings / month", "adv_MIN_FIRINGS_PER_MONTH", defaults.get("MIN_FIRINGS_PER_MONTH"), 0, 60, 1)
+        adv["MAX_FIRINGS_PER_MONTH"]               = _num("Max firings / month", "adv_MAX_FIRINGS_PER_MONTH", defaults.get("MAX_FIRINGS_PER_MONTH"), 0, 120, 1)
+        adv["DYNAMIC_FIRINGS"]                     = _num("Dynamic firings (0=off,1=on)", "adv_DYNAMIC_FIRINGS", defaults.get("DYNAMIC_FIRINGS"), 0, 1, 1)
+        adv["REFERENCE_MEMBERS_FOR_BASE_FIRINGS"]  = _num("Reference members for base firings", "adv_REFERENCE_MEMBERS_FOR_BASE_FIRINGS", defaults.get("REFERENCE_MEMBERS_FOR_BASE_FIRINGS"), 1, 500, 1)
+        adv["KWH_PER_FIRING_KMT1027"]              = _num("kWh per firing (KMT 1027)", "adv_KWH_PER_FIRING_KMT1027", defaults.get("KWH_PER_FIRING_KMT1027"), 0.0, 5000.0, 1.0)
+        adv["KWH_PER_FIRING_KMT1427"]              = _num("kWh per firing (KMT 1427)", "adv_KWH_PER_FIRING_KMT1427", defaults.get("KWH_PER_FIRING_KMT1427"), 0.0, 5000.0, 1.0)
+        adv["WATER_COST_PER_GALLON"]               = _num("Water cost ($/gal)", "adv_WATER_COST_PER_GALLON", defaults.get("WATER_COST_PER_GALLON"), 0.0, 10.0, 0.01)
+
+    # ---- Classes & Events
+    with st.sidebar.expander("Classes & Events", expanded=False):
+        adv["CLASS_INSTR_RATE_PER_HR"] = _num("Instructor rate ($/hr)", "adv_CLASS_INSTR_RATE_PER_HR", defaults.get("CLASS_INSTR_RATE_PER_HR"), 0, 500, 1)
+        adv["CLASS_HOURS_PER_COHORT"]  = _num("Hours per cohort", "adv_CLASS_HOURS_PER_COHORT", defaults.get("CLASS_HOURS_PER_COHORT"), 0, 200, 1)
+        adv["CLASS_FILL_MEAN"]         = _num("Class fill (avg seats)", "adv_CLASS_FILL_MEAN", defaults.get("CLASS_FILL_MEAN"), 0, 50, 1)
+        adv["CLASS_COST_PER_STUDENT"]  = _num("Variable cost per student ($)", "adv_CLASS_COST_PER_STUDENT", defaults.get("CLASS_COST_PER_STUDENT"), 0, 2000, 1)
+        adv["EVENT_CONV_RATE"]         = _num("Event conversion to member (0–1)", "adv_EVENT_CONV_RATE", defaults.get("EVENT_CONV_RATE"), 0.0, 1.0, 0.01)
+        adv["EVENT_CONV_LAG_MO"]       = _num("Event conversion lag (months)", "adv_EVENT_CONV_LAG_MO", defaults.get("EVENT_CONV_LAG_MO"), 0, 12, 1)
+        adv["WORKSHOP_CONV_RATE"]      = _num("Workshop conversion (0–1)", "adv_WORKSHOP_CONV_RATE", defaults.get("WORKSHOP_CONV_RATE"), 0.0, 1.0, 0.01)
+        adv["WORKSHOP_CONV_LAG_MO"]    = _num("Workshop conversion lag (months)", "adv_WORKSHOP_CONV_LAG_MO", defaults.get("WORKSHOP_CONV_LAG_MO"), 0, 12, 1)
+
+    # ---- Financing
+    with st.sidebar.expander("Financing", expanded=False):
+        adv["LOAN_ANNUAL_RATE"] = _num("Loan annual rate (APR)", "adv_LOAN_ANNUAL_RATE", defaults.get("LOAN_ANNUAL_RATE"), 0.0, 0.5, 0.005, fmt="%.3f")
+        adv["LOAN_TERM_YEARS"]  = _num("Loan term (years)", "adv_LOAN_TERM_YEARS", defaults.get("LOAN_TERM_YEARS"), 0, 20, 1)
+
+    # ---- Overheads & Taxes (optional)
+    with st.sidebar.expander("Overheads & Taxes (advanced)", expanded=False):
+        adv["INSURANCE_COST"]                 = _num("Insurance ($/mo)", "adv_INSURANCE_COST", defaults.get("INSURANCE_COST"), 0, 20000, 10)
+        adv["GLAZE_COST_PER_MONTH"]          = _num("Glaze cost ($/mo)", "adv_GLAZE_COST_PER_MONTH", defaults.get("GLAZE_COST_PER_MONTH"), 0, 10000, 10)
+        adv["HEATING_COST_SUMMER"]           = _num("Heating ($/mo) summer", "adv_HEATING_COST_SUMMER", defaults.get("HEATING_COST_SUMMER"), 0, 20000, 10)
+        adv["HEATING_COST_WINTER"]           = _num("Heating ($/mo) winter", "adv_HEATING_COST_WINTER", defaults.get("HEATING_COST_WINTER"), 0, 20000, 10)
+        adv["MA_SALES_TAX_RATE"]             = _num("MA sales tax rate (0–1)", "adv_MA_SALES_TAX_RATE", defaults.get("MA_SALES_TAX_RATE"), 0.0, 0.15, 0.001, fmt="%.3f")
+        adv["SALES_TAX_REMIT_FREQUENCY_MONTHS"]    = _num("Sales tax remit frequency (months)", "adv_SALES_TAX_REMIT_FREQUENCY_MONTHS", defaults.get("SALES_TAX_REMIT_FREQUENCY_MONTHS"), 1, 12, 1)
+        adv["ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS"]= _num("Estimated tax remit frequency (months)", "adv_ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS", defaults.get("ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS"), 1, 12, 1)
+
+    # ---- Seasonality (power user)
+    with st.sidebar.expander("Seasonality (power user)", expanded=False):
+        adv["NORMALIZE_SEASONALITY"] = _num("Normalize seasonality (0=off,1=on)", "adv_NORMALIZE_SEASONALITY", defaults.get("NORMALIZE_SEASONALITY"), 0, 1, 1)
+        # Exposing the raw WEIGHTS as a JSON string would be next; keep simple for now.
+
+    # Keep only keys whose values are not None
+    return {k: v for k, v in adv.items() if v is not None}
+
 def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: Optional[str] = None):
     # make sure cache_key participates in the hash even if unused
     if cache_key is None:
         cache_key = _make_cache_key(env, strat, seed)
 
+
+    # ✅ Advanced panel: merge advanced overrides into strategy before building
+    adv_overrides = render_advanced_controls(DEFAULTS)
+    # Do not mutate original; copy then update
+    strat = dict(strat)
+    strat.update(adv_overrides)
+
     # ✅ build overrides BEFORE using ov
     ov = build_overrides(env, strat)
+
     ov["RANDOM_SEED"] = seed
 
     title_suffix = f"{env['name']} | {strat['name']}"

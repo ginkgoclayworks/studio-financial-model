@@ -1,8 +1,22 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Created on Mon Sep 15 17:11:14 2025
 
 @author: harshadghodke
 """
+
+# #!/usr/bin/env python3
+# # -*- coding: utf-8 -*-
+# """
+# Created on Tue Aug 19 07:59:18 2025
+
+# @author: harshadghodke
+
+
+# Streamlit app for GCWS simulator
+# """
+
 import io, json, re, zipfile
 from typing import Optional, List, Tuple
 import numpy as np
@@ -10,27 +24,294 @@ import pandas as pd
 import streamlit as st
 import matplotlib
 import matplotlib.pyplot as plt
-import seaborn as sns
-from modular_simulator import get_default_cfg
+import seaborn as sns  # for heatmaps
+from modular_simulator import get_default_cfg  # NEW
+# --- SBA export helper ---
 from sba_export import export_to_sba_workbook
 import os
 import json
+
+# Your adapter: must expose run_original_once(script_path, overrides_dict)
 from final_batch_adapter import run_original_once
-PARAM_SPECS = {'DOWNTURN_PROB_PER_MONTH': {'type': 'float', 'min': 0.0, 'max': 0.5, 'step': 0.01, 'label': 'Downturn prob / mo'}, 'DOWNTURN_JOIN_MULT': {'type': 'float', 'min': 0.2, 'max': 1.5, 'step': 0.01, 'label': 'Join multiplier in downturn'}, 'DOWNTURN_CHURN_MULT': {'type': 'float', 'min': 0.5, 'max': 3.0, 'step': 0.05, 'label': 'Churn multiplier in downturn'}, 'MARKET_POOLS_INFLOW': {'type': 'market_inflow', 'label': 'Market inflow'}, 'grant_amount': {'type': 'int', 'min': 0, 'max': 100000, 'step': 1000, 'label': 'Grant amount'}, 'grant_month': {'type': 'int', 'min': -1, 'max': 36, 'step': 1, 'label': 'Grant month (None=-1)'}, 'JOIN_PRICE_ELASTICITY': {'type': 'float', 'min': -2.0, 'max': 0.0, 'step': 0.05, 'label': 'Join price elasticity ε (neg)'}, 'CHURN_PRICE_ELASTICITY': {'type': 'float', 'min': 0.0, 'max': 2.0, 'step': 0.05, 'label': 'Churn price elasticity ε (pos)'}, 'WOM_RATE': {'type': 'float', 'min': 0.0, 'max': 0.2, 'step': 0.005, 'label': 'Word-of-mouth rate'}, 'MARKETING_SPEND': {'type': 'int', 'min': 0, 'max': 20000, 'step': 500, 'label': 'Marketing spend / mo'}, 'CAC': {'type': 'int', 'min': 50, 'max': 2000, 'step': 10, 'label': 'CAC ($/lead)'}, 'LEAD_TO_JOIN_RATE': {'type': 'float', 'min': 0.0, 'max': 1.0, 'step': 0.01, 'label': 'Lead→Join conversion'}, 'MAX_ONBOARD_PER_MONTH': {'type': 'int', 'min': 1, 'max': 200, 'step': 1, 'label': 'Max onboarding / mo'}, 'RENT': {'type': 'int', 'min': 1000, 'max': 10000, 'step': 50, 'label': 'Rent ($/mo)'}, 'RENT_GROWTH_PCT': {'type': 'float', 'min': 0.0, 'max': 15.0, 'step': 0.25, 'label': 'Rent increase per year (%)', 'default': 5}, 'OWNER_DRAW': {'type': 'int', 'min': 0, 'max': 5000, 'step': 50, 'label': 'Owner draw ($/mo)'}, 'BASE_EVENTS_PER_MONTH_LAMBDA': {'type': 'float', 'min': 0.0, 'max': 20.0, 'step': 0.5, 'label': 'Events λ', 'default': 4}, 'EVENTS_MAX_PER_MONTH': {'type': 'int', 'min': 0, 'max': 20, 'step': 1, 'label': 'Events max / mo', 'default': 4}, 'TICKET_PRICE': {'type': 'int', 'min': 0, 'max': 500, 'step': 5, 'label': 'Ticket price', 'default': 75}, 'CLASSES_ENABLED': {'type': 'bool', 'label': 'Classes enabled', 'default': True}, 'CLASS_CAP_PER_COHORT': {'type': 'int', 'min': 1, 'max': 30, 'step': 1, 'label': 'Class cap / cohort', 'default': 10}, 'CLASS_COHORTS_PER_MONTH': {'type': 'int', 'min': 0, 'max': 12, 'step': 1, 'label': 'Cohorts per launch', 'default': 1}, 'CLASS_PRICE': {'type': 'int', 'min': 0, 'max': 1000, 'step': 10, 'label': 'Class price', 'default': 600}, 'CLASS_CONV_RATE': {'type': 'float', 'min': 0.0, 'max': 1.0, 'step': 0.01, 'label': 'Class→Member conv', 'default': 0.1}, 'CLASS_CONV_LAG_MO': {'type': 'int', 'min': 0, 'max': 12, 'step': 1, 'label': 'Class conv lag (mo)', 'default': 2}, 'MEMBER_CAP': {'type': 'int', 'min': -1, 'max': 500, 'step': 1, 'label': 'Member cap (hard limit)'}, 'EXPANSION_THRESHOLD': {'type': 'int', 'min': 0, 'max': 200, 'step': 1, 'label': 'Expansion threshold (members)'}, 'USE_SEMESTER_SCHEDULE': {'type': 'bool', 'label': 'Use semester schedule', 'desc': 'If on, cohorts only start in semester months (sim will ignore flat cohorts/month).', 'rec': (0, 1)}, 'CLASSES_PER_SEMESTER': {'type': 'int', 'min': 1, 'max': 6, 'step': 1, 'label': 'Classes per semester', 'desc': 'How many classes (Throwing 101, Handbuilding 101) begin at each semester start.', 'rec': (2, 2)}, 'LOAN_504_ANNUAL_RATE': {'type': 'float', 'min': 0.03, 'max': 0.2, 'step': 0.001, 'label': '504 rate (APR)'}, 'LOAN_504_TERM_YEARS': {'type': 'int', 'min': 5, 'max': 25, 'step': 1, 'label': '504 term (years)'}, 'IO_MONTHS_504': {'type': 'int', 'min': 0, 'max': 18, 'step': 1, 'label': '504 interest-only (mo)', 'desc': 'Planned interest-only months before amortization. (Phase 1 UI only)'}, 'LOAN_7A_ANNUAL_RATE': {'type': 'float', 'min': 0.05, 'max': 0.2, 'step': 0.001, 'label': '7(a) rate (APR)'}, 'LOAN_7A_TERM_YEARS': {'type': 'int', 'min': 5, 'max': 10, 'step': 1, 'label': '7(a) term (years)'}, 'IO_MONTHS_7A': {'type': 'int', 'min': 0, 'max': 18, 'step': 1, 'label': '7(a) interest-only (mo)', 'desc': 'Planned interest-only months before amortization. (Phase 1 UI only)'}, 'LOAN_CONTINGENCY_PCT': {'type': 'float', 'min': 0.0, 'max': 0.25, 'step': 0.01, 'label': 'CapEx contingency (%)'}, 'RUNWAY_MONTHS': {'type': 'int', 'min': 0, 'max': 24, 'step': 1, 'label': 'Runway months (7a sizing)'}, 'EXTRA_BUFFER': {'type': 'int', 'min': 0, 'max': 20000, 'step': 1000, 'label': 'Extra buffer ($)'}, 'RESERVE_FLOOR': {'type': 'int', 'min': 0, 'max': 20000, 'step': 1000, 'label': 'Reserve floor ($)', 'desc': 'Minimum cash buffer for LOC sizing; not yet used by simulator.'}, 'FEES_UPFRONT_PCT_7A': {'type': 'float', 'min': 0.0, 'max': 0.08, 'step': 0.001, 'label': '7(a) upfront fees (%)'}, 'FEES_UPFRONT_PCT_504': {'type': 'float', 'min': 0.0, 'max': 0.08, 'step': 0.001, 'label': '504 upfront fees (%)'}, 'FEES_PACKAGING': {'type': 'int', 'min': 0, 'max': 10000, 'step': 100, 'label': 'Packaging fees ($)'}, 'FEES_CLOSING': {'type': 'int', 'min': 0, 'max': 20000, 'step': 100, 'label': 'Closing costs ($)'}, 'FINANCE_FEES_7A': {'type': 'bool', 'label': 'Finance fees into 7(a)'}, 'FINANCE_FEES_504': {'type': 'bool', 'label': 'Finance fees into 504'}}
-PARAM_SPECS.update({'PRICE': {'type': 'int', 'min': 100, 'max': 300, 'step': 5, 'label': 'Membership fee ($/mo)'}})
-PARAM_SPECS.update({'WORKSHOPS_ENABLED': {'type': 'bool', 'label': 'Enable workshops (monthly)', 'default': True}, 'WORKSHOPS_PER_MONTH': {'type': 'float', 'min': 0.0, 'max': 12.0, 'step': 0.5, 'default': 2.0, 'label': 'Workshops per month'}, 'WORKSHOP_AVG_ATTENDANCE': {'type': 'int', 'min': 1, 'max': 40, 'step': 1, 'default': 10, 'label': 'Avg attendees per workshop'}, 'WORKSHOP_FEE': {'type': 'float', 'min': 0.0, 'max': 500.0, 'step': 5.0, 'default': 85.0, 'label': 'Workshop fee per attendee'}, 'WORKSHOP_CONV_RATE': {'type': 'float', 'min': 0.0, 'max': 1.0, 'step': 0.05, 'default': 0.1, 'label': 'Attendee→Member conversion'}, 'WORKSHOP_CONV_LAG_MO': {'type': 'int', 'min': 0, 'max': 12, 'step': 1, 'default': 1, 'label': 'Conversion lag (months)'}, 'WORKSHOP_COST_PER_EVENT': {'type': 'float', 'min': 0.0, 'max': 1000.0, 'step': 5.0, 'default': 50.0, 'label': 'Variable cost per workshop', 'help': 'Supplies, instructor stipend, etc.'}})
-ENV_SPEC_META = {'DOWNTURN_PROB_PER_MONTH': {'desc': 'Chance the local economy is rough this month. 0 = great conditions; higher = harder to acquire/retain members.', 'rec': (0.05, 0.25)}, 'DOWNTURN_JOIN_MULT': {'desc': 'How much downturns reduce new joins. 1.0 = no change; 0.6 means 40% fewer joins in a bad month.', 'rec': (0.6, 1.1)}, 'DOWNTURN_CHURN_MULT': {'desc': 'How much downturns increase member churn. 1.0 = no change; 1.5 = 50% higher churn when the economy dips.', 'rec': (1.0, 1.8)}, 'MARKET_POOLS_INFLOW': {'desc': 'Rough monthly counts of potential joiners by pool: community studio users, home studio users, and people with no access.', 'rec': (0, 10)}, 'grant_amount': {'desc': 'One-time grant dollars injected into cash.', 'rec': (0, 50000)}, 'grant_month': {'desc': 'When the grant arrives (−1 = no grant). Month 0 is the start of operations.', 'rec': (0, 12)}, 'WOM_RATE': {'desc': 'Word-of-mouth strength. Approx fraction of members who generate a qualified lead each month.', 'rec': (0.01, 0.06)}, 'MARKETING_SPEND': {'desc': 'Monthly paid marketing budget (ads, sponsorships, flyers).', 'rec': (0, 3000)}, 'CAC': {'desc': 'Cost to acquire one qualified lead through paid channels.', 'rec': (75, 250)}, 'LEAD_TO_JOIN_RATE': {'desc': 'Share of qualified leads that become paying members.', 'rec': (0.1, 0.35)}, 'MAX_ONBOARD_PER_MONTH': {'desc': 'Operational limit on new member onboarding per month (paperwork, training, shelf setup).', 'rec': (6, 20)}, 'MEMBER_CAP': {'desc': 'Hard cap on total active members (0 or blank = let the simulator’s internal station bottlenecks govern).', 'rec': (70, 110)}, 'EXPANSION_THRESHOLD': {'desc': 'Member count at which you trigger an expansion (e.g., add wheels/racks/kiln).', 'rec': (18, 30)}}
+
+
+
+# put this near the top of app.py (after imports)
+PARAM_SPECS = {
+    # -------- Environment (scenario) --------
+    "DOWNTURN_PROB_PER_MONTH": {"type": "float", "min": 0.0, "max": 0.5, "step": 0.01, "label": "Downturn prob / mo"},
+    "DOWNTURN_JOIN_MULT":     {"type": "float", "min": 0.2, "max": 1.5, "step": 0.01, "label": "Join multiplier in downturn"},
+    "DOWNTURN_CHURN_MULT":    {"type": "float", "min": 0.5, "max": 3.0, "step": 0.05, "label": "Churn multiplier in downturn"},
+    "MARKET_POOLS_INFLOW": {"type": "market_inflow", "label": "Market inflow"},
+    "grant_amount":           {"type": "int",   "min": 0, "max": 100_000, "step": 1000, "label": "Grant amount"},
+    "grant_month":            {"type": "int",   "min": -1, "max": 36, "step": 1, "label": "Grant month (None=-1)"},
+    "JOIN_PRICE_ELASTICITY":  {"type": "float", "min": -2.0, "max": 0.0, "step": 0.05, "label": "Join price elasticity ε (neg)"},
+    "CHURN_PRICE_ELASTICITY": {"type": "float", "min":  0.0, "max": 2.0, "step": 0.05, "label": "Churn price elasticity ε (pos)"},
+    "WOM_RATE":               {"type": "float", "min": 0.0, "max": 0.2, "step": 0.005, "label": "Word-of-mouth rate"},
+    "MARKETING_SPEND":        {"type": "int",   "min": 0, "max": 20_000, "step": 500, "label": "Marketing spend / mo"},
+    "CAC":                    {"type": "int",   "min": 50, "max": 2000, "step": 10, "label": "CAC ($/lead)"},
+    "LEAD_TO_JOIN_RATE":      {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Lead→Join conversion"},
+    "MAX_ONBOARD_PER_MONTH":  {"type": "int",   "min": 1, "max": 200, "step": 1, "label": "Max onboarding / mo"},
+    # -------- Strategy --------
+    "RENT":                   {"type": "int",   "min": 1000, "max": 10_000, "step": 50, "label": "Rent ($/mo)"},
+    "RENT_GROWTH_PCT":       {"type": "float", "min": 0.0,   "max": 15.0,   "step": 0.25, "label": "Rent increase per year (%)","default": 5},
+    "OWNER_DRAW":             {"type": "int",   "min": 0, "max": 5000, "step": 50, "label": "Owner draw ($/mo)"},
+    "BASE_EVENTS_PER_MONTH_LAMBDA": {"type": "float", "min": 0.0, "max": 20.0, "step": 0.5, "label": "Events λ", "default": 4},
+    "EVENTS_MAX_PER_MONTH":   {"type": "int",   "min": 0, "max": 20, "step": 1, "label": "Events max / mo", "default": 4},
+    "TICKET_PRICE":           {"type": "int",   "min": 0, "max": 500, "step": 5, "label": "Ticket price", "default": 75},
+    "CLASSES_ENABLED":        {"type": "bool",  "label": "Classes enabled", "default": True},
+    "CLASS_CAP_PER_COHORT":   {"type": "int",   "min": 1, "max": 30, "step": 1, "label": "Class cap / cohort", "default": 10},    
+    "CLASS_COHORTS_PER_MONTH": {"type": "int", "min": 0, "max": 12, "step": 1, "label": "Cohorts per launch","default": 1},
+    "CLASS_PRICE":            {"type": "int",   "min": 0, "max": 1000, "step": 10, "label": "Class price", "default": 600},
+    "CLASS_CONV_RATE":        {"type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "label": "Class→Member conv", "default": 0.10},
+    "CLASS_CONV_LAG_MO":      {"type": "int",   "min": 0, "max": 12, "step": 1, "label": "Class conv lag (mo)", "default": 2},
+    "MEMBER_CAP": {"type": "int", "min": -1, "max": 500, "step": 1, "label": "Member cap (hard limit)"},
+    "EXPANSION_THRESHOLD": {"type": "int", "min": 0, "max": 200, "step": 1, "label": "Expansion threshold (members)"},
+    # --- Semester schedule controls (Strategy) ---
+    "USE_SEMESTER_SCHEDULE": {
+        "type": "bool", "label": "Use semester schedule",
+        "desc": "If on, cohorts only start in semester months (sim will ignore flat cohorts/month).",
+        "rec": (0, 1)
+    },
+    "CLASSES_PER_SEMESTER": {
+        "type": "int", "min": 1, "max": 6, "step": 1, "label": "Classes per semester",
+        "desc": "How many classes (Throwing 101, Handbuilding 101) begin at each semester start.",
+        "rec": (2, 2)},
+    # --- Loans & sizing ---
+    "LOAN_504_ANNUAL_RATE": {"type": "float", "min": 0.03, "max": 0.20, "step": 0.001, "label": "504 rate (APR)"},
+    "LOAN_504_TERM_YEARS":  {"type": "int",   "min": 5,    "max": 25,   "step": 1,     "label": "504 term (years)"},
+    "IO_MONTHS_504":        {"type": "int",   "min": 0,    "max": 18,   "step": 1,     "label": "504 interest-only (mo)", "desc": "Planned interest-only months before amortization. (Phase 1 UI only)"},
+    "LOAN_7A_ANNUAL_RATE":  {"type": "float", "min": 0.05, "max": 0.20, "step": 0.001, "label": "7(a) rate (APR)"},
+    "LOAN_7A_TERM_YEARS":   {"type": "int",   "min": 5,    "max": 10,   "step": 1,     "label": "7(a) term (years)"},
+    "IO_MONTHS_7A":         {"type": "int",   "min": 0,    "max": 18,   "step": 1,     "label": "7(a) interest-only (mo)", "desc": "Planned interest-only months before amortization. (Phase 1 UI only)"},
+    "LOAN_CONTINGENCY_PCT": {"type": "float", "min": 0.00, "max": 0.25, "step": 0.01,  "label": "CapEx contingency (%)"},
+    "RUNWAY_MONTHS":        {"type": "int",   "min": 0,    "max": 24,   "step": 1,     "label": "Runway months (7a sizing)"},
+    "EXTRA_BUFFER":         {"type": "int",   "min": 0,    "max": 20000, "step": 1000, "label": "Extra buffer ($)"},
+    "RESERVE_FLOOR":        {"type": "int",   "min": 0,    "max": 20000, "step": 1000, "label": "Reserve floor ($)", "desc": "Minimum cash buffer for LOC sizing; not yet used by simulator."}, 
+
+    # --- SBA fees (Phase 2) ---
+    "FEES_UPFRONT_PCT_7A": {"type": "float", "min": 0.00, "max": 0.08, "step": 0.001, "label": "7(a) upfront fees (%)"},
+    "FEES_UPFRONT_PCT_504": {"type": "float", "min": 0.00, "max": 0.08, "step": 0.001, "label": "504 upfront fees (%)"},
+    "FEES_PACKAGING": {"type": "int", "min": 0, "max": 10000, "step": 100, "label": "Packaging fees ($)"},
+    "FEES_CLOSING": {"type": "int", "min": 0, "max": 20000, "step": 100, "label": "Closing costs ($)"},
+    "FINANCE_FEES_7A": {"type": "bool", "label": "Finance fees into 7(a)"},
+    "FINANCE_FEES_504": {"type": "bool", "label": "Finance fees into 504"},
+}
+    
+PARAM_SPECS.update({
+    "PRICE": {"type": "int", "min": 100, "max": 300, "step": 5, "label": "Membership fee ($/mo)"},
+})
+
+PARAM_SPECS.update({
+    # Workshops (monthly; lightweight upskilling)
+    "WORKSHOPS_ENABLED": {"type":"bool", "label":"Enable workshops (monthly)", "default": True},
+    "WORKSHOPS_PER_MONTH": {"type":"float", "min":0.0, "max":12.0, "step":0.5, "default": 2.0, "label":"Workshops per month"},
+    "WORKSHOP_AVG_ATTENDANCE": {"type":"int", "min":1, "max":40, "step":1, "default": 10, "label":"Avg attendees per workshop"},
+    "WORKSHOP_FEE": {"type":"float", "min":0.0, "max":500.0, "step":5.0, "default": 85.0, "label":"Workshop fee per attendee"},
+    "WORKSHOP_CONV_RATE": {"type":"float", "min":0.0, "max":1.0, "step":0.05, "default": 0.10, "label":"Attendee→Member conversion"},
+    "WORKSHOP_CONV_LAG_MO": {"type":"int", "min":0, "max":12, "step":1, "default": 1, "label":"Conversion lag (months)"},
+    # Optional cost model
+    "WORKSHOP_COST_PER_EVENT": {"type":"float", "min":0.0, "max":1000.0, "step":5.0, "default": 50.0, "label":"Variable cost per workshop", "help":"Supplies, instructor stipend, etc."},
+})
+
+
+ENV_SPEC_META = {
+    "DOWNTURN_PROB_PER_MONTH": {
+        "desc": "Chance the local economy is rough this month. 0 = great conditions; higher = harder to acquire/retain members.",
+        "rec": (0.05, 0.25)
+    },
+    "DOWNTURN_JOIN_MULT": {
+        "desc": "How much downturns reduce new joins. 1.0 = no change; 0.6 means 40% fewer joins in a bad month.",
+        "rec": (0.6, 1.1)
+    },
+    "DOWNTURN_CHURN_MULT": {
+        "desc": "How much downturns increase member churn. 1.0 = no change; 1.5 = 50% higher churn when the economy dips.",
+        "rec": (1.0, 1.8)
+    },
+    "MARKET_POOLS_INFLOW": {
+        "desc": "Rough monthly counts of potential joiners by pool: community studio users, home studio users, and people with no access.",
+        "rec": (0, 10)
+    },
+    "grant_amount": {
+        "desc": "One-time grant dollars injected into cash.",
+        "rec": (0, 50000)
+    },
+    "grant_month": {
+        "desc": "When the grant arrives (−1 = no grant). Month 0 is the start of operations.",
+        "rec": (0, 12)
+    },
+    "WOM_RATE": {
+        "desc": "Word-of-mouth strength. Approx fraction of members who generate a qualified lead each month.",
+        "rec": (0.01, 0.06)
+    },
+    "MARKETING_SPEND": {
+        "desc": "Monthly paid marketing budget (ads, sponsorships, flyers).",
+        "rec": (0, 3000)
+    },
+    "CAC": {
+        "desc": "Cost to acquire one qualified lead through paid channels.",
+        "rec": (75, 250)
+    },
+    "LEAD_TO_JOIN_RATE": {
+        "desc": "Share of qualified leads that become paying members.",
+        "rec": (0.10, 0.35)
+    },
+    "MAX_ONBOARD_PER_MONTH": {
+        "desc": "Operational limit on new member onboarding per month (paperwork, training, shelf setup).",
+        "rec": (6, 20)
+    },
+    "MEMBER_CAP": {
+        "desc": "Hard cap on total active members (0 or blank = let the simulator’s internal station bottlenecks govern).",
+        "rec": (70, 110)
+    },
+    "EXPANSION_THRESHOLD": {
+        "desc": "Member count at which you trigger an expansion (e.g., add wheels/racks/kiln).",
+        "rec": (18, 30)
+    },
+}
+
 for key, meta in ENV_SPEC_META.items():
     if key not in PARAM_SPECS:
-        raise KeyError(f'PARAM_SPECS missing base spec for {key} (needs type/min/max/etc).')
-    PARAM_SPECS[key].update(meta)
-STRAT_SPEC_META = {'RENT': {'desc': 'Monthly base rent for the space (excludes utilities and insurance).', 'rec': (2500, 5500)}, 'RENT_GROWTH_PCT': {'desc': 'Annual rent escalation as a percent, compounded each year (e.g., 3.0 = 3%/yr).', 'rec': (0.0, 5.0)}, 'OWNER_DRAW': {'desc': 'Cash you pay yourself each month from the business.', 'rec': (0, 1500)}, 'BASE_EVENTS_PER_MONTH_LAMBDA': {'desc': 'Average number of public events per month (Poisson-like). 0 disables events.', 'rec': (0, 4)}, 'EVENTS_MAX_PER_MONTH': {'desc': 'Upper bound on events you’re willing to host in any month (ops limit).', 'rec': (0, 6)}, 'TICKET_PRICE': {'desc': 'Ticket price for public events (make-a-mug, paint-your-own, etc.).', 'rec': (55, 110)}, 'CLASSES_ENABLED': {'desc': 'Enable/disable course cohorts (recurring multi-week classes).', 'rec': (0, 1)}, 'USE_SEMESTER_SCHEDULE': {'desc': 'When ON: classes run in 3‑month terms, 4×/year (Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec).', 'rec': (0, 1)}, 'CLASSES_PER_SEMESTER': {'desc': 'Total cohorts to start in each 3‑month term. We’ll distribute them evenly per month.', 'rec': (0, 12)}, 'CLASS_COHORTS_PER_MONTH': {'desc': 'How many new cohorts you start per launch.', 'rec': (0, 4)}, 'CLASS_CAP_PER_COHORT': {'desc': 'Seats per cohort (max class size you can teach well).', 'rec': (6, 14)}, 'CLASS_PRICE': {'desc': 'Tuition per seat for a full cohort (entire multi-week course).', 'rec': (200, 600)}, 'CLASS_CONV_RATE': {'desc': 'Share of class participants who become ongoing members afterwards.', 'rec': (0.05, 0.25)}, 'CLASS_CONV_LAG_MO': {'desc': 'Delay between finishing a class and joining as a member (in months).', 'rec': (0, 2)}, 'PRICE': {'desc': 'Actual monthly membership fee charged to members (drives revenue).', 'rec': (120, 220)}}
+        raise KeyError(f"PARAM_SPECS missing base spec for {key} (needs type/min/max/etc).")
+    PARAM_SPECS[key].update(meta)    
+
+    
+STRAT_SPEC_META = {
+    "RENT": {
+        "desc": "Monthly base rent for the space (excludes utilities and insurance).",
+        "rec": (2500, 5500)
+    },
+    "RENT_GROWTH_PCT": {
+        "desc": "Annual rent escalation as a percent, compounded each year (e.g., 3.0 = 3%/yr).",
+        "rec": (0.0, 5.0),
+    },
+    
+    "OWNER_DRAW": {
+        "desc": "Cash you pay yourself each month from the business.",
+        "rec": (0, 1500)
+    },
+    "BASE_EVENTS_PER_MONTH_LAMBDA": {
+        "desc": "Average number of public events per month (Poisson-like). 0 disables events.",
+        "rec": (0, 4)
+    },
+    "EVENTS_MAX_PER_MONTH": {
+        "desc": "Upper bound on events you’re willing to host in any month (ops limit).",
+        "rec": (0, 6)
+    },
+    "TICKET_PRICE": {
+        "desc": "Ticket price for public events (make-a-mug, paint-your-own, etc.).",
+        "rec": (55, 110)
+    },
+    "CLASSES_ENABLED": {
+        "desc": "Enable/disable course cohorts (recurring multi-week classes).",
+        "rec": (0, 1)
+    },
+    "USE_SEMESTER_SCHEDULE": {
+        "desc": "When ON: classes run in 3‑month terms, 4×/year (Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec).",
+        "rec": (0, 1)
+    },
+    "CLASSES_PER_SEMESTER": {
+        "desc": "Total cohorts to start in each 3‑month term. We’ll distribute them evenly per month.",
+        "rec": (0, 12)
+    },
+    "CLASS_COHORTS_PER_MONTH": {
+        "desc": "How many new cohorts you start per launch.",
+        "rec": (0, 4)
+    },
+    "CLASS_CAP_PER_COHORT": {
+        "desc": "Seats per cohort (max class size you can teach well).",
+        "rec": (6, 14)
+    },
+    "CLASS_PRICE": {
+        "desc": "Tuition per seat for a full cohort (entire multi-week course).",
+        "rec": (200, 600)
+    },
+    "CLASS_CONV_RATE": {
+        "desc": "Share of class participants who become ongoing members afterwards.",
+        "rec": (0.05, 0.25)
+    },
+    "CLASS_CONV_LAG_MO": {
+        "desc": "Delay between finishing a class and joining as a member (in months).",
+        "rec": (0, 2)
+    },
+    "PRICE": {
+        "desc": "Actual monthly membership fee charged to members (drives revenue).",
+        "rec": (120, 220)
+    },
+}
+
 for key, meta in STRAT_SPEC_META.items():
     if key not in PARAM_SPECS:
-        raise KeyError(f'PARAM_SPECS missing base spec for {key} (needs type/min/max/etc).')
+        raise KeyError(f"PARAM_SPECS missing base spec for {key} (needs type/min/max/etc).")
     PARAM_SPECS[key].update(meta)
-SCRIPT = 'modular_simulator.py'
-GROUPS = {'macro': ['DOWNTURN_PROB_PER_MONTH', 'DOWNTURN_JOIN_MULT', 'DOWNTURN_CHURN_MULT'], 'growth': ['WOM_RATE', 'LEAD_TO_JOIN_RATE', 'MARKET_POOLS_INFLOW', 'MARKETING_SPEND', 'CAC'], 'capacity': ['MEMBER_CAP', 'EXPANSION_THRESHOLD', 'MAX_ONBOARD_PER_MONTH'], 'pricing': ['PRICE', 'JOIN_PRICE_ELASTICITY', 'CHURN_PRICE_ELASTICITY'], 'workshops': ['WORKSHOPS_ENABLED', 'WORKSHOPS_PER_MONTH', 'WORKSHOP_AVG_ATTENDANCE', 'WORKSHOP_FEE', 'WORKSHOP_COST_PER_EVENT', 'WORKSHOP_CONV_RATE', 'WORKSHOP_CONV_LAG_MO'], 'classes': ['CLASSES_ENABLED', 'USE_SEMESTER_SCHEDULE', 'CLASSES_PER_SEMESTER', 'CLASS_COHORTS_PER_MONTH', 'CLASS_CAP_PER_COHORT', 'CLASS_PRICE', 'CLASS_CONV_RATE', 'CLASS_CONV_LAG_MO'], 'events': ['BASE_EVENTS_PER_MONTH_LAMBDA', 'EVENTS_MAX_PER_MONTH', 'TICKET_PRICE'], 'finance': ['RENT', 'RENT_GROWTH_PCT', 'OWNER_DRAW', 'grant_amount', 'grant_month'], 'loans': ['LOAN_504_ANNUAL_RATE', 'LOAN_504_TERM_YEARS', 'LOAN_7A_ANNUAL_RATE', 'LOAN_7A_TERM_YEARS', 'LOAN_CONTINGENCY_PCT', 'RUNWAY_MONTHS', 'EXTRA_BUFFER'], 'io': ['IO_MONTHS_504', 'IO_MONTHS_7A'], 'sizing': ['RESERVE_FLOOR'], 'fees': ['FEES_UPFRONT_PCT_7A', 'FEES_UPFRONT_PCT_504', 'FEES_PACKAGING', 'FEES_CLOSING', 'FINANCE_FEES_7A', 'FINANCE_FEES_504']}
+    
+
+SCRIPT = "modular_simulator.py"   # your core simulator
+
+# --- Group definitions --
+
+GROUPS = {
+    # Macro conditions
+    "macro": [
+        "DOWNTURN_PROB_PER_MONTH", "DOWNTURN_JOIN_MULT", "DOWNTURN_CHURN_MULT",
+    ],
+
+    # Growth & demand generation
+    "growth": [
+        "WOM_RATE", "LEAD_TO_JOIN_RATE", "MARKET_POOLS_INFLOW",
+        "MARKETING_SPEND", "CAC",
+    ],
+
+    # Capacity & operations
+    "capacity": [
+        "MEMBER_CAP", "EXPANSION_THRESHOLD", "MAX_ONBOARD_PER_MONTH",
+    ],
+
+    # Pricing (core price + elasticity)
+    "pricing": [
+        "PRICE", "JOIN_PRICE_ELASTICITY", "CHURN_PRICE_ELASTICITY",
+    ],
+
+    # Workshops (single-source model you already have)
+    "workshops": [
+        "WORKSHOPS_ENABLED", "WORKSHOPS_PER_MONTH", "WORKSHOP_AVG_ATTENDANCE",
+        "WORKSHOP_FEE", "WORKSHOP_COST_PER_EVENT", "WORKSHOP_CONV_RATE", "WORKSHOP_CONV_LAG_MO",
+    ],
+
+    # Beginner classes (only the keys present in your spec)
+    "classes": [
+        "CLASSES_ENABLED", "USE_SEMESTER_SCHEDULE", "CLASSES_PER_SEMESTER",
+        "CLASS_COHORTS_PER_MONTH", "CLASS_CAP_PER_COHORT",
+        "CLASS_PRICE", "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO",
+    ],
+
+    # Events (keys present in your spec)
+    "events": [
+        "BASE_EVENTS_PER_MONTH_LAMBDA", "EVENTS_MAX_PER_MONTH", "TICKET_PRICE",
+    ],
+    # Finance & grants
+    "finance": [
+    "RENT", "RENT_GROWTH_PCT", "OWNER_DRAW", "grant_amount", "grant_month",
+    ],
+    # Loans & sizing
+    "loans": [
+        "LOAN_504_ANNUAL_RATE", "LOAN_504_TERM_YEARS",
+        "LOAN_7A_ANNUAL_RATE", "LOAN_7A_TERM_YEARS",
+        "LOAN_CONTINGENCY_PCT", "RUNWAY_MONTHS", "EXTRA_BUFFER"
+    ],
+    "io": [
+        "IO_MONTHS_504", "IO_MONTHS_7A"
+    ],
+    "sizing": [
+        "RESERVE_FLOOR"
+    ],
+    "fees": [
+        "FEES_UPFRONT_PCT_7A", "FEES_UPFRONT_PCT_504",
+        "FEES_PACKAGING", "FEES_CLOSING",
+        "FINANCE_FEES_7A", "FINANCE_FEES_504"
+    ],
+}
+
 
 def compute_kpis_from_cell(df_cell: pd.DataFrame) -> dict:
     """
@@ -40,29 +321,42 @@ def compute_kpis_from_cell(df_cell: pd.DataFrame) -> dict:
     out = {}
     if df_cell.empty:
         return out
-    month_col = 'month' if 'month' in df_cell.columns else 'Month' if 'Month' in df_cell.columns else 't'
+
+    # Resolve columns
+    month_col = "month" if "month" in df_cell.columns else ("Month" if "Month" in df_cell.columns else "t")
     if month_col not in df_cell.columns:
         return out
-    cash_col = pick_col(df_cell, ['cash_balance', 'cash', 'ending_cash'])
+
+    cash_col = pick_col(df_cell, ["cash_balance", "cash", "ending_cash"])
     if cash_col is None:
         return out
+
+    # Horizon row per simulation
     last_month = int(df_cell[month_col].max())
     end = df_cell[df_cell[month_col] == last_month]
-    sim_col = 'simulation_id' if 'simulation_id' in df_cell.columns else None
+
+    # Survival: share of sims whose min cash never dipped below 0
+    sim_col = "simulation_id" if "simulation_id" in df_cell.columns else None
     if sim_col:
         min_cash_by_sim = df_cell.groupby(sim_col)[cash_col].min()
     else:
         min_cash_by_sim = pd.Series([float(df_cell[cash_col].min())])
-    out['survival_prob'] = float((min_cash_by_sim >= 0).mean())
-    out['cash_q10'] = float(end[cash_col].quantile(0.1))
-    out['cash_med'] = float(end[cash_col].quantile(0.5))
-    out['cash_q90'] = float(end[cash_col].quantile(0.9))
-    if 'dscr' in end.columns:
-        out['dscr_q10'] = float(end['dscr'].quantile(0.1))
-        out['dscr_med'] = float(end['dscr'].quantile(0.5))
-        out['dscr_q90'] = float(end['dscr'].quantile(0.9))
-    if 'active_members' in end.columns:
-        out['members_med'] = float(end['active_members'].median())
+
+    out["survival_prob"] = float((min_cash_by_sim >= 0).mean())
+    out["cash_q10"] = float(end[cash_col].quantile(0.10))
+    out["cash_med"] = float(end[cash_col].quantile(0.50))
+    out["cash_q90"] = float(end[cash_col].quantile(0.90))
+
+    # DSCR at horizon (if present)
+    if "dscr" in end.columns:
+        out["dscr_q10"] = float(end["dscr"].quantile(0.10))
+        out["dscr_med"] = float(end["dscr"].quantile(0.50))
+        out["dscr_q90"] = float(end["dscr"].quantile(0.90))
+
+    # Members at horizon (optional)
+    if "active_members" in end.columns:
+        out["members_med"] = float(end["active_members"].median())
+
     return out
 
 def _subset(d, keys):
@@ -72,7 +366,7 @@ def _update_from(src, dst, keys):
     for k in keys:
         if k in src:
             dst[k] = src[k]
-
+            
 def _normalize_capex_items(df):
     """Convert the data_editor DataFrame into a clean list[dict]."""
     import pandas as pd
@@ -81,41 +375,47 @@ def _normalize_capex_items(df):
         return items
     for _, r in df.iterrows():
         try:
-            label = str(r.get('label', '')).strip()
-            unit = float(r.get('unit_cost', 0) or 0)
-            cnt = int(r.get('count', 1) or 1)
-            mth = r.get('month', None)
-            thr = r.get('member_threshold', None)
-            enabled = bool(r.get('enabled', True))
-            mth = None if mth == '' or pd.isna(mth) else int(mth)
-            thr = None if thr == '' or pd.isna(thr) else int(thr)
+            label = str(r.get("label", "")).strip()
+            unit  = float(r.get("unit_cost", 0) or 0)
+            cnt   = int(r.get("count", 1) or 1)
+            mth   = r.get("month", None)
+            thr   = r.get("member_threshold", None)
+            enabled = bool(r.get("enabled", True))
+            mth = None if (mth == "" or pd.isna(mth)) else int(mth)
+            thr = None if (thr == "" or pd.isna(thr)) else int(thr)
             if not enabled:
                 continue
+            # Must have positive unit cost and at least one trigger
             if unit > 0 and (mth is not None or thr is not None):
-                items.append({'label': label, 'unit_cost': unit, 'count': cnt, 'month': mth, 'member_threshold': thr, 'finance_504': bool(r.get('finance_504', False))})
+                items.append({
+                    "label": label,
+                    "unit_cost": unit,        # per-unit cost
+                    "count": cnt,             # units purchased when triggered
+                    "month": mth,
+                    "member_threshold": thr,
+                    "finance_504": bool(r.get("finance_504", False)),
+                })
         except Exception:
             continue
     return items
 
 def _default_from_spec_for_push(key: str, spec: dict):
     if not spec:
-        return ''
-    if key == 'grant_month':
+        return ""
+    # Special sentinel
+    if key == "grant_month":
         return -1
-    if 'default' in spec:
-        return spec['default']
-    t = spec.get('type')
-    if t == 'bool':
-        return False
-    if t == 'int':
-        return int(spec.get('min', 0))
-    if t == 'float':
-        return float(spec.get('min', 0.0))
-    if t == 'market_inflow':
-        return {'community_studio': 0, 'home_studio': 0, 'no_access': 0}
-    if t == 'json':
-        return {}
-    return ''
+    # Respect explicit default if provided
+    if "default" in spec:
+        return spec["default"]
+    t = spec.get("type")
+    if t == "bool":  return False
+    if t == "int":   return int(spec.get("min", 0))
+    if t == "float": return float(spec.get("min", 0.0))
+    if t == "market_inflow":
+        return {"community_studio": 0, "home_studio": 0, "no_access": 0}
+    if t == "json":  return {}
+    return ""
 
 def _clamp_num_for_push(val, lo, hi, typ):
     try:
@@ -127,7 +427,6 @@ def _clamp_num_for_push(val, lo, hi, typ):
         return lo
 
 def _canon(o):
-
     def _default(x):
         import numpy as np
         if isinstance(x, (np.integer,)):
@@ -137,25 +436,29 @@ def _canon(o):
         if isinstance(x, (np.ndarray,)):
             return x.tolist()
         raise TypeError
-    return json.dumps(o, sort_keys=True, separators=(',', ':'), default=_default)
+    return json.dumps(o, sort_keys=True, separators=(",", ":"), default=_default)
 
 def _make_cache_key(env: dict, strat: dict, seed: int) -> str:
+    # include loan controls so cache invalidates when they change
     try:
         import streamlit as st
-        capex_mode = st.session_state.get('capex_mode', None)
-        opex_mode = st.session_state.get('opex_mode', None)
-        loan_504 = st.session_state.get('loan_504', None)
-        loan_7a = st.session_state.get('loan_7a', None)
-        capex_draw_pct = st.session_state.get('capex_draw_pct', None)
-        capex_min_tr = st.session_state.get('capex_min_tr', None)
-        capex_max_tr = st.session_state.get('capex_max_tr', None)
-        opex_facility = st.session_state.get('opex_facility', None)
-        opex_min_tr = st.session_state.get('opex_min_tr', None)
-        opex_max_tr = st.session_state.get('opex_max_tr', None)
-        reserve_floor = st.session_state.get('reserve_floor', None)
+        capex_mode = st.session_state.get("capex_mode", None)
+        opex_mode  = st.session_state.get("opex_mode",  None)
+        
+        loan_504  = st.session_state.get("loan_504", None)
+        loan_7a   = st.session_state.get("loan_7a", None)
+        capex_draw_pct = st.session_state.get("capex_draw_pct", None)
+        capex_min_tr   = st.session_state.get("capex_min_tr", None)
+        capex_max_tr   = st.session_state.get("capex_max_tr", None)
+        opex_facility  = st.session_state.get("opex_facility", None)
+        opex_min_tr    = st.session_state.get("opex_min_tr", None)
+        opex_max_tr    = st.session_state.get("opex_max_tr", None)
+        reserve_floor  = st.session_state.get("reserve_floor", None)
     except Exception:
         capex_mode = opex_mode = loan_504 = loan_7a = capex_draw_pct = capex_min_tr = capex_max_tr = opex_facility = opex_min_tr = opex_max_tr = reserve_floor = None
-    return f'v6|{_canon(env)}|{_canon(strat)}|{seed}|{capex_mode}|{opex_mode}|{loan_504}|{loan_7a}|{capex_draw_pct}|{capex_min_tr}|{capex_max_tr}|{opex_facility}|{opex_min_tr}|{opex_max_tr}|{reserve_floor}'
+    return (
+        f"v6|{_canon(env)}|{_canon(strat)}|{seed}|{capex_mode}|{opex_mode}|{loan_504}|{loan_7a}|{capex_draw_pct}|{capex_min_tr}|{capex_max_tr}|{opex_facility}|{opex_min_tr}|{opex_max_tr}|{reserve_floor}"
+    )
 
 def _push_preset_to_widgets(preset: dict, *, prefix: str, keys: list):
     """
@@ -166,50 +469,77 @@ def _push_preset_to_widgets(preset: dict, *, prefix: str, keys: list):
     for k in keys:
         spec = PARAM_SPECS.get(k, {})
         raw = preset.get(k, None)
+
+        # Fill defaults when missing/None
         if raw is None:
             raw = _default_from_spec_for_push(k, spec)
-        t = spec.get('type')
-        if t == 'bool':
-            st.session_state[f'{prefix}_{k}'] = bool(raw)
-        elif t == 'int':
-            lo = int(spec.get('min', 0))
-            hi = int(spec.get('max', 100))
-            val = _clamp_num_for_push(raw, lo, hi, int)
-            st.session_state[f'{prefix}_{k}'] = int(val)
-        elif t == 'float':
-            lo = float(spec.get('min', 0.0))
-            hi = float(spec.get('max', 1.0))
-            val = _clamp_num_for_push(raw, lo, hi, float)
-            st.session_state[f'{prefix}_{k}'] = float(val)
-        elif t == 'market_inflow':
-            cur = raw if isinstance(raw, dict) else {}
-            cur = {'community_studio': int(max(0, cur.get('community_studio', 0))), 'home_studio': int(max(0, cur.get('home_studio', 0))), 'no_access': int(max(0, cur.get('no_access', 0)))}
-            st.session_state[f'{prefix}_{k}'] = cur
-            base = f'{prefix}_{k}'
-            st.session_state[f'{base}_c'] = cur['community_studio']
-            st.session_state[f'{base}_h'] = cur['home_studio']
-            st.session_state[f'{base}_n'] = cur['no_access']
-        else:
-            st.session_state[f'{prefix}_{k}'] = raw
 
+        t = spec.get("type")
+
+        if t == "bool":
+            st.session_state[f"{prefix}_{k}"] = bool(raw)
+
+        elif t == "int":
+            lo = int(spec.get("min", 0)); hi = int(spec.get("max", 100))
+            val = _clamp_num_for_push(raw, lo, hi, int)
+            st.session_state[f"{prefix}_{k}"] = int(val)
+
+        elif t == "float":
+            lo = float(spec.get("min", 0.0)); hi = float(spec.get("max", 1.0))
+            val = _clamp_num_for_push(raw, lo, hi, float)
+            st.session_state[f"{prefix}_{k}"] = float(val)
+
+        elif t == "market_inflow":
+            cur = raw if isinstance(raw, dict) else {}
+            cur = {
+                "community_studio": int(max(0, cur.get("community_studio", 0))),
+                "home_studio":      int(max(0, cur.get("home_studio", 0))),
+                "no_access":        int(max(0, cur.get("no_access", 0))),
+            }
+            # set the compound value (if your code reads it)
+            st.session_state[f"{prefix}_{k}"] = cur
+            # set the three sub‑slider keys that are actually rendered
+            base = f"{prefix}_{k}"
+            st.session_state[f"{base}_c"] = cur["community_studio"]
+            st.session_state[f"{base}_h"] = cur["home_studio"]
+            st.session_state[f"{base}_n"] = cur["no_access"]
+
+        else:
+            # text/json fallback
+            st.session_state[f"{prefix}_{k}"] = raw
+
+            
+# ---------- small helpers ----------
 def _preflight_validate(cfg: dict) -> bool:
     """Return True if config looks sane, otherwise render an error and return False."""
     errs = []
-    if 'USAGE_SHARE' in cfg and (not isinstance(cfg['USAGE_SHARE'], (dict, list, tuple))):
-        errs.append('USAGE_SHARE must be a dict/list (got scalar)')
-    if 'STATIONS' in cfg and (not isinstance(cfg['STATIONS'], (dict, list, int))):
-        errs.append('STATIONS must be dict/list/int')
-    if 'SEASONALITY_WEIGHTS' in cfg and (not isinstance(cfg['SEASONALITY_WEIGHTS'], (list, tuple))):
-        errs.append('SEASONALITY_WEIGHTS must be a list/tuple')
-    if 'ATTENDEES_PER_EVENT_RANGE' in cfg and (not isinstance(cfg['ATTENDEES_PER_EVENT_RANGE'], (list, tuple))):
-        errs.append('ATTENDEES_PER_EVENT_RANGE must be list/tuple')
+
+    # Composites the engine indexes into:
+    if "USAGE_SHARE" in cfg and not isinstance(cfg["USAGE_SHARE"], (dict, list, tuple)):
+        errs.append("USAGE_SHARE must be a dict/list (got scalar)")
+
+    if "STATIONS" in cfg and not isinstance(cfg["STATIONS"], (dict, list, int)):
+        errs.append("STATIONS must be dict/list/int")
+
+    # Add other composites here if you expose them later:
+    if "SEASONALITY_WEIGHTS" in cfg and not isinstance(cfg["SEASONALITY_WEIGHTS"], (list, tuple)):
+        errs.append("SEASONALITY_WEIGHTS must be a list/tuple")
+
+    if "ATTENDEES_PER_EVENT_RANGE" in cfg and not isinstance(cfg["ATTENDEES_PER_EVENT_RANGE"], (list, tuple)):
+        errs.append("ATTENDEES_PER_EVENT_RANGE must be list/tuple")
+
     if errs:
-        st.error('Invalid inputs:\n- ' + '\n- '.join(errs))
+        st.error("Invalid inputs:\n- " + "\n- ".join(errs))
         return False
     return True
 
 def _normalize_market_inflow(d: dict) -> dict:
-    pools = {'community_studio': d.get('community_studio', 0), 'home_studio': d.get('home_studio', 0), 'no_access': d.get('no_access', 0)}
+    # Keep only the three known pools; coerce to non-negative ints.
+    pools = {
+        "community_studio": d.get("community_studio", 0),
+        "home_studio":      d.get("home_studio", 0),
+        "no_access":        d.get("no_access", 0),
+    }
     out = {}
     for k, v in pools.items():
         try:
@@ -220,8 +550,8 @@ def _normalize_market_inflow(d: dict) -> dict:
 
 def slug(s: str) -> str:
     s = s.lower().strip()
-    s = re.sub('\\s+', '-', s)
-    s = re.sub('[^a-z0-9._-]+', '', s)
+    s = re.sub(r"\s+", "-", s)
+    s = re.sub(r"[^a-z0-9._-]+", "", s)
     return s[:80]
 
 def build_overrides(env: dict, strat: dict) -> dict:
@@ -238,247 +568,335 @@ def build_overrides(env: dict, strat: dict) -> dict:
     """
     import math
     ov: dict = {}
-    META_SKIP = {'name', 'grant_month', 'grant_amount'}
+
+    META_SKIP = {"name", "grant_month", "grant_amount"}  # kept only in SCENARIO_CONFIGS
 
     def _merge_clean(src: dict):
         for k, v in (src or {}).items():
             if k in META_SKIP:
                 continue
+            # Drop Nones/NaNs so we don't clobber core defaults
             if v is None:
                 continue
             if isinstance(v, float) and math.isnan(v):
                 continue
             ov[k] = v
+
     _merge_clean(env)
     _merge_clean(strat)
-    if 'RENT' in strat:
+
+    # ----- Singletons for sweeps (keep core code paths intact)
+    if "RENT" in strat:
         try:
-            ov['RENT_SCENARIOS'] = np.array([float(strat['RENT'])], dtype=float)
+            ov["RENT_SCENARIOS"] = np.array([float(strat["RENT"])], dtype=float)
         except Exception:
             pass
-    if 'OWNER_DRAW' in strat:
+    if "OWNER_DRAW" in strat:
         try:
-            ov['OWNER_DRAW_SCENARIOS'] = [float(strat['OWNER_DRAW'])]
+            ov["OWNER_DRAW_SCENARIOS"] = [float(strat["OWNER_DRAW"])]
         except Exception:
             pass
-    if 'WOM_RATE' in ov and 'WOM_Q' not in ov:
-        ov['WOM_Q'] = float(ov.pop('WOM_RATE'))
-    if 'MAX_ONBOARD_PER_MONTH' in ov and 'MAX_ONBOARDINGS_PER_MONTH' not in ov:
+    # ----- Alias UI keys to simulator keys -----
+    if "WOM_RATE" in ov and "WOM_Q" not in ov:
+        ov["WOM_Q"] = float(ov.pop("WOM_RATE"))
+    
+    if "MAX_ONBOARD_PER_MONTH" in ov and "MAX_ONBOARDINGS_PER_MONTH" not in ov:
         try:
-            ov['MAX_ONBOARDINGS_PER_MONTH'] = int(ov.pop('MAX_ONBOARD_PER_MONTH'))
+            ov["MAX_ONBOARDINGS_PER_MONTH"] = int(ov.pop("MAX_ONBOARD_PER_MONTH"))
         except Exception:
-            ov.pop('MAX_ONBOARD_PER_MONTH', None)
-    if 'LEAD_TO_JOIN_RATE' in ov and 'BASELINE_JOIN_RATE' not in ov:
+            ov.pop("MAX_ONBOARD_PER_MONTH", None)
+    
+    if "LEAD_TO_JOIN_RATE" in ov and "BASELINE_JOIN_RATE" not in ov:
         try:
-            ov['BASELINE_JOIN_RATE'] = float(ov.pop('LEAD_TO_JOIN_RATE'))
+            ov["BASELINE_JOIN_RATE"] = float(ov.pop("LEAD_TO_JOIN_RATE"))
         except Exception:
-            ov.pop('LEAD_TO_JOIN_RATE', None)
-    gm = env.get('grant_month', None)
+            ov.pop("LEAD_TO_JOIN_RATE", None)
+
+    # ----- Scenario configs: grant 
+    gm = env.get("grant_month", None)
+    # support UI convention: -1 means "no grant"
     if isinstance(gm, (int, np.integer)) and gm < 0:
         gm = None
-    sc_name = env.get('name', 'Scenario')
-    ov['SCENARIO_CONFIGS'] = [{'name': sc_name, 'grant_amount': float(env.get('grant_amount', 0.0)), 'grant_month': env.get('grant_month', None)}]
+    sc_name = env.get("name", "Scenario")
+    # De-Staged: only pass through neutral scenario configs; no capex_timing
+    ov["SCENARIO_CONFIGS"] = [{
+        "name": sc_name,
+        "grant_amount": float(env.get("grant_amount", 0.0)),
+        "grant_month": env.get("grant_month", None),
+    }]
+        # Forward staged CapEx schedule if present
     try:
-        if strat.get('CAPEX_ITEMS'):
-            ov['CAPEX_ITEMS'] = list(strat.get('CAPEX_ITEMS', []))
+        if strat.get("CAPEX_ITEMS"):
+            ov["CAPEX_ITEMS"] = list(strat.get("CAPEX_ITEMS", []))
     except Exception:
         pass
-    cap_raw = env.get('MEMBER_CAP', None)
+
+    # ----- Capacity mapping (UI → simulator)
+    # UI contract: MEMBER_CAP > 0 => enforce hard cap; 0/None => no override (use internal station bottlenecks)
+    cap_raw = env.get("MEMBER_CAP", None)
     try:
         cap_val = int(cap_raw) if cap_raw is not None else None
     except (TypeError, ValueError):
         cap_val = None
+
     if cap_val is not None and cap_val > 0:
-        ov['MAX_MEMBERS'] = cap_val
+        ov["MAX_MEMBERS"] = cap_val
     else:
-        ov.pop('MAX_MEMBERS', None)
-    ov.pop('MEMBER_CAP', None)
-    thr_raw = env.get('EXPANSION_THRESHOLD', None)
+        ov.pop("MAX_MEMBERS", None)  # ensure we don't accidentally pin capacity
+
+    # Don't leak UI-only field
+    ov.pop("MEMBER_CAP", None)
+
+    # ----- Expansion threshold (optional)
+    thr_raw = env.get("EXPANSION_THRESHOLD", None)
+    
     try:
         thr_val = int(thr_raw) if thr_raw is not None else None
     except (TypeError, ValueError):
         thr_val = None
+
     if thr_val is not None and thr_val >= 0:
-        ov['STAFF_EXPANSION_THRESHOLD'] = thr_val
+        ov["STAFF_EXPANSION_THRESHOLD"] = thr_val
     else:
-        ov.pop('STAFF_EXPANSION_THRESHOLD', None)
-    ov['CLASS_START_MONTHS'] = [0, 3, 6, 9]
-    use_sem = bool(ov.get('USE_SEMESTER_SCHEDULE', False))
+        ov.pop("STAFF_EXPANSION_THRESHOLD", None)
+        
+        # --- Classes: fixed intake months (0-indexed Jan=0) -> months 1,4,7,10 === [0,3,6,9]
+    ov["CLASS_START_MONTHS"] = [0, 3, 6, 9]
+
+    # --- Classes: map UI semester knobs to simulator (single, clean mapping) ---
+    use_sem = bool(ov.get("USE_SEMESTER_SCHEDULE", False))
     if use_sem:
-        ov['CLASSES_CALENDAR_MODE'] = 'semester'
-        ov['CLASS_SEMESTER_LENGTH_MONTHS'] = 3
-        ov['CLASS_SEMESTER_START_MONTHS'] = [0, 3, 6, 9]
-        if 'CLASS_COHORTS_PER_MONTH' not in ov and 'CLASSES_PER_SEMESTER' in ov:
+        ov["CLASSES_CALENDAR_MODE"] = "semester"
+        ov["CLASS_SEMESTER_LENGTH_MONTHS"] = 3
+        ov["CLASS_SEMESTER_START_MONTHS"] = [0, 3, 6, 9]  # Jan, Apr, Jul, Oct
+        # Derive per-month cohorts for class months if only per-semester was provided
+        if "CLASS_COHORTS_PER_MONTH" not in ov and "CLASSES_PER_SEMESTER" in ov:
             try:
                 import math
-                cps = int(ov.get('CLASSES_PER_SEMESTER', 0))
-                ov['CLASS_COHORTS_PER_MONTH'] = max(0, int(math.ceil(cps / 3.0)))
+                cps = int(ov.get("CLASSES_PER_SEMESTER", 0))
+                ov["CLASS_COHORTS_PER_MONTH"] = max(0, int(math.ceil(cps / 3.0)))
             except Exception:
                 pass
     else:
-        ov['CLASSES_CALENDAR_MODE'] = 'monthly'
-    if 'WORKSHOPS_PER_MONTH' not in ov and 'CLASS_COHORTS_PER_MONTH' in ov:
-        ov['WORKSHOPS_PER_MONTH'] = float(ov.get('CLASS_COHORTS_PER_MONTH', 0.0))
-    if 'WORKSHOP_AVG_ATTENDANCE' not in ov and 'CLASS_CAP_PER_COHORT' in ov:
-        ov['WORKSHOP_AVG_ATTENDANCE'] = int(ov.get('CLASS_CAP_PER_COHORT', 0))
-    if 'WORKSHOP_FEE' not in ov and 'CLASS_PRICE' in ov:
-        ov['WORKSHOP_FEE'] = float(ov.get('CLASS_PRICE', 0.0))
-    if 'WORKSHOP_CONV_RATE' not in ov and 'CLASS_CONV_RATE' in ov:
-        ov['WORKSHOP_CONV_RATE'] = float(ov.get('CLASS_CONV_RATE', 0.0))
-    if 'WORKSHOP_CONV_LAG_MO' not in ov and 'CLASS_CONV_LAG_MO' in ov:
-        ov['WORKSHOP_CONV_LAG_MO'] = int(ov.get('CLASS_CONV_LAG_MO', 1))
-    ov['CAPEX_LOAN_MODE'] = st.session_state.get('capex_mode', 'upfront')
-    ov['OPEX_LOAN_MODE'] = st.session_state.get('opex_mode', 'upfront')
-    val_504 = st.session_state.get('loan_504', None)
-    if val_504 not in (None, '', 0, 0.0):
-        ov['LOAN_OVERRIDE_504'] = float(val_504)
-    val_7a = st.session_state.get('loan_7a', None)
-    if val_7a not in (None, '', 0, 0.0):
-        ov['LOAN_OVERRIDE_7A'] = float(val_7a)
-    if ov['CAPEX_LOAN_MODE'] == 'staged':
-        ov['LOAN_STAGED_RULE'] = {'draw_pct_of_purchase': float(st.session_state.get('capex_draw_pct', 1.0)), 'min_tranche': float(st.session_state.get('capex_min_tr', 0.0)), 'max_tranche': None if st.session_state.get('capex_max_tr', 0) == 0 else float(st.session_state['capex_max_tr'])}
-    if ov['OPEX_LOAN_MODE'] == 'staged':
-        ov['LOAN_STAGED_RULE_OPEX'] = {'facility_limit': float(st.session_state.get('opex_facility', 0.0)), 'min_draw': float(st.session_state.get('opex_min_tr', 0.0)), 'max_draw': None if st.session_state.get('opex_max_tr', 0) == 0 else float(st.session_state['opex_max_tr']), 'reserve_floor': float(st.session_state.get('reserve_floor', 0.0))}
-    ov.setdefault('WORKSHOPS_ENABLED', True)
-    ov.setdefault('WORKSHOP_COST_PER_EVENT', 50.0)
+        ov["CLASSES_CALENDAR_MODE"] = "monthly"
+            
+    # --- Back-compat: map legacy monthly class knobs to workshops if workshops unset ---
+    if "WORKSHOPS_PER_MONTH" not in ov and "CLASS_COHORTS_PER_MONTH" in ov:
+        ov["WORKSHOPS_PER_MONTH"] = float(ov.get("CLASS_COHORTS_PER_MONTH", 0.0))
+    if "WORKSHOP_AVG_ATTENDANCE" not in ov and "CLASS_CAP_PER_COHORT" in ov:
+        ov["WORKSHOP_AVG_ATTENDANCE"] = int(ov.get("CLASS_CAP_PER_COHORT", 0))
+    if "WORKSHOP_FEE" not in ov and "CLASS_PRICE" in ov:
+        ov["WORKSHOP_FEE"] = float(ov.get("CLASS_PRICE", 0.0))
+    if "WORKSHOP_CONV_RATE" not in ov and "CLASS_CONV_RATE" in ov:
+        ov["WORKSHOP_CONV_RATE"] = float(ov.get("CLASS_CONV_RATE", 0.0))
+    if "WORKSHOP_CONV_LAG_MO" not in ov and "CLASS_CONV_LAG_MO" in ov:
+        ov["WORKSHOP_CONV_LAG_MO"] = int(ov.get("CLASS_CONV_LAG_MO", 1))
+    
+    # --- Independent loan modes ---
+    ov["CAPEX_LOAN_MODE"] = st.session_state.get("capex_mode", "upfront")
+    ov["OPEX_LOAN_MODE"]  = st.session_state.get("opex_mode",  "upfront")
+    
+    # Upfront overrides
+    val_504 = st.session_state.get("loan_504", None)
+    if val_504 not in (None, "", 0, 0.0):  # only set if user provided a non-zero value
+        ov["LOAN_OVERRIDE_504"] = float(val_504)
+    
+    val_7a = st.session_state.get("loan_7a", None)
+    if val_7a not in (None, "", 0, 0.0):
+        ov["LOAN_OVERRIDE_7A"] = float(val_7a)
+    
+    
+    # Staged rules
+    if ov["CAPEX_LOAN_MODE"] == "staged":
+        # Simulator expects 'LOAN_STAGED_RULE' (CapEx staged draws)
+        ov["LOAN_STAGED_RULE"] = {
+            "draw_pct_of_purchase": float(st.session_state.get("capex_draw_pct", 1.0)),
+            "min_tranche": float(st.session_state.get("capex_min_tr", 0.0)),
+            "max_tranche": (None if (st.session_state.get("capex_max_tr", 0)==0) else float(st.session_state["capex_max_tr"])),
+        }
+    if ov["OPEX_LOAN_MODE"] == "staged":
+        ov["LOAN_STAGED_RULE_OPEX"] = {
+            "facility_limit": float(st.session_state.get("opex_facility", 0.0)),
+            "min_draw": float(st.session_state.get("opex_min_tr", 0.0)),
+            "max_draw": (None if (st.session_state.get("opex_max_tr", 0)==0) else float(st.session_state["opex_max_tr"])),
+            "reserve_floor": float(st.session_state.get("reserve_floor", 0.0)),
+        }
+        
+        
+        
+    # sensible default if missing:
+    ov.setdefault("WORKSHOPS_ENABLED", True)
+    ov.setdefault("WORKSHOP_COST_PER_EVENT", 50.0)
+
     return ov
 
 def _normalize_env(env: dict) -> dict:
     env = dict(env)
-    gm = env.get('grant_month', None)
+
+    # normalize grant month
+    gm = env.get("grant_month", None)
     if isinstance(gm, (int, np.integer)) and gm < 0:
-        env['grant_month'] = None
-    if isinstance(env.get('MARKET_POOLS_INFLOW'), dict):
-        env['MARKET_POOLS_INFLOW'] = _normalize_market_inflow(env['MARKET_POOLS_INFLOW'])
-    for k in ['DOWNTURN_PROB_PER_MONTH', 'WOM_Q', 'AWARENESS_RAMP_MONTHS']:
+        env["grant_month"] = None
+
+    # normalize market inflow (dict of pools → ints)
+    if isinstance(env.get("MARKET_POOLS_INFLOW"), dict):
+        env["MARKET_POOLS_INFLOW"] = _normalize_market_inflow(env["MARKET_POOLS_INFLOW"])
+
+    # ensure numeric types for macro knobs if present
+    for k in ["DOWNTURN_PROB_PER_MONTH", "WOM_Q", "AWARENESS_RAMP_MONTHS"]:
         if k in env and env[k] is not None:
             env[k] = float(env[k])
+
     return env
 
 def _help_text(spec: dict) -> str:
     """Build hover tooltip from spec['desc'] and spec['rec']."""
     if not spec:
-        return ''
-    desc = spec.get('desc')
-    rec = spec.get('rec')
+        return ""
+    desc = spec.get("desc")
+    rec  = spec.get("rec")
     parts = []
     if desc:
         parts.append(str(desc))
-    if rec and isinstance(rec, (list, tuple)) and (len(rec) == 2):
-        parts.append(f'Recommended range: {rec[0]}–{rec[1]}')
-    return '  \n'.join(parts)
+    if rec and isinstance(rec, (list, tuple)) and len(rec) == 2:
+        parts.append(f"Recommended range: {rec[0]}–{rec[1]}")
+    return "  \n".join(parts)  # newlines become multi-line tooltips
+
 
 def _hint_if_out_of_rec(val, spec):
     """Show a small caption if current value is outside recommended range."""
     try:
-        show = st.session_state.get('_show_hints', True)
+        show = st.session_state.get("_show_hints", True)
         if not show or not spec:
             return
-        rec = spec.get('rec')
+        rec = spec.get("rec")
         if not (isinstance(rec, (list, tuple)) and len(rec) == 2):
             return
-        lo, hi = (float(rec[0]), float(rec[1]))
+        lo, hi = float(rec[0]), float(rec[1])
         fv = float(val)
         if fv < lo or fv > hi:
-            st.caption(f'⚠️ Outside the typical range ({lo}–{hi}). Sanity-check this choice.')
+            st.caption(f"⚠️ Outside the typical range ({lo}–{hi}). Sanity-check this choice.")
     except Exception:
         pass
 
-def render_param_controls(title: str, params: dict, *, group_keys: Optional[List[str]]=None, prefix: str='') -> dict:
+def render_param_controls(title: str, params: dict, *, group_keys: Optional[List[str]] = None, prefix: str = "") -> dict:
     """
     Render Streamlit inputs for keys in `params` or explicit `group_keys`.
     If a key is missing or is None, use a sensible default from PARAM_SPECS.
     """
-
     def _default_from_spec(spec, key=None):
         if not spec:
-            return ''
-        if key == 'grant_month':
+            return ""
+        if key == "grant_month":
             return -1
-        if 'default' in spec:
-            return spec['default']
-        t = spec.get('type')
-        if t == 'bool':
-            return False
-        if t == 'int':
-            return int(spec.get('min', 0))
-        if t == 'float':
-            return float(spec.get('min', 0.0))
-        if t == 'market_inflow':
-            return {'community_studio': 0, 'home_studio': 0, 'no_access': 0}
-        if t == 'json':
-            return {}
-        return ''
+        if "default" in spec:
+            return spec["default"]
+        t = spec.get("type")
+        if t == "bool":  return False
+        if t == "int":   return int(spec.get("min", 0))
+        if t == "float": return float(spec.get("min", 0.0))
+        if t == "market_inflow":
+            return {"community_studio": 0, "home_studio": 0, "no_access": 0}
+        if t == "json":  return {}
+        return ""
 
     def _clamp_num(val, lo, hi):
         try:
             return min(max(val, lo), hi)
         except Exception:
             return lo
+
     out = dict(params)
-    st.markdown(f'**{title}**')
+    st.markdown(f"**{title}**")
+
     keys = group_keys if group_keys else list(params.keys())
     for k in keys:
         spec = PARAM_SPECS.get(k)
-        label = spec['label'] if spec and 'label' in spec else k
-        wid_key = f'{prefix}_{k}'
+        label = spec["label"] if spec and "label" in spec else k
+        wid_key = f"{prefix}_{k}"
+
+        # get current value; if missing or None, choose a default
         v = params.get(k, None)
-        state_key = f'{prefix}_{k}'
+        state_key = f"{prefix}_{k}"
         if state_key in st.session_state:
             v = st.session_state[state_key]
         else:
             v = params.get(k, _default_from_spec(spec, key=k))
+            
         if v is None:
             v = _default_from_spec(spec, key=k)
-        t = spec['type'] if spec else None
-        if t == 'bool':
+
+        t = spec["type"] if spec else None
+
+        if t == "bool":
             out[k] = st.checkbox(label, value=bool(v), key=wid_key, help=_help_text(spec))
-        elif t == 'int':
-            lo = int(spec.get('min', 0))
-            hi = int(spec.get('max', 100))
-            step = int(spec.get('step', 1)) or 1
+
+        elif t == "int":
+            lo = int(spec.get("min", 0)); hi = int(spec.get("max", 100))
+            step = int(spec.get("step", 1)) or 1
             try:
                 v_int = int(v) if v is not None else lo
             except Exception:
                 v_int = lo
             v_int = _clamp_num(v_int, lo, hi)
+        
             try:
-                out[k] = int(st.slider(label, min_value=lo, max_value=hi, step=step, value=int(v_int), key=wid_key, help=_help_text(spec)))
+                out[k] = int(st.slider(
+                    label, min_value=lo, max_value=hi, step=step, value=int(v_int),
+                    key=wid_key, help=_help_text(spec)
+                ))
                 _hint_if_out_of_rec(out[k], spec)
             except Exception:
-                out[k] = int(st.number_input(label, min_value=lo, max_value=hi, step=step, value=int(v_int), key=f'{wid_key}__ni', help=_help_text(spec)))
+                # use a distinct key to avoid duplicate registration
+                out[k] = int(st.number_input(
+                    label, min_value=lo, max_value=hi, step=step, value=int(v_int),
+                    key=f"{wid_key}__ni", help=_help_text(spec)
+                ))
                 _hint_if_out_of_rec(out[k], spec)
-        elif t == 'float':
-            lo = float(spec.get('min', 0.0))
-            hi = float(spec.get('max', 1.0))
-            step = float(spec.get('step', 0.01)) or 0.01
+        
+        elif t == "float":
+            lo = float(spec.get("min", 0.0)); hi = float(spec.get("max", 1.0))
+            step = float(spec.get("step", 0.01)) or 0.01
             try:
                 v_f = float(v) if v is not None else lo
             except Exception:
                 v_f = lo
             v_f = _clamp_num(v_f, lo, hi)
+        
             try:
-                out[k] = float(st.slider(label, min_value=lo, max_value=hi, step=step, value=float(v_f), key=wid_key, help=_help_text(spec)))
+                out[k] = float(st.slider(
+                    label, min_value=lo, max_value=hi, step=step, value=float(v_f),
+                    key=wid_key, help=_help_text(spec)
+                ))
                 _hint_if_out_of_rec(out[k], spec)
             except Exception:
-                out[k] = float(st.number_input(label, min_value=lo, max_value=hi, step=step, value=float(v_f), key=f'{wid_key}__ni', help=_help_text(spec)))
+                out[k] = float(st.number_input(
+                    label, min_value=lo, max_value=hi, step=step, value=float(v_f),
+                    key=f"{wid_key}__ni", help=_help_text(spec)
+                ))
                 _hint_if_out_of_rec(out[k], spec)
-        elif t == 'market_inflow':
-            base = f'{wid_key}'
+
+        elif t == "market_inflow":
+            base = f"{wid_key}"
             cur = _normalize_market_inflow(v if isinstance(v, dict) else {})
-            c_def = st.session_state.get(f'{base}_c', cur['community_studio'])
-            h_def = st.session_state.get(f'{base}_h', cur['home_studio'])
-            n_def = st.session_state.get(f'{base}_n', cur['no_access'])
+            c_def = st.session_state.get(f"{base}_c", cur["community_studio"])
+            h_def = st.session_state.get(f"{base}_h", cur["home_studio"])
+            n_def = st.session_state.get(f"{base}_n", cur["no_access"])
+        
             help_txt = _help_text(spec)
-            c = st.slider('Community studio inflow', 0, 50, int(c_def), key=f'{base}_c', help=help_txt)
-            h = st.slider('Home studio inflow', 0, 50, int(h_def), key=f'{base}_h', help=help_txt)
-            n = st.slider('No access inflow', 0, 50, int(n_def), key=f'{base}_n', help=help_txt)
-            out[k] = {'community_studio': c, 'home_studio': h, 'no_access': n}
-            _hint_if_out_of_rec(c, spec)
-            _hint_if_out_of_rec(h, spec)
-            _hint_if_out_of_rec(n, spec)
+            c = st.slider("Community studio inflow", 0, 50, int(c_def), key=f"{base}_c", help=help_txt)
+            h = st.slider("Home studio inflow",      0, 50, int(h_def), key=f"{base}_h", help=help_txt)
+            n = st.slider("No access inflow",        0, 50, int(n_def), key=f"{base}_n", help=help_txt)
+        
+            out[k] = {"community_studio": c, "home_studio": h, "no_access": n}
+            _hint_if_out_of_rec(c, spec); _hint_if_out_of_rec(h, spec); _hint_if_out_of_rec(n, spec)
+        
+            # Keep a synced parent copy too (optional)
             st.session_state[base] = out[k]
+
+    # (no inner expanders; called inside parent expander)
     return out
+
 
 def _sum_col(df_, name):
     if df_ is None or not isinstance(df_, pd.DataFrame):
@@ -486,6 +904,8 @@ def _sum_col(df_, name):
     if name not in df_.columns:
         return 0.0
     return float(df_[name].fillna(0).sum())
+
+# -------- SBA export paths / file-handling helpers --------
 import os, json, shutil, tempfile, hashlib, datetime
 from pathlib import Path
 
@@ -493,7 +913,7 @@ def _project_root() -> Path:
     """Best-effort project root: climb from this file until we find a marker; fallback to parent."""
     here = Path(__file__).resolve()
     for p in [here] + list(here.parents):
-        if (p / '.git').exists() or (p / 'pyproject.toml').exists() or (p / 'requirements.txt').exists():
+        if (p / ".git").exists() or (p / "pyproject.toml").exists() or (p / "requirements.txt").exists():
             return p
     return here.parent
 
@@ -502,10 +922,10 @@ def _short_hash(obj) -> str:
         s = json.dumps(obj, sort_keys=True, default=str)
     except Exception:
         s = str(obj)
-    return hashlib.sha1(s.encode('utf-8')).hexdigest()[:8]
+    return hashlib.sha1(s.encode("utf-8")).hexdigest()[:8]
 
 def _timestamp() -> str:
-    return datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 def resolve_export_root(session_state) -> Path:
     """
@@ -515,20 +935,27 @@ def resolve_export_root(session_state) -> Path:
       3) <project_root>/runs/sba
       4) /tmp/sba_runs (last resort)
     """
-    v = session_state.get('SBA_EXPORT_ROOT')
+    # 1) session override
+    v = session_state.get("SBA_EXPORT_ROOT")
     if v:
         return Path(v).expanduser().resolve()
-    env = os.environ.get('SBA_EXPORT_ROOT')
+
+    # 2) env override
+    env = os.environ.get("SBA_EXPORT_ROOT")
     if env:
         return Path(env).expanduser().resolve()
+
+    # 3) repo-local default
     pr = _project_root()
-    runs_dir = pr / 'runs' / 'sba'
+    runs_dir = pr / "runs" / "sba"
     try:
         runs_dir.mkdir(parents=True, exist_ok=True)
         return runs_dir
     except Exception:
         pass
-    fallback = Path('/tmp/sba_runs')
+
+    # 4) last resort
+    fallback = Path("/tmp/sba_runs")
     fallback.mkdir(parents=True, exist_ok=True)
     return fallback
 
@@ -537,7 +964,7 @@ def make_run_dir(export_root: Path, config_snapshot: dict, seed_like=None) -> Pa
     Create a per-run directory:
       runs/sba/YYYYMMDD/HHMMSS_hash/
     """
-    date_dir = export_root / datetime.datetime.now().strftime('%Y%m%d')
+    date_dir = export_root / datetime.datetime.now().strftime("%Y%m%d")
     date_dir.mkdir(parents=True, exist_ok=True)
     rid = f"{_timestamp()}_{_short_hash({'cfg': config_snapshot, 'seed': seed_like})}"
     run_dir = date_dir / rid
@@ -546,25 +973,25 @@ def make_run_dir(export_root: Path, config_snapshot: dict, seed_like=None) -> Pa
 
 def atomic_write_bytes(dst: Path, data: bytes):
     """Write bytes atomically (tempfile + rename)."""
-    tmp = dst.with_suffix(dst.suffix + '.tmp')
-    with open(tmp, 'wb') as f:
+    tmp = dst.with_suffix(dst.suffix + ".tmp")
+    with open(tmp, "wb") as f:
         f.write(data)
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, dst)
 
 def atomic_write_text(dst: Path, text: str):
-    atomic_write_bytes(dst, text.encode('utf-8'))
+    atomic_write_bytes(dst, text.encode("utf-8"))
 
 def zip_run_folder(run_dir: Path) -> Path:
     """Create a zip archive of the run folder (sibling .zip)."""
-    zip_path = run_dir.with_suffix('.zip')
+    zip_path = run_dir.with_suffix(".zip")
     if zip_path.exists():
         zip_path.unlink()
-    shutil.make_archive(str(run_dir), 'zip', root_dir=run_dir)
+    shutil.make_archive(str(run_dir), "zip", root_dir=run_dir)
     return zip_path
 
-def prune_old_runs(export_root: Path, keep_per_day: int=10, keep_days: int=14):
+def prune_old_runs(export_root: Path, keep_per_day: int = 10, keep_days: int = 14):
     """
     Keep at most `keep_per_day` newest runs per day dir, and drop day dirs older than `keep_days`.
     Safe no-op if anything fails.
@@ -572,31 +999,45 @@ def prune_old_runs(export_root: Path, keep_per_day: int=10, keep_days: int=14):
     try:
         today = datetime.date.today()
         for day_dir in sorted((p for p in export_root.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True):
+            # Drop very old day folders
             try:
-                dt = datetime.datetime.strptime(day_dir.name, '%Y%m%d').date()
+                dt = datetime.datetime.strptime(day_dir.name, "%Y%m%d").date()
                 if (today - dt).days > keep_days:
                     shutil.rmtree(day_dir, ignore_errors=True)
                     continue
             except Exception:
                 pass
+
+            # Keep only the newest N run folders
             run_folders = sorted((p for p in day_dir.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True)
             for old in run_folders[keep_per_day:]:
                 shutil.rmtree(old, ignore_errors=True)
     except Exception:
         pass
+# -------- end helpers --------
 
+
+
+
+
+
+
+
+
+
+
+# ---- capture all plt.show() calls from your modular_simulator without touching it
 class FigureCapture:
-
-    def __init__(self, title_suffix: str=''):
+    def __init__(self, title_suffix: str = ""):
         self.title_suffix = title_suffix
         self._orig_show = None
         self.images: List[Tuple[str, bytes]] = []
         self.manifest = []
 
     def __enter__(self):
-        matplotlib.use('Agg', force=True)
+        matplotlib.use("Agg", force=True)
         self._orig_show = plt.show
-        counter = {'i': 0}
+        counter = {"i": 0}
 
         def _title_for(fig):
             parts = []
@@ -605,40 +1046,48 @@ class FigureCapture:
                 if txt:
                     parts.append(txt)
             for ax in fig.axes:
-                t = getattr(ax, 'get_title', lambda: '')()
+                t = getattr(ax, "get_title", lambda: "")()
                 if t:
                     parts.append(t)
-            return ' | '.join(parts).strip()
+            return " | ".join(parts).strip()
 
         def _ensure_suffix(fig):
             if not self.title_suffix:
                 return
-            has_any_title = any((ax.get_title() for ax in fig.get_axes()))
+            has_any_title = any(ax.get_title() for ax in fig.get_axes())
             if not has_any_title:
                 fig.suptitle(self.title_suffix)
 
         def _show(*args, **kwargs):
-            counter['i'] += 1
+            counter["i"] += 1
             fig = plt.gcf()
-            _ensure_suffix(fig)
-            has_suptitle = bool(fig._suptitle and fig._suptitle.get_text())
-            has_ax_titles = any((ax.get_title() for ax in fig.get_axes()))
+        
+            _ensure_suffix(fig)  # your existing helper
+        
+            # --- NEW: de-clash titles and improve spacing ---
+            has_suptitle  = bool(fig._suptitle and fig._suptitle.get_text())
+            has_ax_titles = any(ax.get_title() for ax in fig.get_axes())
+        
             if has_suptitle and has_ax_titles:
+                # Give the suptitle its own headroom and shrink it a touch.
                 fig._suptitle.set_y(0.98)
                 try:
                     fig._suptitle.set_fontsize(max(fig._suptitle.get_fontsize() - 2, 10))
                 except Exception:
                     pass
+                # Leave extra space at the top for the axis title(s).
                 fig.tight_layout(rect=[0, 0, 1, 0.94])
             else:
                 fig.tight_layout()
+        
             buf = io.BytesIO()
-            fig.savefig(buf, dpi=200, bbox_inches='tight', format='png')
+            fig.savefig(buf, dpi=200, bbox_inches="tight", format="png")
             buf.seek(0)
             fname = f"fig_{counter['i']:02d}.png"
             self.images.append((fname, buf.read()))
-            self.manifest.append({'file': fname, 'title': _title_for(fig)})
+            self.manifest.append({"file": fname, "title": _title_for(fig)})
             plt.close(fig)
+
         plt.show = _show
         return self
 
@@ -646,21 +1095,32 @@ class FigureCapture:
         if self._orig_show:
             plt.show = self._orig_show
 
+
+# ---------- caching ----------
 @st.cache_data(show_spinner=False)
 def get_defaults_cached():
+    # local import is fine; avoids surprises if modular_simulator reloads
     from modular_simulator import get_default_cfg
     return get_default_cfg()
+
+
+# ----------------------------- Advanced Panel -----------------------------
+# Read engine defaults (ALL_CAPS in modular_simulator.py)
 DEFAULTS = get_default_cfg()
 
 def _num(label, key, default=None, min_value=None, max_value=None, step=None, help=None, fmt=None):
+    # Fallback if default is non-numeric (dict/list/None/etc.)
     if not isinstance(default, (int, float)):
         default = min_value if isinstance(min_value, (int, float)) else 0
+    # Clamp into bounds if provided
     if isinstance(min_value, (int, float)) and default < min_value:
         default = min_value
     if isinstance(max_value, (int, float)) and default > max_value:
         default = max_value
-    use_float = any((isinstance(x, float) for x in (min_value, max_value, step) if x is not None)) or isinstance(default, float)
 
+    # --- Normalize numeric types: Streamlit requires value/min/max/step be the same type ---
+    # If any of min/max/step is float (or default is float), use float for all; else use int
+    use_float = any(isinstance(x, float) for x in (min_value, max_value, step) if x is not None) or isinstance(default, float)
     def _coerce(x):
         if x is None:
             return None
@@ -668,10 +1128,12 @@ def _num(label, key, default=None, min_value=None, max_value=None, step=None, he
             return float(x) if use_float else int(x)
         except Exception:
             return None
-    default = _coerce(default)
+    default   = _coerce(default)
     min_value = _coerce(min_value)
     max_value = _coerce(max_value)
-    step = _coerce(step)
+    step      = _coerce(step)
+
+    # Clean up stale session_state values
     if key in st.session_state:
         try:
             st.session_state[key] = _coerce(st.session_state[key])
@@ -679,23 +1141,32 @@ def _num(label, key, default=None, min_value=None, max_value=None, step=None, he
             del st.session_state[key]
     if key in st.session_state and st.session_state[key] is None:
         del st.session_state[key]
+
+    # Use default if no valid session value
     if key not in st.session_state:
         st.session_state[key] = default
+
     kw = dict(min_value=min_value, max_value=max_value, step=step, help=help, format=fmt)
-    return st.number_input(label, key=key, value=st.session_state[key], **{k: v for k, v in kw.items() if v is not None}, help='Type a numeric value. Use arrow keys for fine adjustments.')
+    return st.number_input(
+        label,
+        key=key,
+        value=st.session_state[key],
+        **{k: v for k, v in kw.items() if v is not None}
+    )
 
 def _json_or_scalar(label, key, default, help_text, scalar_type=float):
+    # Show the default as JSON if it’s composite, else as a string
     default_str = json.dumps(default) if isinstance(default, (dict, list, tuple)) else str(default)
     s = st.text_input(label, key=key, value=default_str, help=help_text)
     s = s.strip()
     if not s:
-        return None
+        return None  # don't override
     try:
-        if s.startswith('{') or s.startswith('['):
-            return json.loads(s)
-        return scalar_type(s)
+        if s.startswith("{") or s.startswith("["):
+            return json.loads(s)  # dict/list
+        return scalar_type(s)     # scalar (float/int)
     except Exception:
-        st.caption(f'⚠️ Invalid value for {label}; keeping default.')
+        st.caption(f"⚠️ Invalid value for {label}; keeping default.")
         return None
 
 def render_advanced_controls(defaults: dict) -> dict:
@@ -704,114 +1175,159 @@ def render_advanced_controls(defaults: dict) -> dict:
     Only values differing from None are included; callers can compare to defaults if desired.
     """
     adv = {}
-    st.sidebar.markdown('### Advanced')
-    st.sidebar.caption('Dial in details. Leave fields as-is to keep engine defaults.')
-    with st.sidebar.expander('Capacity & Hours', expanded=True):
-        _st_def = defaults.get('STATIONS')
-        _st_def_str = json.dumps(_st_def) if isinstance(_st_def, (dict, list)) else str(_st_def)
-        stations_str = st.text_input('Stations (JSON mapping: type -> count)', key='adv_STATIONS_str', value=_st_def_str, help='Example: {"wheels": 12, "tables": 6}')
-        try:
-            parsed = json.loads(stations_str) if stations_str.strip() else _st_def
-            if isinstance(parsed, (dict, list, int)):
-                adv['STATIONS'] = parsed
-            else:
-                st.caption('⚠️ STATIONS must be a dict/list/int; keeping default.')
-        except Exception:
-            st.caption('⚠️ Invalid JSON for STATIONS; keeping default.')
-        _us_def = defaults.get('USAGE_SHARE')
-        _us_def_str = json.dumps(_us_def) if isinstance(_us_def, (dict, list, tuple)) else str(_us_def)
-        _us_def = defaults.get('USAGE_SHARE')
-        _us_def_str = json.dumps(_us_def) if isinstance(_us_def, (dict, list, tuple)) else str(_us_def)
-        usage_share_str = st.text_input('Usage share per station type (JSON)', key='adv_USAGE_SHARE_str', value=_us_def_str, help='Examples: {"Hobbyist":{"wheels":0.5,"handbuilding":0.35,"glaze":0.15}, ...}')
-        txt = usage_share_str.strip()
-        if txt:
+    st.sidebar.markdown("### Advanced")
+    st.sidebar.caption("Dial in details. Leave fields as-is to keep engine defaults.")
+
+    # ---- Capacity & Hours
+    with st.sidebar.expander("Capacity & Hours", expanded=True):
+            # STATIONS: accept JSON mapping of type -> count
+            _st_def = defaults.get("STATIONS")
+            _st_def_str = json.dumps(_st_def) if isinstance(_st_def, (dict, list)) else str(_st_def)
+    
+            stations_str = st.text_input(
+                "Stations (JSON mapping: type -> count)",
+                key="adv_STATIONS_str",
+                value=_st_def_str,
+                help='Example: {"wheels": 12, "tables": 6}'
+            )
             try:
-                if txt.startswith('{') or txt.startswith('['):
-                    adv['USAGE_SHARE'] = json.loads(txt)
+                parsed = json.loads(stations_str) if stations_str.strip() else _st_def
+                if isinstance(parsed, (dict, list, int)):
+                    adv["STATIONS"] = parsed
                 else:
-                    st.caption('⚠️ USAGE_SHARE must be JSON (dict/list). Keeping default.')
+                    st.caption("⚠️ STATIONS must be a dict/list/int; keeping default.")
             except Exception:
-                st.caption('⚠️ Invalid JSON for USAGE_SHARE; keeping default.')
-        adv['SESSIONS_PER_WEEK'] = _num('Sessions per week', 'adv_SESSIONS_PER_WEEK', defaults.get('SESSIONS_PER_WEEK'), 1, 70, 1, help='Member behavior assumptions by archetype. Adjust only if you have measured data.')
-        adv['SESSION_HOURS'] = _num('Hours per session', 'adv_SESSION_HOURS', defaults.get('SESSION_HOURS'), 0.5, 12.0, 0.5, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['OPEN_HOURS_PER_WEEK'] = _num('Open hours per week', 'adv_OPEN_HOURS_PER_WEEK', defaults.get('OPEN_HOURS_PER_WEEK'), 1, 168, 1, help='Operational capacity assumptions used to compute membership limits.')
-        adv['CAPACITY_DAMPING_BETA'] = _num('Capacity damping β (higher = softer cap)', 'adv_CAPACITY_DAMPING_BETA', defaults.get('CAPACITY_DAMPING_BETA'), 0.0, 10.0, 0.1, help='Operational capacity assumptions used to compute membership limits.')
-    with st.sidebar.expander('Top-of-Funnel & Referrals', expanded=True):
-        adv['BASELINE_RATE_HOME'] = _num('Baseline join rate (Home potters)', 'adv_BASELINE_RATE_HOME', defaults.get('BASELINE_RATE_HOME'), 0.0, 1.0, 0.001, help='Fractional rate (0–1). For example, 6% = 0.06.')
-        adv['BASELINE_RATE_COMMUNITY'] = _num('Baseline join rate (Community studio users)', 'adv_BASELINE_RATE_COMMUNITY', defaults.get('BASELINE_RATE_COMMUNITY'), 0.0, 1.0, 0.001, help='Fractional rate (0–1). For example, 6% = 0.06.')
-        adv['BASELINE_RATE_NO_ACCESS'] = _num('Baseline join rate (No access)', 'adv_BASELINE_RATE_NO_ACCESS', defaults.get('BASELINE_RATE_NO_ACCESS'), 0.0, 1.0, 0.001, help='Fractional rate (0–1). For example, 6% = 0.06.')
-        adv['HOME_INFLOW'] = _num('Monthly inflow (Home)', 'adv_HOME_INFLOW', defaults.get('HOME_INFLOW'), 0, 100000, 10, help='Market dynamics: higher values speed up growth; churn reduces active members.')
-        adv['COMMUNITY_INFLOW'] = _num('Monthly inflow (Community)', 'adv_COMMUNITY_INFLOW', defaults.get('COMMUNITY_INFLOW'), 0, 100000, 10, help='Market dynamics: higher values speed up growth; churn reduces active members.')
-        adv['NO_ACCESS_INFLOW'] = _num('Monthly inflow (No access)', 'adv_NO_ACCESS_INFLOW', defaults.get('NO_ACCESS_INFLOW'), 0, 100000, 10, help='Market dynamics: higher values speed up growth; churn reduces active members.')
-        adv['REFERRAL_RATE_PER_MEMBER'] = _num('Referrals per member per month', 'adv_REFERRAL_RATE_PER_MEMBER', defaults.get('REFERRAL_RATE_PER_MEMBER'), 0.0, 2.0, 0.01, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['REFERRAL_CONV'] = _num('Referral conversion rate (0–1)', 'adv_REFERRAL_CONV', defaults.get('REFERRAL_CONV'), 0.0, 1.0, 0.01, help='Fractional rate (0–1). For example, 6% = 0.06.')
-        adv['MARKETING_COST_BASE'] = _num('Marketing base cost ($/mo)', 'adv_MARKETING_COST_BASE', defaults.get('MARKETING_COST_BASE'), 0, 50000, 50, help='Enter the monthly dollar amount. Use 0 if not applicable.')
-        adv['MARKETING_RAMP_MONTHS'] = _num('Marketing ramp months', 'adv_MARKETING_RAMP_MONTHS', defaults.get('MARKETING_RAMP_MONTHS'), 0, 36, 1, help='Time length for this setting. Choose years unless otherwise noted.')
-        adv['MARKETING_RAMP_MULTIPLIER'] = _num('Marketing ramp multiplier', 'adv_MARKETING_RAMP_MULTIPLIER', defaults.get('MARKETING_RAMP_MULTIPLIER'), 0.0, 10.0, 0.1, help='Type a numeric value. Use arrow keys for fine adjustments.')
-    with st.sidebar.expander('Firing & Utilities', expanded=False):
-        adv['BASE_FIRINGS_PER_MONTH'] = _num('Base firings / month', 'adv_BASE_FIRINGS_PER_MONTH', defaults.get('BASE_FIRINGS_PER_MONTH'), 0, 60, 1, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['MIN_FIRINGS_PER_MONTH'] = _num('Min firings / month', 'adv_MIN_FIRINGS_PER_MONTH', defaults.get('MIN_FIRINGS_PER_MONTH'), 0, 60, 1, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['MAX_FIRINGS_PER_MONTH'] = _num('Max firings / month', 'adv_MAX_FIRINGS_PER_MONTH', defaults.get('MAX_FIRINGS_PER_MONTH'), 0, 120, 1, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['DYNAMIC_FIRINGS'] = _num('Dynamic firings (0=off,1=on)', 'adv_DYNAMIC_FIRINGS', defaults.get('DYNAMIC_FIRINGS'), 0, 1, 1, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['REFERENCE_MEMBERS_FOR_BASE_FIRINGS'] = _num('Reference members for base firings', 'adv_REFERENCE_MEMBERS_FOR_BASE_FIRINGS', defaults.get('REFERENCE_MEMBERS_FOR_BASE_FIRINGS'), 1, 500, 1, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['KWH_PER_FIRING_KMT1027'] = _num('kWh per firing (KMT 1027)', 'adv_KWH_PER_FIRING_KMT1027', defaults.get('KWH_PER_FIRING_KMT1027'), 0.0, 5000.0, 1.0, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['KWH_PER_FIRING_KMT1427'] = _num('kWh per firing (KMT 1427)', 'adv_KWH_PER_FIRING_KMT1427', defaults.get('KWH_PER_FIRING_KMT1427'), 0.0, 5000.0, 1.0, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['WATER_COST_PER_GALLON'] = _num('Water cost ($/gal)', 'adv_WATER_COST_PER_GALLON', defaults.get('WATER_COST_PER_GALLON'), 0.0, 10.0, 0.01, help='Enter the monthly dollar amount. Use 0 if not applicable.')
-    with st.sidebar.expander('Classes & Events', expanded=False):
-        adv['CLASS_INSTR_RATE_PER_HR'] = _num('Instructor rate ($/hr)', 'adv_CLASS_INSTR_RATE_PER_HR', defaults.get('CLASS_INSTR_RATE_PER_HR'), 0, 500, 1, help='Fractional rate (0–1). For example, 6% = 0.06.')
-        adv['CLASS_HOURS_PER_COHORT'] = _num('Hours per cohort', 'adv_CLASS_HOURS_PER_COHORT', defaults.get('CLASS_HOURS_PER_COHORT'), 0, 200, 1, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['CLASS_FILL_MEAN'] = _num('Class fill (avg seats)', 'adv_CLASS_FILL_MEAN', defaults.get('CLASS_FILL_MEAN'), 0, 50, 1, help='Controls revenue/throughput for this activity. Adjust only if you run this offering.')
-        adv['CLASS_COST_PER_STUDENT'] = _num('Variable cost per student ($)', 'adv_CLASS_COST_PER_STUDENT', defaults.get('CLASS_COST_PER_STUDENT'), 0, 2000, 1, help='Enter the monthly dollar amount. Use 0 if not applicable.')
-        adv['EVENT_CONV_RATE'] = _num('Event conversion to member (0–1)', 'adv_EVENT_CONV_RATE', defaults.get('EVENT_CONV_RATE'), 0.0, 1.0, 0.01, help='Controls revenue/throughput for this activity. Adjust only if you run this offering.')
-        adv['EVENT_CONV_LAG_MO'] = _num('Event conversion lag (months)', 'adv_EVENT_CONV_LAG_MO', defaults.get('EVENT_CONV_LAG_MO'), 0, 12, 1, help='Time length for this setting. Choose years unless otherwise noted.')
-        adv['WORKSHOP_CONV_RATE'] = _num('Workshop conversion (0–1)', 'adv_WORKSHOP_CONV_RATE', defaults.get('WORKSHOP_CONV_RATE'), 0.0, 1.0, 0.01, help='Controls revenue/throughput for this activity. Adjust only if you run this offering.')
-        adv['WORKSHOP_CONV_LAG_MO'] = _num('Workshop conversion lag (months)', 'adv_WORKSHOP_CONV_LAG_MO', defaults.get('WORKSHOP_CONV_LAG_MO'), 0, 12, 1, help='Time length for this setting. Choose years unless otherwise noted.')
-    with st.sidebar.expander('Financing', expanded=False):
-        adv['LOAN_ANNUAL_RATE'] = _num('Loan annual rate (APR)', 'adv_LOAN_ANNUAL_RATE', defaults.get('LOAN_ANNUAL_RATE'), 0.0, 0.5, 0.005, fmt='%.3f', help='Fractional rate (0–1). For example, 6% = 0.06.')
-        adv['LOAN_TERM_YEARS'] = _num('Loan term (years)', 'adv_LOAN_TERM_YEARS', defaults.get('LOAN_TERM_YEARS'), 0, 20, 1, help='Time length for this setting. Choose years unless otherwise noted.')
-    with st.sidebar.expander('Overheads & Taxes (advanced)', expanded=False):
-        adv['INSURANCE_COST'] = _num('Insurance ($/mo)', 'adv_INSURANCE_COST', defaults.get('INSURANCE_COST'), 0, 20000, 10, help='Enter the monthly dollar amount. Use 0 if not applicable.')
-        adv['GLAZE_COST_PER_MONTH'] = _num('Glaze cost ($/mo)', 'adv_GLAZE_COST_PER_MONTH', defaults.get('GLAZE_COST_PER_MONTH'), 0, 10000, 10, help='Enter the monthly dollar amount. Use 0 if not applicable.')
-        adv['HEATING_COST_SUMMER'] = _num('Heating ($/mo) summer', 'adv_HEATING_COST_SUMMER', defaults.get('HEATING_COST_SUMMER'), 0, 20000, 10, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['HEATING_COST_WINTER'] = _num('Heating ($/mo) winter', 'adv_HEATING_COST_WINTER', defaults.get('HEATING_COST_WINTER'), 0, 20000, 10, help='Type a numeric value. Use arrow keys for fine adjustments.')
-        adv['MA_SALES_TAX_RATE'] = _num('MA sales tax rate (0–1)', 'adv_MA_SALES_TAX_RATE', defaults.get('MA_SALES_TAX_RATE'), 0.0, 0.15, 0.001, fmt='%.3f', help='Fractional rate (0–1). For example, 6% = 0.06.')
-        adv['SALES_TAX_REMIT_FREQUENCY_MONTHS'] = _num('Sales tax remit frequency (months)', 'adv_SALES_TAX_REMIT_FREQUENCY_MONTHS', defaults.get('SALES_TAX_REMIT_FREQUENCY_MONTHS'), 1, 12, 1, help='Fractional rate (0–1). For example, 6% = 0.06.')
-        adv['ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS'] = _num('Estimated tax remit frequency (months)', 'adv_ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS', defaults.get('ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS'), 1, 12, 1, help='Fractional rate (0–1). For example, 6% = 0.06.')
-    with st.sidebar.expander('Seasonality (power user)', expanded=False):
-        adv['NORMALIZE_SEASONALITY'] = _num('Normalize seasonality (0=off,1=on)', 'adv_NORMALIZE_SEASONALITY', defaults.get('NORMALIZE_SEASONALITY'), 0, 1, 1, help='Type a numeric value. Use arrow keys for fine adjustments.')
+                st.caption("⚠️ Invalid JSON for STATIONS; keeping default.")
+    
+            # USAGE_SHARE: accept float (0–1) OR JSON mapping/list of shares per station type
+            _us_def = defaults.get("USAGE_SHARE")
+            _us_def_str = json.dumps(_us_def) if isinstance(_us_def, (dict, list, tuple)) else str(_us_def)
+    
+             # USAGE_SHARE: must be JSON mapping/list of shares per station type
+            _us_def = defaults.get("USAGE_SHARE")
+            _us_def_str = json.dumps(_us_def) if isinstance(_us_def, (dict, list, tuple)) else str(_us_def)
+
+            usage_share_str = st.text_input(
+                "Usage share per station type (JSON)",
+                key="adv_USAGE_SHARE_str",
+                value=_us_def_str,
+                help='Examples: {"Hobbyist":{"wheels":0.5,"handbuilding":0.35,"glaze":0.15}, ...}'
+            )
+            txt = usage_share_str.strip()
+            if txt:
+                try:
+                    if txt.startswith("{") or txt.startswith("["):
+                        adv["USAGE_SHARE"] = json.loads(txt)  # dict/list
+                    else:
+                        st.caption("⚠️ USAGE_SHARE must be JSON (dict/list). Keeping default.")
+                except Exception:
+                    st.caption("⚠️ Invalid JSON for USAGE_SHARE; keeping default.")
+    
+            adv["SESSIONS_PER_WEEK"]     = _num("Sessions per week", "adv_SESSIONS_PER_WEEK", defaults.get("SESSIONS_PER_WEEK"), 1, 70, 1)
+            adv["SESSION_HOURS"]         = _num("Hours per session", "adv_SESSION_HOURS", defaults.get("SESSION_HOURS"), 0.5, 12.0, 0.5)
+            adv["OPEN_HOURS_PER_WEEK"]   = _num("Open hours per week", "adv_OPEN_HOURS_PER_WEEK", defaults.get("OPEN_HOURS_PER_WEEK"), 1, 168, 1)
+            adv["CAPACITY_DAMPING_BETA"] = _num("Capacity damping β (higher = softer cap)", "adv_CAPACITY_DAMPING_BETA", defaults.get("CAPACITY_DAMPING_BETA"), 0.0, 10.0, 0.1)
+
+    # ---- Top of Funnel & Referrals
+    with st.sidebar.expander("Top-of-Funnel & Referrals", expanded=True):
+        adv["BASELINE_RATE_HOME"]        = _num("Baseline join rate (Home potters)", "adv_BASELINE_RATE_HOME", defaults.get("BASELINE_RATE_HOME"), 0.0, 1.0, 0.001)
+        adv["BASELINE_RATE_COMMUNITY"]   = _num("Baseline join rate (Community studio users)", "adv_BASELINE_RATE_COMMUNITY", defaults.get("BASELINE_RATE_COMMUNITY"), 0.0, 1.0, 0.001)
+        adv["BASELINE_RATE_NO_ACCESS"]   = _num("Baseline join rate (No access)", "adv_BASELINE_RATE_NO_ACCESS", defaults.get("BASELINE_RATE_NO_ACCESS"), 0.0, 1.0, 0.001)
+        adv["HOME_INFLOW"]               = _num("Monthly inflow (Home)", "adv_HOME_INFLOW", defaults.get("HOME_INFLOW"), 0, 100000, 10)
+        adv["COMMUNITY_INFLOW"]          = _num("Monthly inflow (Community)", "adv_COMMUNITY_INFLOW", defaults.get("COMMUNITY_INFLOW"), 0, 100000, 10)
+        adv["NO_ACCESS_INFLOW"]          = _num("Monthly inflow (No access)", "adv_NO_ACCESS_INFLOW", defaults.get("NO_ACCESS_INFLOW"), 0, 100000, 10)
+        adv["REFERRAL_RATE_PER_MEMBER"]  = _num("Referrals per member per month", "adv_REFERRAL_RATE_PER_MEMBER", defaults.get("REFERRAL_RATE_PER_MEMBER"), 0.0, 2.0, 0.01)
+        adv["REFERRAL_CONV"]             = _num("Referral conversion rate (0–1)", "adv_REFERRAL_CONV", defaults.get("REFERRAL_CONV"), 0.0, 1.0, 0.01)
+        adv["MARKETING_COST_BASE"]       = _num("Marketing base cost ($/mo)", "adv_MARKETING_COST_BASE", defaults.get("MARKETING_COST_BASE"), 0, 50000, 50)
+        adv["MARKETING_RAMP_MONTHS"]     = _num("Marketing ramp months", "adv_MARKETING_RAMP_MONTHS", defaults.get("MARKETING_RAMP_MONTHS"), 0, 36, 1)
+        adv["MARKETING_RAMP_MULTIPLIER"] = _num("Marketing ramp multiplier", "adv_MARKETING_RAMP_MULTIPLIER", defaults.get("MARKETING_RAMP_MULTIPLIER"), 0.0, 10.0, 0.1)
+
+    # ---- Firing & Utilities
+    with st.sidebar.expander("Firing & Utilities", expanded=False):
+        adv["BASE_FIRINGS_PER_MONTH"]              = _num("Base firings / month", "adv_BASE_FIRINGS_PER_MONTH", defaults.get("BASE_FIRINGS_PER_MONTH"), 0, 60, 1)
+        adv["MIN_FIRINGS_PER_MONTH"]               = _num("Min firings / month", "adv_MIN_FIRINGS_PER_MONTH", defaults.get("MIN_FIRINGS_PER_MONTH"), 0, 60, 1)
+        adv["MAX_FIRINGS_PER_MONTH"]               = _num("Max firings / month", "adv_MAX_FIRINGS_PER_MONTH", defaults.get("MAX_FIRINGS_PER_MONTH"), 0, 120, 1)
+        adv["DYNAMIC_FIRINGS"]                     = _num("Dynamic firings (0=off,1=on)", "adv_DYNAMIC_FIRINGS", defaults.get("DYNAMIC_FIRINGS"), 0, 1, 1)
+        adv["REFERENCE_MEMBERS_FOR_BASE_FIRINGS"]  = _num("Reference members for base firings", "adv_REFERENCE_MEMBERS_FOR_BASE_FIRINGS", defaults.get("REFERENCE_MEMBERS_FOR_BASE_FIRINGS"), 1, 500, 1)
+        adv["KWH_PER_FIRING_KMT1027"]              = _num("kWh per firing (KMT 1027)", "adv_KWH_PER_FIRING_KMT1027", defaults.get("KWH_PER_FIRING_KMT1027"), 0.0, 5000.0, 1.0)
+        adv["KWH_PER_FIRING_KMT1427"]              = _num("kWh per firing (KMT 1427)", "adv_KWH_PER_FIRING_KMT1427", defaults.get("KWH_PER_FIRING_KMT1427"), 0.0, 5000.0, 1.0)
+        adv["WATER_COST_PER_GALLON"]               = _num("Water cost ($/gal)", "adv_WATER_COST_PER_GALLON", defaults.get("WATER_COST_PER_GALLON"), 0.0, 10.0, 0.01)
+
+    # ---- Classes & Events
+    with st.sidebar.expander("Classes & Events", expanded=False):
+        adv["CLASS_INSTR_RATE_PER_HR"] = _num("Instructor rate ($/hr)", "adv_CLASS_INSTR_RATE_PER_HR", defaults.get("CLASS_INSTR_RATE_PER_HR"), 0, 500, 1)
+        adv["CLASS_HOURS_PER_COHORT"]  = _num("Hours per cohort", "adv_CLASS_HOURS_PER_COHORT", defaults.get("CLASS_HOURS_PER_COHORT"), 0, 200, 1)
+        adv["CLASS_FILL_MEAN"]         = _num("Class fill (avg seats)", "adv_CLASS_FILL_MEAN", defaults.get("CLASS_FILL_MEAN"), 0, 50, 1)
+        adv["CLASS_COST_PER_STUDENT"]  = _num("Variable cost per student ($)", "adv_CLASS_COST_PER_STUDENT", defaults.get("CLASS_COST_PER_STUDENT"), 0, 2000, 1)
+        adv["EVENT_CONV_RATE"]         = _num("Event conversion to member (0–1)", "adv_EVENT_CONV_RATE", defaults.get("EVENT_CONV_RATE"), 0.0, 1.0, 0.01)
+        adv["EVENT_CONV_LAG_MO"]       = _num("Event conversion lag (months)", "adv_EVENT_CONV_LAG_MO", defaults.get("EVENT_CONV_LAG_MO"), 0, 12, 1)
+        adv["WORKSHOP_CONV_RATE"]      = _num("Workshop conversion (0–1)", "adv_WORKSHOP_CONV_RATE", defaults.get("WORKSHOP_CONV_RATE"), 0.0, 1.0, 0.01)
+        adv["WORKSHOP_CONV_LAG_MO"]    = _num("Workshop conversion lag (months)", "adv_WORKSHOP_CONV_LAG_MO", defaults.get("WORKSHOP_CONV_LAG_MO"), 0, 12, 1)
+
+    # ---- Financing
+    with st.sidebar.expander("Financing", expanded=False):
+        adv["LOAN_ANNUAL_RATE"] = _num("Loan annual rate (APR)", "adv_LOAN_ANNUAL_RATE", defaults.get("LOAN_ANNUAL_RATE"), 0.0, 0.5, 0.005, fmt="%.3f")
+        adv["LOAN_TERM_YEARS"]  = _num("Loan term (years)", "adv_LOAN_TERM_YEARS", defaults.get("LOAN_TERM_YEARS"), 0, 20, 1)
+
+    # ---- Overheads & Taxes (optional)
+    with st.sidebar.expander("Overheads & Taxes (advanced)", expanded=False):
+        adv["INSURANCE_COST"]                 = _num("Insurance ($/mo)", "adv_INSURANCE_COST", defaults.get("INSURANCE_COST"), 0, 20000, 10)
+        adv["GLAZE_COST_PER_MONTH"]          = _num("Glaze cost ($/mo)", "adv_GLAZE_COST_PER_MONTH", defaults.get("GLAZE_COST_PER_MONTH"), 0, 10000, 10)
+        adv["HEATING_COST_SUMMER"]           = _num("Heating ($/mo) summer", "adv_HEATING_COST_SUMMER", defaults.get("HEATING_COST_SUMMER"), 0, 20000, 10)
+        adv["HEATING_COST_WINTER"]           = _num("Heating ($/mo) winter", "adv_HEATING_COST_WINTER", defaults.get("HEATING_COST_WINTER"), 0, 20000, 10)
+        adv["MA_SALES_TAX_RATE"]             = _num("MA sales tax rate (0–1)", "adv_MA_SALES_TAX_RATE", defaults.get("MA_SALES_TAX_RATE"), 0.0, 0.15, 0.001, fmt="%.3f")
+        adv["SALES_TAX_REMIT_FREQUENCY_MONTHS"]    = _num("Sales tax remit frequency (months)", "adv_SALES_TAX_REMIT_FREQUENCY_MONTHS", defaults.get("SALES_TAX_REMIT_FREQUENCY_MONTHS"), 1, 12, 1)
+        adv["ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS"]= _num("Estimated tax remit frequency (months)", "adv_ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS", defaults.get("ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS"), 1, 12, 1)
+
+    # ---- Seasonality (power user)
+    with st.sidebar.expander("Seasonality (power user)", expanded=False):
+        adv["NORMALIZE_SEASONALITY"] = _num("Normalize seasonality (0=off,1=on)", "adv_NORMALIZE_SEASONALITY", defaults.get("NORMALIZE_SEASONALITY"), 0, 1, 1)
+        # Exposing the raw WEIGHTS as a JSON string would be next; keep simple for now.
+
+    # Keep only keys whose values are not None
     return {k: v for k, v in adv.items() if v is not None}
 
-def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: Optional[str]=None):
+def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: Optional[str] = None):
+    # make sure cache_key participates in the hash even if unused
     if cache_key is None:
         cache_key = _make_cache_key(env, strat, seed)
+
+    # ✅ build overrides BEFORE using ov
     ov = build_overrides(env, strat)
-    ov['RANDOM_SEED'] = seed
+
+    ov["RANDOM_SEED"] = seed
+
     title_suffix = f"{env['name']} | {strat['name']}"
     with FigureCapture(title_suffix) as cap:
         try:
             res = run_original_once(SCRIPT, ov)
         except Exception as e:
             import traceback
-            st.error(f'Simulation failed: {e}')
-            st.caption('Full traceback:')
-            st.exception(e)
+            st.error(f"Simulation failed: {e}")
+            st.caption("Full traceback:")
+            st.exception(e)  # shows stack with line numbers
+            # Optional: show the overrides that triggered the failure
             try:
                 import json
-                st.expander('Overrides payload (ov)').write(json.dumps(ov, indent=2, default=str))
+                st.expander("Overrides payload (ov)").write(json.dumps(ov, indent=2, default=str))
             except Exception:
                 pass
-            return (pd.DataFrame(), None, [], [])
-    df_cell, eff = res if isinstance(res, tuple) else (res, None)
-    df_cell = df_cell.copy()
-    df_cell['environment'] = env['name']
-    df_cell['strategy'] = strat['name']
-    if 'simulation_id' not in df_cell.columns:
-        df_cell['simulation_id'] = 0
-    return (df_cell, eff, cap.images, cap.manifest)
-if st.sidebar.button('Clear cache'):
-    run_cell_cached.clear()
-    st.sidebar.success('Cache cleared.')
+            return pd.DataFrame(), None, [], []
 
+    df_cell, eff = (res if isinstance(res, tuple) else (res, None))
+
+    df_cell = df_cell.copy()
+    df_cell["environment"] = env["name"]
+    df_cell["strategy"]    = strat["name"]
+    if "simulation_id" not in df_cell.columns:
+        df_cell["simulation_id"] = 0
+    return df_cell, eff, cap.images, cap.manifest
+
+if st.sidebar.button("Clear cache"):
+        run_cell_cached.clear()  # Streamlit 1.25+: .clear() on the function
+        st.sidebar.success("Cache cleared.")
+
+# ---------- column detection & timings (robust) ----------
 def pick_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     for c in candidates:
         if c in df.columns:
@@ -823,296 +1339,877 @@ def _first_cash_negative(g: pd.DataFrame, month_col: str, cash_col: str) -> floa
     m = g.loc[g[cash_col] < 0, month_col]
     return float(m.iloc[0]) if not m.empty else np.nan
 
-def _first_sustained_ge_zero(g: pd.DataFrame, month_col: str, cf_col: str, k: int=3) -> float:
+def _first_sustained_ge_zero(g: pd.DataFrame, month_col: str, cf_col: str, k: int = 3) -> float:
     g = g.sort_values(month_col)
     ok = (g[cf_col] >= 0).astype(int).rolling(k, min_periods=k).sum() == k
     m = g.loc[ok.values, month_col]
     return float(m.iloc[0]) if not m.empty else np.nan
 
 def summarize_cell(df: pd.DataFrame) -> Tuple[dict, pd.DataFrame]:
-    env_col = 'environment'
-    strat_col = 'strategy'
-    sim_col = 'simulation_id'
+    
+    # columns expected: environment, strategy, simulation_id, month, cash_balance, dscr, (maybe cfads)
+    env_col = "environment"
+    strat_col = "strategy"
+    sim_col = "simulation_id"
+
+    # Month column: allow a few aliases just in case
+    # Early exit if df is empty
     if df.empty:
-        return ({}, pd.DataFrame())
-    month_col = 'month' if 'month' in df.columns else 'Month' if 'Month' in df.columns else 't'
+        return {}, pd.DataFrame()
+    
+    # Month column: allow a few aliases just in case
+    month_col = "month" if "month" in df.columns else (
+        "Month" if "Month" in df.columns else "t"
+    )
     if month_col not in df.columns:
-        return ({}, pd.DataFrame())
-    cash_col = pick_col(df, ['cash_balance', 'cash', 'ending_cash'])
-    cf_col = pick_col(df, ['cfads', 'operating_cash_flow', 'op_cf', 'net_cash_flow', 'cash_flow'])
+        # Be tolerant: return empty aggregates instead of raising
+        return {}, pd.DataFrame()
+
+    # pick columns (fall back to Δcash for CF)
+    cash_col = pick_col(df, ["cash_balance","cash","ending_cash"])
+    cf_col   = pick_col(df, ["cfads","operating_cash_flow","op_cf","net_cash_flow","cash_flow"])
+
     if cash_col is None:
-        raise RuntimeError('cash balance column not found in results.')
+        raise RuntimeError("cash balance column not found in results.")
     if cf_col is None:
         df = df.sort_values([env_col, strat_col, sim_col, month_col]).copy()
-        df['_fallback_cf'] = df.groupby([env_col, strat_col, sim_col])[cash_col].diff().fillna(0.0)
-        cf_col = '_fallback_cf'
-    breakeven_k = 3
+        df["_fallback_cf"] = df.groupby([env_col, strat_col, sim_col])[cash_col].diff().fillna(0.0)
+        cf_col = "_fallback_cf"
+    
+    breakeven_k = 3   # sustain window for breakeven (months)
 
+    # ---- timings (build explicitly to avoid pandas .apply quirks) ----
     def _first_cash_negative(g: pd.DataFrame) -> float:
         s = g.set_index(month_col)[cash_col]
         idx = s.index[s.values < 0]
         return float(idx.min()) if len(idx) else np.nan
 
-    def _first_sustained_ge_zero(g: pd.DataFrame, k: int=3) -> float:
+    def _first_sustained_ge_zero(g: pd.DataFrame, k: int = 3) -> float:
         s = g.set_index(month_col)[cf_col].sort_index()
         ok = (s >= 0).astype(int).rolling(k, min_periods=k).sum() == k
         idx = ok[ok].index
         return float(idx.min()) if len(idx) else np.nan
+
     rows = []
-    for (env, strat, sim), g in df.sort_values([env_col, strat_col, sim_col, month_col]).groupby([env_col, strat_col, sim_col]):
-        rows.append({env_col: env, strat_col: strat, sim_col: sim, 't_insolvency': _first_cash_negative(g), 't_breakeven': _first_sustained_ge_zero(g, k=breakeven_k), 'min_cash': float(g[cash_col].min())})
-    timings = pd.DataFrame(rows, columns=[env_col, strat_col, sim_col, 't_insolvency', 't_breakeven', 'min_cash'])
+    for (env, strat, sim), g in df.sort_values([env_col, strat_col, sim_col, month_col]) \
+                                  .groupby([env_col, strat_col, sim_col]):
+        rows.append({
+            env_col: env,
+            strat_col: strat,
+            sim_col: sim,
+            "t_insolvency": _first_cash_negative(g),
+            "t_breakeven":  _first_sustained_ge_zero(g, k=breakeven_k),
+            "min_cash": float(g[cash_col].min()),
+        })
+    timings = pd.DataFrame(rows, columns=[env_col, strat_col, sim_col, "t_insolvency", "t_breakeven", "min_cash"])
     if timings.empty:
-        timings = pd.DataFrame(columns=[env_col, strat_col, sim_col, 't_insolvency', 't_breakeven', 'min_cash'])
-    surv = timings.assign(neg=lambda d: d['min_cash'] < 0).groupby([env_col, strat_col])['neg'].mean().reset_index(name='prob_insolvent_by_T')
-    surv['survival_prob'] = 1.0 - surv['prob_insolvent_by_T']
+        # ensure columns exist even if no groups
+        timings = pd.DataFrame(columns=[env_col, strat_col, sim_col, "t_insolvency", "t_breakeven", "min_cash"])
+
+    # ---- survival via ever-negative cash ----
+    surv = (timings.assign(neg=lambda d: d["min_cash"] < 0)
+                    .groupby([env_col, strat_col])["neg"].mean()
+                    .reset_index(name="prob_insolvent_by_T"))
+    surv["survival_prob"] = 1.0 - surv["prob_insolvent_by_T"]
+
+    # ---- end-of-horizon cash & DSCR@M12 (or T) ----
     T = int(df[month_col].max())
     last = df[df[month_col] == T]
-    cash_q = last.groupby([env_col, strat_col])[cash_col].quantile([0.1, 0.5, 0.9]).unstack().reset_index().rename(columns={0.1: 'cash_q10', 0.5: 'cash_med', 0.9: 'cash_q90'})
-    m12 = 12 if T >= 12 else T
-    if 'dscr' in df.columns:
-        dscr_q = df[df[month_col] == m12].groupby([env_col, strat_col])['dscr'].quantile([0.1, 0.5, 0.9]).unstack().reset_index().rename(columns={0.1: 'dscr_q10', 0.5: 'dscr_med', 0.9: 'dscr_q90'})
-    else:
-        dscr_q = pd.DataFrame({env_col: [], strat_col: [], 'dscr_q10': [], 'dscr_med': [], 'dscr_q90': []})
+    cash_q = (last.groupby([env_col, strat_col])[cash_col]
+                  .quantile([0.10, 0.50, 0.90]).unstack().reset_index()
+                  .rename(columns={0.10:"cash_q10", 0.50:"cash_med", 0.90:"cash_q90"}))
 
+    m12 = 12 if T >= 12 else T
+    # DSCR may be missing in very early months, handle gracefully
+    if "dscr" in df.columns:
+        dscr_q = (df[df[month_col] == m12]
+                    .groupby([env_col, strat_col])["dscr"]
+                    .quantile([0.10, 0.50, 0.90]).unstack().reset_index()
+                    .rename(columns={0.10:"dscr_q10", 0.50:"dscr_med", 0.90:"dscr_q90"}))
+    else:
+        dscr_q = pd.DataFrame({env_col: [], strat_col: [], "dscr_q10": [], "dscr_med": [], "dscr_q90": []})
+
+    # ---- timing medians (guard against all-NaN) ----
     def _med_or_nan(s: pd.Series) -> float:
         s = s.replace([np.inf, -np.inf], np.nan).dropna()
         return float(s.median()) if len(s) else np.nan
-    tim_summary = timings.groupby([env_col, strat_col]).agg(median_time_to_insolvency_months=('t_insolvency', _med_or_nan), median_time_to_breakeven_months=('t_breakeven', _med_or_nan)).reset_index()
-    matrix_row = surv[[env_col, strat_col, 'survival_prob']].merge(cash_q, on=[env_col, strat_col], how='left').merge(dscr_q, on=[env_col, strat_col], how='left').merge(tim_summary, on=[env_col, strat_col], how='left')
-    matrix_row['breakeven_signal'] = cf_col
-    matrix_row['breakeven_k'] = breakeven_k
+
+    tim_summary = (timings.groupby([env_col, strat_col]).agg(
+        median_time_to_insolvency_months=("t_insolvency", _med_or_nan),
+        median_time_to_breakeven_months=("t_breakeven", _med_or_nan),
+    ).reset_index())
+
+    # ---- assemble one-row matrix for this cell ----
+    matrix_row = (surv[[env_col, strat_col, "survival_prob"]]
+                    .merge(cash_q, on=[env_col, strat_col], how="left")
+                    .merge(dscr_q, on=[env_col, strat_col], how="left")
+                    .merge(tim_summary, on=[env_col, strat_col], how="left"))
+    matrix_row["breakeven_signal"] = cf_col     
+    matrix_row["breakeven_k"] = breakeven_k
+
+        # --- LoanNeeded-LOC (peak deficit sizing) -------------------------------
+    # Logic: size to lift the deepest cash trough up to RESERVE_FLOOR.
+    # Uses post-debt cash path. Falls back gracefully if columns are missing.
     try:
-        reserve_floor = float(strat.get('RESERVE_FLOOR', 0.0)) if 'strat' in globals() else 0.0
+        reserve_floor = float(strat.get("RESERVE_FLOOR", 0.0)) if "strat" in globals() else 0.0
     except Exception:
         reserve_floor = 0.0
+
     loan_loc_p50 = loan_loc_p10 = loan_loc_p90 = np.nan
-    if sim_col in df.columns and cash_col in df.columns:
-        min_cash_by_sim = df.groupby(sim_col)[cash_col].min().astype(float)
+
+    if (sim_col in df.columns) and (cash_col in df.columns):
+        # Min cash per simulation (post-debt if loans are modeled in cash)
+        min_cash_by_sim = (
+            df.groupby(sim_col)[cash_col]
+              .min()
+              .astype(float)
+        )
+        # LOC needed per simulation to reach reserve floor
         loc_needed_by_sim = np.maximum(0.0, reserve_floor - min_cash_by_sim.values)
         if loc_needed_by_sim.size > 0:
             loan_loc_p50 = float(np.nanpercentile(loc_needed_by_sim, 50))
             loan_loc_p10 = float(np.nanpercentile(loc_needed_by_sim, 10))
             loan_loc_p90 = float(np.nanpercentile(loc_needed_by_sim, 90))
-    matrix_row['loan_needed_loc_p50'] = loan_loc_p50
-    matrix_row['loan_needed_loc_p10'] = loan_loc_p10
-    matrix_row['loan_needed_loc_p90'] = loan_loc_p90
-    return (matrix_row.iloc[0].to_dict(), timings)
-st.set_page_config(page_title='GCWS Simulator', layout='wide')
-st.title('Ginkgo Clayworks — Scenario Explorer')
-SCENARIOS = [{'name': 'Baseline', 'DOWNTURN_PROB_PER_MONTH': 0.05, 'DOWNTURN_JOIN_MULT': 1.0, 'DOWNTURN_CHURN_MULT': 1.0, 'MARKET_POOLS_INFLOW': {'community_studio': 4, 'home_studio': 2, 'no_access': 3}, 'grant_amount': 0.0, 'grant_month': None, 'WOM_RATE': 0.03, 'LEAD_TO_JOIN_RATE': 0.2, 'MAX_ONBOARD_PER_MONTH': 10, 'MEMBER_CAP': 92, 'EXPANSION_THRESHOLD': 20, 'EVENTS': {'workshops': {'enabled': True, 'events_per_month': 2, 'attendees_per_event': 10, 'price_per_attendee': 95.0, 'variable_cost_per_attendee': 25.0, 'fixed_cost_per_event': 50.0, 'lead_rate': 0.1, 'join_rate': 0.03}, 'classes': {'enabled': True, 'classes_per_month': 1, 'seats_per_class': 8, 'price_per_seat': 260.0, 'variable_cost_per_seat': 40.0, 'instructor_hours_per_class': 6.0, 'instructor_cost_per_hour': 35.0, 'lead_rate': 0.2, 'join_rate': 0.08}, 'private_events': {'enabled': False, 'events_per_month': 0, 'attendees_per_event': 12, 'price_per_attendee': 110.0, 'variable_cost_per_attendee': 28.0, 'fixed_cost_per_event': 75.0, 'lead_rate': 0.05, 'join_rate': 0.02}}}, {'name': 'Recession', 'DOWNTURN_PROB_PER_MONTH': 0.18, 'DOWNTURN_JOIN_MULT': 0.65, 'DOWNTURN_CHURN_MULT': 1.5, 'MARKET_POOLS_INFLOW': {'community_studio': 2, 'home_studio': 1, 'no_access': 1}, 'grant_amount': 0.0, 'grant_month': None, 'WOM_RATE': 0.02, 'LEAD_TO_JOIN_RATE': 0.15, 'MAX_ONBOARD_PER_MONTH': 8, 'MEMBER_CAP': 86, 'EXPANSION_THRESHOLD': 25, 'EVENTS': {'workshops': {'enabled': True, 'events_per_month': 1, 'attendees_per_event': 9, 'price_per_attendee': 90.0, 'variable_cost_per_attendee': 25.0, 'fixed_cost_per_event': 50.0, 'lead_rate': 0.08, 'join_rate': 0.02}, 'classes': {'enabled': True, 'classes_per_month': 0.5, 'seats_per_class': 8, 'price_per_seat': 240.0, 'variable_cost_per_seat': 40.0, 'instructor_hours_per_class': 6.0, 'instructor_cost_per_hour': 35.0, 'lead_rate': 0.15, 'join_rate': 0.05}, 'private_events': {'enabled': False, 'events_per_month': 0, 'attendees_per_event': 10, 'price_per_attendee': 100.0, 'variable_cost_per_attendee': 28.0, 'fixed_cost_per_event': 75.0, 'lead_rate': 0.04, 'join_rate': 0.015}}}, {'name': 'SlowRecovery_Grant25k_M4', 'DOWNTURN_PROB_PER_MONTH': 0.1, 'DOWNTURN_JOIN_MULT': 0.85, 'DOWNTURN_CHURN_MULT': 1.2, 'MARKET_POOLS_INFLOW': {'community_studio': 3, 'home_studio': 1, 'no_access': 2}, 'grant_amount': 25000, 'grant_month': 4, 'WOM_RATE': 0.025, 'LEAD_TO_JOIN_RATE': 0.18, 'MAX_ONBOARD_PER_MONTH': 9, 'MEMBER_CAP': 94, 'EXPANSION_THRESHOLD': 22, 'EVENTS': {'workshops': {'enabled': True, 'events_per_month': 2, 'attendees_per_event': 10, 'price_per_attendee': 95.0, 'variable_cost_per_attendee': 25.0, 'fixed_cost_per_event': 50.0, 'lead_rate': 0.1, 'join_rate': 0.03}, 'classes': {'enabled': True, 'classes_per_month': 1, 'seats_per_class': 8, 'price_per_seat': 255.0, 'variable_cost_per_seat': 40.0, 'instructor_hours_per_class': 6.0, 'instructor_cost_per_hour': 35.0, 'lead_rate': 0.18, 'join_rate': 0.07}, 'private_events': {'enabled': True, 'events_per_month': 0.5, 'attendees_per_event': 12, 'price_per_attendee': 115.0, 'variable_cost_per_attendee': 28.0, 'fixed_cost_per_event': 75.0, 'lead_rate': 0.05, 'join_rate': 0.02}}}, {'name': 'Boom', 'DOWNTURN_PROB_PER_MONTH': 0.02, 'DOWNTURN_JOIN_MULT': 1.2, 'DOWNTURN_CHURN_MULT': 0.85, 'MARKET_POOLS_INFLOW': {'community_studio': 6, 'home_studio': 3, 'no_access': 4}, 'grant_amount': 0.0, 'grant_month': None, 'WOM_RATE': 0.04, 'LEAD_TO_JOIN_RATE': 0.25, 'MAX_ONBOARD_PER_MONTH': 12, 'MEMBER_CAP': 100, 'EXPANSION_THRESHOLD': 18, 'EVENTS': {'workshops': {'enabled': True, 'events_per_month': 3, 'attendees_per_event': 12, 'price_per_attendee': 99.0, 'variable_cost_per_attendee': 25.0, 'fixed_cost_per_event': 50.0, 'lead_rate': 0.12, 'join_rate': 0.04}, 'classes': {'enabled': True, 'classes_per_month': 1.5, 'seats_per_class': 10, 'price_per_seat': 275.0, 'variable_cost_per_seat': 40.0, 'instructor_hours_per_class': 6.0, 'instructor_cost_per_hour': 35.0, 'lead_rate': 0.25, 'join_rate': 0.1}, 'private_events': {'enabled': True, 'events_per_month': 1, 'attendees_per_event': 14, 'price_per_attendee': 120.0, 'variable_cost_per_attendee': 30.0, 'fixed_cost_per_event': 80.0, 'lead_rate': 0.07, 'join_rate': 0.03}}}, {'name': 'GreatDepression', 'DOWNTURN_PROB_PER_MONTH': 0.28, 'DOWNTURN_JOIN_MULT': 0.45, 'DOWNTURN_CHURN_MULT': 1.9, 'MARKET_POOLS_INFLOW': {'community_studio': 1, 'home_studio': 0, 'no_access': 1}, 'grant_amount': 0.0, 'grant_month': None, 'WOM_RATE': 0.01, 'LEAD_TO_JOIN_RATE': 0.1, 'MAX_ONBOARD_PER_MONTH': 6, 'MEMBER_CAP': 81, 'EXPANSION_THRESHOLD': 30, 'EVENTS': {'workshops': {'enabled': True, 'events_per_month': 0.5, 'attendees_per_event': 8, 'price_per_attendee': 85.0, 'variable_cost_per_attendee': 25.0, 'fixed_cost_per_event': 50.0, 'lead_rate': 0.06, 'join_rate': 0.015}, 'classes': {'enabled': False, 'classes_per_month': 0, 'seats_per_class': 0, 'price_per_seat': 0.0, 'variable_cost_per_seat': 0.0, 'instructor_hours_per_class': 0.0, 'instructor_cost_per_hour': 0.0, 'lead_rate': 0.0, 'join_rate': 0.0}, 'private_events': {'enabled': False, 'events_per_month': 0, 'attendees_per_event': 0, 'price_per_attendee': 0.0, 'variable_cost_per_attendee': 0.0, 'fixed_cost_per_event': 0.0, 'lead_rate': 0.0, 'join_rate': 0.0}}}]
-STRATEGIES = [{'name': 'Base_A', 'RENT': 4000, 'OWNER_DRAW': 2000, 'PRICE': 185, 'USE_SEMESTER_SCHEDULE': True, 'CLASSES_PER_SEMESTER': 2}, {'name': 'Base_B', 'RENT': 4000, 'OWNER_DRAW': 2000, 'PRICE': 185, 'USE_SEMESTER_SCHEDULE': True, 'CLASSES_PER_SEMESTER': 2}]
+
+    # store on the one-row matrix so it returns with the rest of summaries
+    matrix_row["loan_needed_loc_p50"] = loan_loc_p50
+    matrix_row["loan_needed_loc_p10"] = loan_loc_p10
+    matrix_row["loan_needed_loc_p90"] = loan_loc_p90
+
+
+    # return a dict-like row (first row) and the timings table
+    return matrix_row.iloc[0].to_dict(), timings
+
+# ---------- UI ----------
+st.set_page_config(page_title="GCWS Simulator", layout="wide")
+st.title("Ginkgo Clayworks — Scenario Explorer")
+
+# Presets (match your code)
+SCENARIOS = [
+    {
+        "name": "Baseline",
+        "DOWNTURN_PROB_PER_MONTH": 0.05,
+        "DOWNTURN_JOIN_MULT": 1.00,
+        "DOWNTURN_CHURN_MULT": 1.00,
+        "MARKET_POOLS_INFLOW": {"community_studio": 4, "home_studio": 2, "no_access": 3},
+        "grant_amount": 0.0, "grant_month": None,
+
+        # Growth-ish levers (sane defaults)
+        "WOM_RATE": 0.03,
+        "LEAD_TO_JOIN_RATE": 0.20,
+        "MAX_ONBOARD_PER_MONTH": 10,
+
+        # Capacity levers
+        "MEMBER_CAP": 92,
+        "EXPANSION_THRESHOLD": 20,
+
+        # New: events + classes
+        "EVENTS": {
+            "workshops": {
+                "enabled": True,
+                "events_per_month": 2,
+                "attendees_per_event": 10,
+                "price_per_attendee": 95.0,
+                "variable_cost_per_attendee": 25.0,
+                "fixed_cost_per_event": 50.0,
+                "lead_rate": 0.10,   # fraction of attendees who become leads
+                "join_rate": 0.03    # fraction of attendees who convert to members (direct joins)
+            },
+            "classes": {
+                "enabled": True,
+                "classes_per_month": 1,
+                "seats_per_class": 8,
+                "price_per_seat": 260.0,
+                "variable_cost_per_seat": 40.0,
+                "instructor_hours_per_class": 6.0,
+                "instructor_cost_per_hour": 35.0,
+                "lead_rate": 0.20,
+                "join_rate": 0.08
+            },
+            "private_events": {
+                "enabled": False,
+                "events_per_month": 0,
+                "attendees_per_event": 12,
+                "price_per_attendee": 110.0,
+                "variable_cost_per_attendee": 28.0,
+                "fixed_cost_per_event": 75.0,
+                "lead_rate": 0.05,
+                "join_rate": 0.02
+            }
+        },
+    },
+    {
+        "name": "Recession",
+        "DOWNTURN_PROB_PER_MONTH": 0.18,
+        "DOWNTURN_JOIN_MULT": 0.65,
+        "DOWNTURN_CHURN_MULT": 1.50,
+        "MARKET_POOLS_INFLOW": {"community_studio": 2, "home_studio": 1, "no_access": 1},
+        "grant_amount": 0.0, "grant_month": None,
+        "WOM_RATE": 0.02,
+        "LEAD_TO_JOIN_RATE": 0.15,
+        "MAX_ONBOARD_PER_MONTH": 8,
+        "MEMBER_CAP": 86,
+        "EXPANSION_THRESHOLD": 25,
+
+        "EVENTS": {
+            "workshops": {
+                "enabled": True,
+                "events_per_month": 1,
+                "attendees_per_event": 9,
+                "price_per_attendee": 90.0,
+                "variable_cost_per_attendee": 25.0,
+                "fixed_cost_per_event": 50.0,
+                "lead_rate": 0.08,
+                "join_rate": 0.02
+            },
+            "classes": {
+                "enabled": True,
+                "classes_per_month": 0.5,  # every other month
+                "seats_per_class": 8,
+                "price_per_seat": 240.0,
+                "variable_cost_per_seat": 40.0,
+                "instructor_hours_per_class": 6.0,
+                "instructor_cost_per_hour": 35.0,
+                "lead_rate": 0.15,
+                "join_rate": 0.05
+            },
+            "private_events": {
+                "enabled": False,
+                "events_per_month": 0,
+                "attendees_per_event": 10,
+                "price_per_attendee": 100.0,
+                "variable_cost_per_attendee": 28.0,
+                "fixed_cost_per_event": 75.0,
+                "lead_rate": 0.04,
+                "join_rate": 0.015
+            }
+        },
+    },
+    {
+        "name": "SlowRecovery_Grant25k_M4",
+        "DOWNTURN_PROB_PER_MONTH": 0.10,
+        "DOWNTURN_JOIN_MULT": 0.85,
+        "DOWNTURN_CHURN_MULT": 1.20,
+        "MARKET_POOLS_INFLOW": {"community_studio": 3, "home_studio": 1, "no_access": 2},
+        "grant_amount": 25000, "grant_month": 4,
+        "WOM_RATE": 0.025,
+        "LEAD_TO_JOIN_RATE": 0.18,
+        "MAX_ONBOARD_PER_MONTH": 9,
+        "MEMBER_CAP": 94,
+        "EXPANSION_THRESHOLD": 22,
+
+        "EVENTS": {
+            "workshops": {
+                "enabled": True,
+                "events_per_month": 2,
+                "attendees_per_event": 10,
+                "price_per_attendee": 95.0,
+                "variable_cost_per_attendee": 25.0,
+                "fixed_cost_per_event": 50.0,
+                "lead_rate": 0.10,
+                "join_rate": 0.03
+            },
+            "classes": {
+                "enabled": True,
+                "classes_per_month": 1,
+                "seats_per_class": 8,
+                "price_per_seat": 255.0,
+                "variable_cost_per_seat": 40.0,
+                "instructor_hours_per_class": 6.0,
+                "instructor_cost_per_hour": 35.0,
+                "lead_rate": 0.18,
+                "join_rate": 0.07
+            },
+            "private_events": {
+                "enabled": True,
+                "events_per_month": 0.5,  # one every two months
+                "attendees_per_event": 12,
+                "price_per_attendee": 115.0,
+                "variable_cost_per_attendee": 28.0,
+                "fixed_cost_per_event": 75.0,
+                "lead_rate": 0.05,
+                "join_rate": 0.02
+            }
+        },
+    },
+    {
+        "name": "Boom",
+        "DOWNTURN_PROB_PER_MONTH": 0.02,
+        "DOWNTURN_JOIN_MULT": 1.20,
+        "DOWNTURN_CHURN_MULT": 0.85,
+        "MARKET_POOLS_INFLOW": {"community_studio": 6, "home_studio": 3, "no_access": 4},
+        "grant_amount": 0.0, "grant_month": None,
+        "WOM_RATE": 0.04,
+        "LEAD_TO_JOIN_RATE": 0.25,
+        "MAX_ONBOARD_PER_MONTH": 12,
+        "MEMBER_CAP": 100,
+        "EXPANSION_THRESHOLD": 18,
+
+        "EVENTS": {
+            "workshops": {
+                "enabled": True,
+                "events_per_month": 3,
+                "attendees_per_event": 12,
+                "price_per_attendee": 99.0,
+                "variable_cost_per_attendee": 25.0,
+                "fixed_cost_per_event": 50.0,
+                "lead_rate": 0.12,
+                "join_rate": 0.04
+            },
+            "classes": {
+                "enabled": True,
+                "classes_per_month": 1.5,  # alternating 1 and 2 per month
+                "seats_per_class": 10,
+                "price_per_seat": 275.0,
+                "variable_cost_per_seat": 40.0,
+                "instructor_hours_per_class": 6.0,
+                "instructor_cost_per_hour": 35.0,
+                "lead_rate": 0.25,
+                "join_rate": 0.10
+            },
+            "private_events": {
+                "enabled": True,
+                "events_per_month": 1,
+                "attendees_per_event": 14,
+                "price_per_attendee": 120.0,
+                "variable_cost_per_attendee": 30.0,
+                "fixed_cost_per_event": 80.0,
+                "lead_rate": 0.07,
+                "join_rate": 0.03
+            }
+        },
+    },
+    {
+        "name": "GreatDepression",
+        "DOWNTURN_PROB_PER_MONTH": 0.28,
+        "DOWNTURN_JOIN_MULT": 0.45,
+        "DOWNTURN_CHURN_MULT": 1.90,
+        "MARKET_POOLS_INFLOW": {"community_studio": 1, "home_studio": 0, "no_access": 1},
+        "grant_amount": 0.0, "grant_month": None,
+        "WOM_RATE": 0.01,
+        "LEAD_TO_JOIN_RATE": 0.10,
+        "MAX_ONBOARD_PER_MONTH": 6,
+        "MEMBER_CAP": 81,
+        "EXPANSION_THRESHOLD": 30,
+
+        "EVENTS": {
+            "workshops": {
+                "enabled": True,
+                "events_per_month": 0.5,  # one every two months
+                "attendees_per_event": 8,
+                "price_per_attendee": 85.0,
+                "variable_cost_per_attendee": 25.0,
+                "fixed_cost_per_event": 50.0,
+                "lead_rate": 0.06,
+                "join_rate": 0.015
+            },
+            "classes": {
+                "enabled": False,
+                "classes_per_month": 0,
+                "seats_per_class": 0,
+                "price_per_seat": 0.0,
+                "variable_cost_per_seat": 0.0,
+                "instructor_hours_per_class": 0.0,
+                "instructor_cost_per_hour": 0.0,
+                "lead_rate": 0.0,
+                "join_rate": 0.0
+            },
+            "private_events": {
+                "enabled": False,
+                "events_per_month": 0,
+                "attendees_per_event": 0,
+                "price_per_attendee": 0.0,
+                "variable_cost_per_attendee": 0.0,
+                "fixed_cost_per_event": 0.0,
+                "lead_rate": 0.0,
+                "join_rate": 0.0
+            }
+        },
+    },
+]
+
+STRATEGIES = [
+    {"name":"Base_A", "RENT":4000, "OWNER_DRAW":2000, "PRICE": 185,
+     "USE_SEMESTER_SCHEDULE": True, "CLASSES_PER_SEMESTER": 2},
+    {"name":"Base_B", "RENT":4000, "OWNER_DRAW":2000, "PRICE": 185,
+     "USE_SEMESTER_SCHEDULE": True, "CLASSES_PER_SEMESTER": 2},
+]
+
+
+# Sidebar controls
 with st.sidebar:
-    with st.expander('About this model', expanded=False):
-        st.markdown('\n        # 🏺 About This Model\n\n        ### What this tool does\n        This simulator forecasts the financial health of a ceramics studio.  \n        It combines:\n        \n        - **Your choices** (membership fee, rent, annual rent escalation, owner draws, event & class pricing)  \n        - **The environment** (local demand inflows, seasonality, downturn risk, grants)  \n        - **Studio limits** (capacity, onboarding rates, reserve floor, buffer)  \n        - **Financing decisions** (loans, CapEx purchases, timing triggers)  \n        \n        and projects how membership, revenue, and cash flow might evolve over time.\n        \n        ---\n        \n        ### How it works\n        Instead of giving one single prediction, the model runs **hundreds of “what-if” futures**.  \n        \n        Each future is slightly different:\n        - Some months more people join, other months fewer  \n        - Sometimes a downturn hits, sometimes not  \n        - Rent can escalate annually, depending on your setting  \n        - Events and workshops may sell out, or underperform  \n        - Classes won’t contribute revenue until after the configured start gate (e.g. Jan 1, 2026)  \n        - CapEx purchases and loan payments kick in at different times  \n        \n        By running all these futures, we can:\n        - See the **average path** (most likely outcome)  \n        - Understand the **range of outcomes** (best- to worst-case)  \n        - Plan for **resilience** (how much buffer is needed if things don’t go perfectly)  \n        \n        This approach is called a **Monte Carlo simulation**.  \n        Think of it like rolling dice many times to see the full spread of results, instead of relying on a single roll.\n        \n        ---\n        \n        ### What’s modeled\n        - **Memberships** with tenure-based churn and price elasticity  \n        - **Events** (Make-a-Mug, PYOP) with ticket prices, capacity, and variability  \n        - **Workshops** with attendance, conversion rate, and costs  \n        - **Classes** (monthly or semester) with cohort size, price, conversion to members,  \n          plus a **date-based ramp-up gate** so revenue only starts after Jan 2026  \n        - **Retail clay sales** and **firing fees**  \n        - **Designated studios** as additional rental revenue  \n        - **CapEx purchases** (kilns, wheels, racks) triggered by time or membership thresholds  \n        - **Loans** (7a and 504) with APR, term years, interest-only months, contingency, and fees  \n        - **Owner draws** and a **reserve floor** (minimum cash buffer)  \n        - **Seasonality** and **macro downturn shocks** (affecting joins & churn)  \n        \n        ---\n        \n        ### How to read the charts\n        The plots show *possible futures*:\n        \n        - **Dark shaded band** = most common outcomes  \n        - **Light shaded band** = less common but possible  \n        - **Solid line** = average outcome across all runs  \n        \n        Don’t treat the model as a crystal ball.  \n        Treat it as a **flight simulator for business strategy** — a safe place to test different decisions before committing to them.\n        \n        ---\n        \n        ### Why it’s useful\n        - **Transparent** – all assumptions are editable.  \n        - **Flexible** – compare different strategies, macro conditions, and financial choices.  \n        - **Practical** – highlights break-even points, cash runway, and financial risks.  \n        \n        ---\n        \n        <small>*For technical readers: The engine is a monthly, stochastic simulator implemented in Python. It merges environment presets (`env`) with strategy presets (`strat`), applies price elasticity, downturn shocks, tenure-based churn, annual rent escalation, CapEx triggers, loan amortization, and a class start-date gate, then runs Monte Carlo ensembles (100–500 simulations) to generate probability bands.*</small>\n        ')
-    st.header('Configuration')
-    st.caption('Hover over any label for a short explanation.')
-    st.session_state['_show_hints'] = st.toggle('Show hints', value=True, help='If on, the app shows a small note when a value is outside its typical range.')
-    scen_names = [s['name'] for s in SCENARIOS]
-    strat_names = [s['name'] for s in STRATEGIES]
-    scen_sel = st.selectbox('Scenario preset', scen_names, index=0, help='Short description of this field.')
-    strat_sel = st.selectbox('Strategy preset', strat_names, index=0, help='Fractional rate (0–1). For example, 6% = 0.06.')
-    st.subheader('Loans')
+    
+    with st.expander("About this model", expanded=False):
+        st.markdown("""
+        # 🏺 About This Model
+
+        ### What this tool does
+        This simulator forecasts the financial health of a ceramics studio.  
+        It combines:
+        
+        - **Your choices** (membership fee, rent, annual rent escalation, owner draws, event & class pricing)  
+        - **The environment** (local demand inflows, seasonality, downturn risk, grants)  
+        - **Studio limits** (capacity, onboarding rates, reserve floor, buffer)  
+        - **Financing decisions** (loans, CapEx purchases, timing triggers)  
+        
+        and projects how membership, revenue, and cash flow might evolve over time.
+        
+        ---
+        
+        ### How it works
+        Instead of giving one single prediction, the model runs **hundreds of “what-if” futures**.  
+        
+        Each future is slightly different:
+        - Some months more people join, other months fewer  
+        - Sometimes a downturn hits, sometimes not  
+        - Rent can escalate annually, depending on your setting  
+        - Events and workshops may sell out, or underperform  
+        - Classes won’t contribute revenue until after the configured start gate (e.g. Jan 1, 2026)  
+        - CapEx purchases and loan payments kick in at different times  
+        
+        By running all these futures, we can:
+        - See the **average path** (most likely outcome)  
+        - Understand the **range of outcomes** (best- to worst-case)  
+        - Plan for **resilience** (how much buffer is needed if things don’t go perfectly)  
+        
+        This approach is called a **Monte Carlo simulation**.  
+        Think of it like rolling dice many times to see the full spread of results, instead of relying on a single roll.
+        
+        ---
+        
+        ### What’s modeled
+        - **Memberships** with tenure-based churn and price elasticity  
+        - **Events** (Make-a-Mug, PYOP) with ticket prices, capacity, and variability  
+        - **Workshops** with attendance, conversion rate, and costs  
+        - **Classes** (monthly or semester) with cohort size, price, conversion to members,  
+          plus a **date-based ramp-up gate** so revenue only starts after Jan 2026  
+        - **Retail clay sales** and **firing fees**  
+        - **Designated studios** as additional rental revenue  
+        - **CapEx purchases** (kilns, wheels, racks) triggered by time or membership thresholds  
+        - **Loans** (7a and 504) with APR, term years, interest-only months, contingency, and fees  
+        - **Owner draws** and a **reserve floor** (minimum cash buffer)  
+        - **Seasonality** and **macro downturn shocks** (affecting joins & churn)  
+        
+        ---
+        
+        ### How to read the charts
+        The plots show *possible futures*:
+        
+        - **Dark shaded band** = most common outcomes  
+        - **Light shaded band** = less common but possible  
+        - **Solid line** = average outcome across all runs  
+        
+        Don’t treat the model as a crystal ball.  
+        Treat it as a **flight simulator for business strategy** — a safe place to test different decisions before committing to them.
+        
+        ---
+        
+        ### Why it’s useful
+        - **Transparent** – all assumptions are editable.  
+        - **Flexible** – compare different strategies, macro conditions, and financial choices.  
+        - **Practical** – highlights break-even points, cash runway, and financial risks.  
+        
+        ---
+        
+        <small>*For technical readers: The engine is a monthly, stochastic simulator implemented in Python. It merges environment presets (`env`) with strategy presets (`strat`), applies price elasticity, downturn shocks, tenure-based churn, annual rent escalation, CapEx triggers, loan amortization, and a class start-date gate, then runs Monte Carlo ensembles (100–500 simulations) to generate probability bands.*</small>
+        """)
+    
+    
+    st.header("Configuration")
+    st.caption("Hover over any label for a short explanation.")
+    st.session_state["_show_hints"] = st.toggle(
+        "Show hints", value=True,
+        help="If on, the app shows a small note when a value is outside its typical range."
+    )
+
+    scen_names  = [s["name"] for s in SCENARIOS]
+    strat_names = [s["name"] for s in STRATEGIES]
+
+    scen_sel  = st.selectbox("Scenario preset", scen_names, index=0)
+    strat_sel = st.selectbox("Strategy preset", strat_names, index=0)
+    
+    
+    # --- Loan controls (De-Staged) ---
+    st.subheader("Loans")
     colA, colB = st.columns(2)
     with colA:
-        capex_mode = st.radio('CapEx Loan (504) Mode', ['upfront', 'staged'], index=0, horizontal=True, help='Operational capacity assumptions used to compute membership limits.')
-        if capex_mode == 'upfront':
-            loan_504 = st.number_input('Upfront CapEx Loan (504)', min_value=0, step=1000, value=0, help='Operational capacity assumptions used to compute membership limits.')
+        capex_mode = st.radio("CapEx Loan (504) Mode", ["upfront","staged"], index=0, horizontal=True)
+        if capex_mode == "upfront":
+            loan_504 = st.number_input("Upfront CapEx Loan (504)", min_value=0, step=1000, value=0)
         else:
-            capex_draw_pct = st.slider('CapEx: Staged Draw % of purchase', 0.0, 1.0, 1.0, 0.05, help='Operational capacity assumptions used to compute membership limits.')
-            capex_min_tr = st.number_input('CapEx: Min Tranche ($)', min_value=0, step=500, value=0, help='Operational capacity assumptions used to compute membership limits.')
-            capex_max_tr = st.number_input('CapEx: Max Tranche ($, 0=None)', min_value=0, step=500, value=0, help='Operational capacity assumptions used to compute membership limits.')
+            capex_draw_pct = st.slider("CapEx: Staged Draw % of purchase", 0.0, 1.0, 1.0, 0.05)
+            capex_min_tr   = st.number_input("CapEx: Min Tranche ($)", min_value=0, step=500, value=0)
+            capex_max_tr   = st.number_input("CapEx: Max Tranche ($, 0=None)", min_value=0, step=500, value=0)
     with colB:
-        opex_mode = st.radio('OpEx Loan (7a) Mode', ['upfront', 'staged'], index=0, horizontal=True, help='Short description of this field.')
-        if opex_mode == 'upfront':
-            loan_7a = st.number_input('Upfront OpEx Loan (7a)', min_value=0, step=1000, value=0, help='Type a numeric value. Use arrow keys for fine adjustments.')
+        opex_mode = st.radio("OpEx Loan (7a) Mode", ["upfront","staged"], index=0, horizontal=True)
+        if opex_mode == "upfront":
+            loan_7a  = st.number_input("Upfront OpEx Loan (7a)",  min_value=0, step=1000, value=0)
         else:
-            opex_facility = st.number_input('OpEx: Staged Facility Limit ($)', min_value=0, step=1000, value=0, help='Maximum 7(a) staged working-capital facility.')
-            opex_min_tr = st.number_input('OpEx: Min Monthly Draw ($)', min_value=0, step=500, value=0, help='Type a numeric value. Use arrow keys for fine adjustments.')
-            opex_max_tr = st.number_input('OpEx: Max Monthly Draw ($)', min_value=0, step=500, value=0, help='0 = unlimited per month')
-            reserve_floor = st.number_input('OpEx: Cash Floor Trigger ($)', min_value=0, step=500, value=0, help='If cash dips below this, staged OpEx can draw.')
-    st.session_state['capex_mode'] = capex_mode
-    st.session_state['opex_mode'] = opex_mode
-    if capex_mode == 'upfront':
-        st.session_state['loan_504'] = float(loan_504)
-        st.session_state['capex_draw_pct'] = None
-        st.session_state['capex_min_tr'] = None
-        st.session_state['capex_max_tr'] = None
+            opex_facility = st.number_input("OpEx: Staged Facility Limit ($)", min_value=0, step=1000, value=0, help="Maximum 7(a) staged working-capital facility.")
+            opex_min_tr   = st.number_input("OpEx: Min Monthly Draw ($)",     min_value=0, step=500,  value=0)
+            opex_max_tr   = st.number_input("OpEx: Max Monthly Draw ($)",     min_value=0, step=500,  value=0, help="0 = unlimited per month")
+            reserve_floor = st.number_input("OpEx: Cash Floor Trigger ($)",    min_value=0, step=500,  value=0, help="If cash dips below this, staged OpEx can draw.")
+
+    
+     # --- persist loan controls so build_overrides can forward them ---
+    st.session_state["capex_mode"] = capex_mode
+    st.session_state["opex_mode"]  = opex_mode
+    if capex_mode == "upfront":
+        st.session_state["loan_504"] = float(loan_504)
+        st.session_state["capex_draw_pct"] = None
+        st.session_state["capex_min_tr"]   = None
+        st.session_state["capex_max_tr"]   = None
     else:
-        st.session_state['loan_504'] = 0.0
-        st.session_state['capex_draw_pct'] = float(capex_draw_pct)
-        st.session_state['capex_min_tr'] = float(capex_min_tr)
-        st.session_state['capex_max_tr'] = float(capex_max_tr)
-    if opex_mode == 'upfront':
-        st.session_state['loan_7a'] = float(loan_7a)
-        st.session_state['opex_facility'] = None
-        st.session_state['opex_min_tr'] = None
-        st.session_state['opex_max_tr'] = None
-        st.session_state['reserve_floor'] = None
+        st.session_state["loan_504"] = 0.0
+        st.session_state["capex_draw_pct"] = float(capex_draw_pct)
+        st.session_state["capex_min_tr"]   = float(capex_min_tr)
+        st.session_state["capex_max_tr"]   = float(capex_max_tr)
+    if opex_mode == "upfront":
+        st.session_state["loan_7a"] = float(loan_7a)
+        st.session_state["opex_facility"]  = None
+        st.session_state["opex_min_tr"]    = None
+        st.session_state["opex_max_tr"]    = None
+        st.session_state["reserve_floor"]  = None
     else:
-        st.session_state['loan_7a'] = 0.0
-        st.session_state['opex_facility'] = float(opex_facility)
-        st.session_state['opex_min_tr'] = float(opex_min_tr)
-        st.session_state['opex_max_tr'] = float(opex_max_tr)
-        st.session_state['reserve_floor'] = float(reserve_floor)
-    with st.expander('Simulation settings', expanded=False):
-        sim_count = st.slider('Simulations per run', min_value=5, max_value=300, step=5, value=int(st.session_state.get('N_SIMULATIONS', 100)), help='Higher = smoother bands but slower. Use 20–60 for exploration, 150–300 for final exhibits.')
-        seed = st.number_input('Random seed', min_value=0, max_value=10000000, step=1, value=int(st.session_state.get('RANDOM_SEED', 42)), help='Fix this to make runs reproducible.')
-    st.session_state['N_SIMULATIONS'] = int(sim_count)
-    st.session_state['RANDOM_SEED'] = int(seed)
-    if 'last_scen_sel' not in st.session_state:
-        st.session_state['last_scen_sel'] = scen_sel
-    if 'last_strat_sel' not in st.session_state:
-        st.session_state['last_strat_sel'] = strat_sel
-    env = json.loads(json.dumps(next((s for s in SCENARIOS if s['name'] == scen_sel))))
-    strat = json.loads(json.dumps(next((s for s in STRATEGIES if s['name'] == strat_sel))))
-    strat['N_SIMULATIONS'] = int(st.session_state.get('N_SIMULATIONS', 100))
-    if scen_sel != st.session_state['last_scen_sel']:
-        _push_preset_to_widgets(env, prefix='env_macro', keys=GROUPS['macro'])
-        _push_preset_to_widgets(env, prefix='env_growth', keys=GROUPS['growth'])
-        _push_preset_to_widgets(env, prefix='env_capacity', keys=GROUPS['capacity'])
-        _push_preset_to_widgets(env, prefix='env_finance', keys=['grant_amount', 'grant_month'])
-        st.session_state['last_scen_sel'] = scen_sel
-    if strat_sel != st.session_state['last_strat_sel']:
-        _push_preset_to_widgets(strat, prefix='strat_pricing', keys=GROUPS['pricing'])
-        _push_preset_to_widgets(strat, prefix='strat_workshops', keys=GROUPS['workshops'])
-        _push_preset_to_widgets(strat, prefix='strat_classes', keys=GROUPS['classes'])
-        _push_preset_to_widgets(strat, prefix='strat_events', keys=GROUPS['events'])
-        _push_preset_to_widgets(strat, prefix='strat_finance', keys=['RENT', 'OWNER_DRAW'])
-        st.session_state['last_strat_sel'] = strat_sel
-    with st.expander('Macro Conditions', expanded=False):
-        env_macro = render_param_controls('Macro Conditions', _subset(env, GROUPS['macro']), group_keys=GROUPS['macro'], prefix='env_macro')
-    with st.expander('Growth & Demand', expanded=True):
-        env_growth = render_param_controls('Growth & Demand', _subset(env, GROUPS['growth']), group_keys=GROUPS['growth'], prefix='env_growth')
-    with st.expander('Capacity & Ops', expanded=True):
-        env_capacity = render_param_controls('Capacity & Ops', _subset(env, GROUPS['capacity']), group_keys=GROUPS['capacity'], prefix='env_capacity')
-    with st.expander('Equipment', expanded=True):
-        st.markdown('**Staged purchases (all equipment)**')
-        st.caption('Define all equipment as staged purchases. Month=0 means start-of-life.')
-        capex_existing = strat.get('CAPEX_ITEMS', [])
-        capex_df_default = pd.DataFrame(capex_existing) if capex_existing else pd.DataFrame([{'enabled': True, 'label': 'Kiln #1 Skutt 1227 10 cuft+furniture', 'count': 1, 'unit_cost': 7000, 'month': 0, 'member_threshold': None, 'finance_504': True}, {'enabled': True, 'label': 'Wheels', 'count': 12, 'unit_cost': 3000, 'month': 0, 'member_threshold': None, 'finance_504': True}, {'enabled': True, 'label': 'Wire racks', 'count': 5, 'unit_cost': 150, 'month': 0, 'member_threshold': None, 'finance_504': True}, {'enabled': True, 'label': 'Clay traps', 'count': 1, 'unit_cost': 160, 'month': 0, 'member_threshold': None, 'finance_504': True}, {'enabled': True, 'label': 'Kiln #2 Skutt 1427+furniture', 'count': 1, 'unit_cost': 10000, 'month': 0, 'member_threshold': None, 'finance_504': True}, {'enabled': True, 'label': 'Wire racks', 'count': 7, 'unit_cost': 150, 'month': 0, 'member_threshold': None, 'finance_504': True}, {'enabled': False, 'label': 'Wheels', 'count': 10, 'unit_cost': 800, 'month': 6, 'member_threshold': None, 'finance_504': True}, {'enabled': True, 'label': 'Slab roller', 'count': 1, 'unit_cost': 1800, 'month': None, 'member_threshold': 50, 'finance_504': True}, {'enabled': True, 'label': 'Peter Pugger VPM-60', 'count': 1, 'unit_cost': 5049, 'month': 3, 'member_threshold': None, 'finance_504': True}, {'enabled': True, 'label': 'Bakers racks for ware', 'count': 10, 'unit_cost': 100, 'month': 0, 'member_threshold': None, 'finance_504': True}])
-        for col in ['enabled', 'label', 'count', 'unit_cost', 'month', 'member_threshold', 'finance_504']:
+        st.session_state["loan_7a"] = 0.0
+        st.session_state["opex_facility"]  = float(opex_facility)
+        st.session_state["opex_min_tr"]    = float(opex_min_tr)
+        st.session_state["opex_max_tr"]    = float(opex_max_tr)
+        st.session_state["reserve_floor"]  = float(reserve_floor)
+   
+    
+    # --- Simulation settings ---
+    with st.expander("Simulation settings", expanded=False):
+        sim_count = st.slider(
+            "Simulations per run",
+            min_value=5, max_value=300, step=5,
+            value=int(st.session_state.get("N_SIMULATIONS", 100)),
+            help="Higher = smoother bands but slower. Use 20–60 for exploration, 150–300 for final exhibits."
+        )
+        seed = st.number_input(
+            "Random seed",
+            min_value=0, max_value=10_000_000, step=1,
+            value=int(st.session_state.get("RANDOM_SEED", 42)),
+            help="Fix this to make runs reproducible."
+        )
+    st.session_state["N_SIMULATIONS"] = int(sim_count)
+    st.session_state["RANDOM_SEED"]   = int(seed)
+
+    # After scen_sel / strat_sel are created:
+    if "last_scen_sel" not in st.session_state:
+        st.session_state["last_scen_sel"] = scen_sel
+    if "last_strat_sel" not in st.session_state:
+        st.session_state["last_strat_sel"] = strat_sel
+    
+    # Deep copies of the chosen presets
+    env  = json.loads(json.dumps(next(s for s in SCENARIOS  if s["name"] == scen_sel)))
+    strat = json.loads(json.dumps(next(s for s in STRATEGIES if s["name"] == strat_sel)))
+    strat["N_SIMULATIONS"] = int(st.session_state.get("N_SIMULATIONS", 100))
+    
+    if scen_sel != st.session_state["last_scen_sel"]:
+        _push_preset_to_widgets(env,   prefix="env_macro",    keys=GROUPS["macro"])
+        _push_preset_to_widgets(env,   prefix="env_growth",   keys=GROUPS["growth"])
+        _push_preset_to_widgets(env,   prefix="env_capacity", keys=GROUPS["capacity"])
+        _push_preset_to_widgets(env,   prefix="env_finance",  keys=["grant_amount", "grant_month"])
+        st.session_state["last_scen_sel"] = scen_sel
+    
+    if strat_sel != st.session_state["last_strat_sel"]:
+        _push_preset_to_widgets(strat, prefix="strat_pricing",   keys=GROUPS["pricing"])
+        _push_preset_to_widgets(strat, prefix="strat_workshops", keys=GROUPS["workshops"])
+        _push_preset_to_widgets(strat, prefix="strat_classes",   keys=GROUPS["classes"])
+        _push_preset_to_widgets(strat, prefix="strat_events",    keys=GROUPS["events"])
+        _push_preset_to_widgets(strat, prefix="strat_finance",   keys=["RENT", "OWNER_DRAW"])
+        st.session_state["last_strat_sel"] = strat_sel
+   
+    # === ENV-DRIVEN GROUPS (use env) ===
+    with st.expander("Macro Conditions", expanded=False):
+        env_macro = render_param_controls(
+            "Macro Conditions", _subset(env, GROUPS["macro"]),
+            group_keys=GROUPS["macro"], prefix="env_macro"
+        )
+    
+    with st.expander("Growth & Demand", expanded=True):
+        env_growth = render_param_controls(
+            "Growth & Demand", _subset(env, GROUPS["growth"]),
+            group_keys=GROUPS["growth"], prefix="env_growth"
+        )
+    
+    with st.expander("Capacity & Ops", expanded=True):
+        env_capacity = render_param_controls(
+            "Capacity & Ops", _subset(env, GROUPS["capacity"]),
+            group_keys=GROUPS["capacity"], prefix="env_capacity"
+        )
+    
+    with st.expander("Equipment", expanded=True):
+        st.markdown("**Staged purchases (all equipment)**")
+        st.caption("Define all equipment as staged purchases. Month=0 means start-of-life.")
+    
+        capex_existing = strat.get("CAPEX_ITEMS", [])
+        capex_df_default = pd.DataFrame(capex_existing) if capex_existing else pd.DataFrame([
+            {"enabled": True,  "label": "Kiln #1 Skutt 1227 10 cuft+furniture",      "count": 1,  "unit_cost": 7000, "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": True,  "label": "Wheels",       "count": 12,  "unit_cost": 3000,  "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": True,  "label": "Wire racks",   "count": 5,  "unit_cost": 150,  "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": True,  "label": "Clay traps",   "count": 1,  "unit_cost": 160,  "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": True, "label": "Kiln #2 Skutt 1427+furniture",      "count": 1,  "unit_cost": 10000, "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": True, "label": "Wire racks",   "count": 7,  "unit_cost": 150,  "month": 0,   "member_threshold": None, "finance_504": True},
+            {"enabled": False, "label": "Wheels",       "count": 10, "unit_cost": 800,  "month": 6,   "member_threshold": None, "finance_504": True},
+            {"enabled": True, "label": "Slab roller",  "count": 1,  "unit_cost": 1800, "month": None,"member_threshold": 50, "finance_504": True},
+            {"enabled": True, "label": "Peter Pugger VPM-60",     "count": 1,  "unit_cost": 5049, "month": 3,"member_threshold": None, "finance_504": True},
+            {"enabled": True, "label": "Bakers racks for ware",     "count": 10,  "unit_cost": 100, "month": 0,"member_threshold": None, "finance_504": True},
+        ])
+        for col in ["enabled","label","count","unit_cost","month","member_threshold", "finance_504"]:
             if col not in capex_df_default.columns:
-                capex_df_default[col] = [False] if col == 'enabled' else [None]
-        capex_df_default = capex_df_default[['enabled', 'label', 'count', 'unit_cost', 'month', 'member_threshold']]
-        capex_df = st.data_editor(capex_df_default, num_rows='dynamic', use_container_width=True, column_config={'enabled': st.column_config.CheckboxColumn('Include'), 'label': st.column_config.TextColumn('Item'), 'count': st.column_config.NumberColumn('Count', min_value=1, step=1), 'unit_cost': st.column_config.NumberColumn('Unit cost ($)', min_value=0, step=10), 'month': st.column_config.NumberColumn('Trigger month', min_value=0, step=1, help='Month after launch'), 'member_threshold': st.column_config.NumberColumn('Trigger members', min_value=0, step=1, help='Purchase once active members ≥ this'), 'finance_504': st.column_config.CheckboxColumn('Finance via 504')}, key='capex_items_editor')
-        strat['CAPEX_ITEMS'] = _normalize_capex_items(capex_df)
+                capex_df_default[col] = [False] if col == "enabled" else [None]
+        capex_df_default = capex_df_default[["enabled","label","count","unit_cost","month","member_threshold"]]
+    
+        capex_df = st.data_editor(
+            capex_df_default,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "enabled": st.column_config.CheckboxColumn("Include"),
+                "label": st.column_config.TextColumn("Item"),
+                "count": st.column_config.NumberColumn("Count", min_value=1, step=1),
+                "unit_cost": st.column_config.NumberColumn("Unit cost ($)", min_value=0, step=10),
+                "month": st.column_config.NumberColumn("Trigger month", min_value=0, step=1, help="Month after launch"),
+                "member_threshold": st.column_config.NumberColumn("Trigger members", min_value=0, step=1, help="Purchase once active members ≥ this"),"finance_504": st.column_config.CheckboxColumn("Finance via 504"),
+            },
+            key="capex_items_editor",
+        )
+    
+        strat["CAPEX_ITEMS"] = _normalize_capex_items(capex_df)
+
+
+        # --- Live total for selected equipment (CapEx) --
         try:
             df_cap = capex_df.copy()
-            enabled_col = 'enabled' if 'enabled' in df_cap.columns else 'Include' if 'Include' in df_cap.columns else None
-            count_col = 'count' if 'count' in df_cap.columns else 'Count' if 'Count' in df_cap.columns else None
-            unit_col = 'unit_cost' if 'unit_cost' in df_cap.columns else 'Unit cost' if 'Unit cost' in df_cap.columns else None
+            # Resolve column names across possible schemas
+            enabled_col = "enabled" if "enabled" in df_cap.columns else ("Include" if "Include" in df_cap.columns else None)
+            count_col   = "count"   if "count"   in df_cap.columns else ("Count"    if "Count"    in df_cap.columns else None)
+            unit_col    = "unit_cost" if "unit_cost" in df_cap.columns else ("Unit cost" if "Unit cost" in df_cap.columns else None)
             if enabled_col and count_col and unit_col:
                 df_cap[count_col] = df_cap[count_col].fillna(0).astype(float)
-                df_cap[unit_col] = df_cap[unit_col].fillna(0).astype(float)
-                df_cap['_row_total'] = df_cap[count_col] * df_cap[unit_col]
-                total_capex_selected = float(df_cap.loc[df_cap[enabled_col].fillna(False), '_row_total'].sum())
-                st.metric('Selected equipment total (CapEx)', f'${total_capex_selected:,.0f}')
+                df_cap[unit_col]  = df_cap[unit_col].fillna(0).astype(float)
+                df_cap["_row_total"] = df_cap[count_col] * df_cap[unit_col]
+                total_capex_selected = float(df_cap.loc[df_cap[enabled_col].fillna(False), "_row_total"].sum())
+                st.metric("Selected equipment total (CapEx)", f"${total_capex_selected:,.0f}")
             else:
-                st.caption('⚠️ Couldn’t compute CapEx total — expected Include/enabled, Count, Unit cost.')
+                st.caption("⚠️ Couldn’t compute CapEx total — expected Include/enabled, Count, Unit cost.")
         except Exception as e:
-            st.caption(f'⚠️ CapEx total error: {e}')
-        if strat['CAPEX_ITEMS']:
-            st.success(f"{len(strat['CAPEX_ITEMS'])} equipment purchases configured.", icon='🛠️')
+            st.caption(f"⚠️ CapEx total error: {e}")
+        
+        if strat["CAPEX_ITEMS"]:
+            st.success(f"{len(strat['CAPEX_ITEMS'])} equipment purchases configured.", icon="🛠️")
         else:
-            st.warning('No equipment rows configured. Simulation may understate CapEx.', icon='⚠️')
-    with st.expander('Finance & Grants (Scenario)', expanded=False):
-        env_finance = render_param_controls('Finance & Grants (Scenario)', _subset(env, ['grant_amount', 'grant_month']), group_keys=['grant_amount', 'grant_month'], prefix='env_finance')
-    with st.expander('Pricing', expanded=False):
-        strat_pricing = render_param_controls('Pricing', _subset(strat, GROUPS['pricing']), group_keys=GROUPS['pricing'], prefix='strat_pricing')
-    if 'REFERENCE_PRICE' not in st.session_state or st.session_state.get('ref_price_scen') != strat.get('name'):
-        st.session_state['REFERENCE_PRICE'] = float(strat.get('PRICE', strat_pricing.get('PRICE', 0)))
-        st.session_state['ref_price_scen'] = strat.get('name')
-    strat_pricing['REFERENCE_PRICE'] = float(st.session_state['REFERENCE_PRICE'])
-    with st.expander('Workshops', expanded=False):
-        ws_enabled = st.checkbox('Enable workshops (monthly)', value=True, help='Turn monthly workshop modeling on/off. When off, workshop revenue and conversions are zero.')
+            st.warning("No equipment rows configured. Simulation may understate CapEx.", icon="⚠️")
+
+    with st.expander("Finance & Grants (Scenario)", expanded=False):
+        env_finance = render_param_controls(
+            "Finance & Grants (Scenario)", _subset(env, ["grant_amount", "grant_month"]),
+            group_keys=["grant_amount", "grant_month"], prefix="env_finance"
+        )
+    
+    # === STRATEGY-DRIVEN GROUPS (use strat) ===
+    with st.expander("Pricing", expanded=False):
+        strat_pricing = render_param_controls(
+            "Pricing", _subset(strat, GROUPS["pricing"]),
+            group_keys=GROUPS["pricing"], prefix="strat_pricing"
+        )
+     # --- pricing reference: fix once per selected strategy preset ---
+    if "REFERENCE_PRICE" not in st.session_state or st.session_state.get("ref_price_scen") != strat.get("name"):
+        st.session_state["REFERENCE_PRICE"] = float(strat.get("PRICE", strat_pricing.get("PRICE", 0)))
+        st.session_state["ref_price_scen"] = strat.get("name")
+    strat_pricing["REFERENCE_PRICE"] = float(st.session_state["REFERENCE_PRICE"])
+    
+    with st.expander("Workshops", expanded=False):
+        ws_enabled = st.checkbox(
+            "Enable workshops (monthly)",
+            value=True,
+            help="Turn monthly workshop modeling on/off. When off, workshop revenue and conversions are zero."
+        )
+    
         colA, colB = st.columns(2)
+    
         with colA:
-            ws_per_month = st.slider('Workshops per month', min_value=0.0, max_value=4.0, value=1.0, step=0.25, help='Average number of workshops you expect to host each month. Can be fractional if you only run them some months.')
-            ws_avg_att = st.slider('Avg attendees per workshop', min_value=0, max_value=24, value=10, step=1, help='Typical headcount per workshop. Used to estimate both revenue and conversions.')
-            ws_conv_rate = st.slider('Attendee → Member conversion', min_value=0.0, max_value=0.5, value=0.1, step=0.01, help='Fraction of attendees who later become members. Example: 0.10 means 10% convert.')
+            ws_per_month = st.slider(
+                "Workshops per month",
+                min_value=0.0, max_value=4.0, value=1.0, step=0.25,
+                help="Average number of workshops you expect to host each month. Can be fractional if you only run them some months."
+            )
+            ws_avg_att = st.slider(
+                "Avg attendees per workshop",
+                min_value=0, max_value=24, value=10, step=1,
+                help="Typical headcount per workshop. Used to estimate both revenue and conversions."
+            )
+            ws_conv_rate = st.slider(
+                "Attendee → Member conversion",
+                min_value=0.0, max_value=0.5, value=0.10, step=0.01,
+                help="Fraction of attendees who later become members. Example: 0.10 means 10% convert."
+            )
+            
+    
         with colB:
-            ws_fee = st.slider('Workshop fee per attendee ($)', min_value=25, max_value=300, value=85, step=5, help='Ticket price paid by each attendee.')
-            ws_var_cost = st.slider('Variable cost per workshop ($)', min_value=0, max_value=500, value=50, step=10, help='Your per‑event costs (guest instructor honorarium, space share, snacks, etc.).')
-            ws_conv_lag = st.slider('Conversion lag (months)', min_value=0, max_value=6, value=1, step=1, help='Delay between the workshop and when new members from that workshop actually join.')
+            ws_fee = st.slider(
+                "Workshop fee per attendee ($)",
+                min_value=25, max_value=300, value=85, step=5,
+                help="Ticket price paid by each attendee."
+            )
+            ws_var_cost = st.slider(
+                "Variable cost per workshop ($)",
+                min_value=0, max_value=500, value=50, step=10,
+                help="Your per‑event costs (guest instructor honorarium, space share, snacks, etc.)."
+            )
+            ws_conv_lag = st.slider(
+                "Conversion lag (months)",
+                min_value=0, max_value=6, value=1, step=1,
+                help="Delay between the workshop and when new members from that workshop actually join."
+            )
+    
+        # --- Live preview of what these inputs imply (only a UI hint; simulator is authoritative) ---
         if ws_enabled:
             attendees_pm = ws_per_month * ws_avg_att
             gross_pm = attendees_pm * ws_fee
             cost_pm = ws_per_month * ws_var_cost
             net_pm = max(0.0, gross_pm - cost_pm)
-            conv_pm = attendees_pm * ws_conv_rate
-            st.caption(f'• ≈ **{attendees_pm:.0f} attendees/month** → gross ≈ **${gross_pm:,.0f}**, cost ≈ **${cost_pm:,.0f}**, **net ≈ ${net_pm:,.0f}**; ≈ **{conv_pm:.1f}** new members after **{ws_conv_lag} mo**.')
+            conv_pm = attendees_pm * ws_conv_rate  # these join after ws_conv_lag months
+    
+            st.caption(
+                f"• ≈ **{attendees_pm:.0f} attendees/month** → gross ≈ **${gross_pm:,.0f}**, "
+                f"cost ≈ **${cost_pm:,.0f}**, **net ≈ ${net_pm:,.0f}**; "
+                f"≈ **{conv_pm:.1f}** new members after **{ws_conv_lag} mo**."
+            )
         else:
-            st.caption('• Workshops disabled — no workshop revenue or conversions will be added.')
-        strat_workshops = {'WORKSHOPS_ENABLED': ws_enabled, 'WORKSHOPS_PER_MONTH': float(ws_per_month), 'WORKSHOP_AVG_ATTENDANCE': int(ws_avg_att), 'WORKSHOP_FEE': float(ws_fee), 'WORKSHOP_COST_PER_EVENT': float(ws_var_cost), 'WORKSHOP_CONV_RATE': float(ws_conv_rate), 'WORKSHOP_CONV_LAG_MO': int(ws_conv_lag)}
-    with st.expander('Beginner Classes', expanded=False):
-        base_keys = ['CLASSES_ENABLED', 'USE_SEMESTER_SCHEDULE']
-        base = render_param_controls('Beginner Classes', _subset(strat, base_keys), group_keys=base_keys, prefix='strat_classes_base')
-        use_sem = bool(base.get('USE_SEMESTER_SCHEDULE', False))
+            st.caption("• Workshops disabled — no workshop revenue or conversions will be added.")
+    
+        # push into your config dict the simulator uses (adjust keys to match your cfg)
+        strat_workshops = {
+            "WORKSHOPS_ENABLED": ws_enabled,
+            "WORKSHOPS_PER_MONTH": float(ws_per_month),
+            "WORKSHOP_AVG_ATTENDANCE": int(ws_avg_att),
+            "WORKSHOP_FEE": float(ws_fee),
+            "WORKSHOP_COST_PER_EVENT": float(ws_var_cost),
+            "WORKSHOP_CONV_RATE": float(ws_conv_rate),
+            "WORKSHOP_CONV_LAG_MO": int(ws_conv_lag),
+        }
+        # merge `workshops_cfg` into the env/strat/cfg you pass to the simulator
+    
+    with st.expander("Beginner Classes", expanded=False):
+                # Render toggles first, then conditionally render the right knobs
+        base_keys = ["CLASSES_ENABLED", "USE_SEMESTER_SCHEDULE"]
+        base = render_param_controls("Beginner Classes", _subset(strat, base_keys),
+                                     group_keys=base_keys, prefix="strat_classes_base")
+        use_sem = bool(base.get("USE_SEMESTER_SCHEDULE", False))
+
         if use_sem:
-            class_keys = ['CLASSES_PER_SEMESTER', 'CLASS_CAP_PER_COHORT', 'CLASS_PRICE', 'CLASS_CONV_RATE', 'CLASS_CONV_LAG_MO']
+            class_keys = ["CLASSES_PER_SEMESTER", "CLASS_CAP_PER_COHORT",
+                          "CLASS_PRICE", "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO"]
         else:
-            class_keys = ['CLASS_COHORTS_PER_MONTH', 'CLASS_CAP_PER_COHORT', 'CLASS_PRICE', 'CLASS_CONV_RATE', 'CLASS_CONV_LAG_MO']
-        opts = render_param_controls('Beginner Classes', _subset(strat, class_keys), group_keys=class_keys, prefix='strat_classes')
+            class_keys = ["CLASS_COHORTS_PER_MONTH", "CLASS_CAP_PER_COHORT",
+                          "CLASS_PRICE", "CLASS_CONV_RATE", "CLASS_CONV_LAG_MO"]
+
+        opts = render_param_controls("Beginner Classes", _subset(strat, class_keys),
+                                     group_keys=class_keys, prefix="strat_classes")
+
+        # Merge base + opts into one dict the simulator will see
         strat_classes = {**base, **opts}
-        st.caption('Adds class net revenue now; converts a fraction of students into members after a delay.')
+
+        st.caption("Adds class net revenue now; converts a fraction of students into members after a delay.")
         try:
-            if bool(strat_classes.get('CLASSES_ENABLED', False)):
-                cap = float(strat_classes.get('CLASS_CAP_PER_COHORT', 0))
-                price = float(strat_classes.get('CLASS_PRICE', 0))
-                conv = float(strat_classes.get('CLASS_CONV_RATE', 0))
-                lag = int(strat_classes.get('CLASS_CONV_LAG_MO', 1))
+            if bool(strat_classes.get("CLASSES_ENABLED", False)):
+                cap   = float(strat_classes.get("CLASS_CAP_PER_COHORT", 0))
+                price = float(strat_classes.get("CLASS_PRICE", 0))
+                conv  = float(strat_classes.get("CLASS_CONV_RATE", 0))
+                lag   = int(strat_classes.get("CLASS_CONV_LAG_MO", 1))
+
                 if use_sem:
-                    cps = float(strat_classes.get('CLASSES_PER_SEMESTER', 0))
+                    # Distribute evenly across the 3 months in a term
+                    cps   = float(strat_classes.get("CLASSES_PER_SEMESTER", 0))
                     import math
                     coh_pm = int(math.ceil(cps / 3.0))
-                    strat_classes['CLASS_COHORTS_PER_MONTH'] = coh_pm
+                    # ensure downstream value is set explicitly
+                    strat_classes["CLASS_COHORTS_PER_MONTH"] = coh_pm
+
                     students = int(round(coh_pm * cap))
-                    gross = int(round(students * price))
+                    gross    = int(round(students * price))
                     converts = int(round(students * conv))
-                    st.markdown(f'• **Semester mode:** {int(cps)} cohorts/semester → ≈ **{coh_pm} cohorts/mo** during class months. That’s ≈ **{students}** students/mo → gross ≈ **${gross:,}**; **{converts}** new members after **{lag}** mo.')
-                    st.caption('Class months are Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec.')
+                    st.markdown(
+                        f"• **Semester mode:** {int(cps)} cohorts/semester → ≈ **{coh_pm} cohorts/mo** during class months. "
+                        f"That’s ≈ **{students}** students/mo → gross ≈ **${gross:,}**; "
+                        f"**{converts}** new members after **{lag}** mo."
+                    )
+                    st.caption("Class months are Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec.")
                 else:
-                    coh = float(strat_classes.get('CLASS_COHORTS_PER_MONTH', 0))
+                    coh = float(strat_classes.get("CLASS_COHORTS_PER_MONTH", 0))
                     students = int(round(coh * cap))
-                    gross = int(round(students * price))
+                    gross    = int(round(students * price))
                     converts = int(round(students * conv))
-                    st.markdown(f'• **Monthly mode:** each month you start **{int(coh)}** cohort(s) ⇒ ≈ **{students}** students; gross ≈ **${gross:,}**; **{converts}** convert after **{lag}** mo.')
+                    st.markdown(
+                        f"• **Monthly mode:** each month you start **{int(coh)}** cohort(s) ⇒ ≈ **{students}** students; "
+                        f"gross ≈ **${gross:,}**; **{converts}** convert after **{lag}** mo."
+                    )
         except Exception:
             pass
-    with st.expander('Events (PYOP / Corporate)', expanded=False):
-        strat_events = render_param_controls('Events', _subset(strat, GROUPS['events']), group_keys=GROUPS['events'], prefix='strat_events')
-    with st.expander('Finance & Grants (Strategy)', expanded=False):
-        strat_finance = render_param_controls('Finance & Grants (Strategy)', _subset(strat, GROUPS['finance']), group_keys=GROUPS['finance'], prefix='strat_finance')
-    with st.expander('Loans & Sizing', expanded=False):
-        strat_loans = render_param_controls('Loans & Sizing', _subset(strat, GROUPS['loans'] + GROUPS['io'] + GROUPS['sizing'] + GROUPS['fees']), group_keys=GROUPS['loans'] + GROUPS['io'] + GROUPS['sizing'] + GROUPS['fees'], prefix='strat_loans')
+    
+    with st.expander("Events (PYOP / Corporate)", expanded=False):
+        strat_events = render_param_controls(
+            "Events", _subset(strat, GROUPS["events"]),
+            group_keys=GROUPS["events"], prefix="strat_events"
+        )
+    
+    with st.expander("Finance & Grants (Strategy)", expanded=False):
+        strat_finance = render_param_controls(
+            "Finance & Grants (Strategy)", _subset(strat, GROUPS["finance"]),
+            group_keys=GROUPS["finance"], prefix="strat_finance"
+        )
+    with st.expander("Loans & Sizing", expanded=False):
+        strat_loans = render_param_controls(
+            "Loans & Sizing",
+            _subset(strat, GROUPS["loans"] + GROUPS["io"] + GROUPS["sizing"] + GROUPS["fees"]),
+            group_keys=GROUPS["loans"] + GROUPS["io"] + GROUPS["sizing"] + GROUPS["fees"],
+            prefix="strat_loans"
+        )
+    
+    # Merge edits back
     for part in (env_macro, env_growth, env_capacity, env_finance):
         _update_from(part, env, part.keys())
+    
+    # Merge all sub-groups back into strat
     for part in (strat_pricing, strat_workshops, strat_classes, strat_events, strat_finance, strat_loans):
         _update_from(part, strat, part.keys())
+
+    # ---- Advanced controls (always visible in sidebar) ----
     adv_overrides = render_advanced_controls(DEFAULTS)
     strat.update(adv_overrides)
+
+    # Validate before simulate
     if not _preflight_validate(strat):
         st.stop()
-    st.markdown('---')
+
+    # Preset save/load
+    st.markdown("---")
     colA, colB = st.columns(2)
-    if colA.button('Save preset (download)'):
-        blob = json.dumps({'env': env, 'strat': strat}, indent=2).encode('utf-8')
-        st.download_button('Download JSON', data=blob, file_name='gcws_preset.json', mime='application/json', key='dl_preset')
-    uploaded = colB.file_uploader('Load preset JSON', type=['json'], accept_multiple_files=False)
+    if colA.button("Save preset (download)"):
+        blob = json.dumps({"env": env, "strat": strat}, indent=2).encode("utf-8")
+        st.download_button("Download JSON", data=blob, file_name="gcws_preset.json", mime="application/json", key="dl_preset")
+    uploaded = colB.file_uploader("Load preset JSON", type=["json"], accept_multiple_files=False)
     if uploaded is not None:
         try:
             preset = json.loads(uploaded.read())
-            env.update(preset.get('env', {}))
-            strat.update(preset.get('strat', {}))
-            st.success('Preset loaded. Scroll up and press Apply in each expander if needed.')
+            env.update(preset.get("env", {}))
+            strat.update(preset.get("strat", {}))
+            st.success("Preset loaded. Scroll up and press Apply in each expander if needed.")
         except Exception as e:
-            st.error(f'Invalid preset: {e}')
-tab_run, tab_matrix = st.tabs(['Single run', 'Matrix heatmaps'])
+            st.error(f"Invalid preset: {e}")
+
+# Tabs
+tab_run, tab_matrix = st.tabs(["Single run", "Matrix heatmaps"])
+
+# ---- Single run
 with tab_run:
-    st.caption('Runs a single run simulation with values indicated in the slider')
-    run_btn = st.button('Run simulation', help='Short description of this field.')
+    st.caption("Runs a single run simulation with values indicated in the slider")
+    run_btn = st.button("Run simulation")
     if run_btn:
+        # auto-bust caches when the user explicitly runs
         try:
             run_cell_cached.clear()
         except Exception:
@@ -1121,126 +2218,177 @@ with tab_run:
             st.cache_data.clear()
         except Exception:
             pass
-        with st.spinner('Running simulator…'):
+        with st.spinner("Running simulator…"):
             env_norm = _normalize_env(env)
             cache_key = _make_cache_key(env_norm, strat, seed)
+
             df_cell, eff, images, manifest = run_cell_cached(env_norm, strat, seed, cache_key)
-            st.session_state['df_result'] = df_cell
+            st.session_state["df_result"] = df_cell
+            
         st.subheader(f"KPIs — {env['name']} | {strat['name']}")
+
+        # Core cash/dscr from cell
         kpi_cell = compute_kpis_from_cell(df_cell)
+        
+        # Timing/breakeven from summarize_cell
         row_dict, _tim = summarize_cell(df_cell)
-        surv = kpi_cell.get('survival_prob', np.nan)
-        cash_q10 = kpi_cell.get('cash_q10', np.nan)
-        cash_med = kpi_cell.get('cash_med', np.nan)
-        dscr_med = kpi_cell.get('dscr_med', np.nan)
-        t_breakeven = row_dict.get('median_time_to_breakeven_months', np.nan)
+        
+        surv        = kpi_cell.get("survival_prob", np.nan)
+        cash_q10    = kpi_cell.get("cash_q10", np.nan)
+        cash_med    = kpi_cell.get("cash_med", np.nan)
+        dscr_med    = kpi_cell.get("dscr_med", np.nan)
+        t_breakeven = row_dict.get("median_time_to_breakeven_months", np.nan)
+        
+        # --- LoanNeeded-LOC KPI --------------------------------------------------
         try:
-            loan_p50 = row_dict.get('loan_needed_loc_p50', np.nan)
-            loan_p10 = row_dict.get('loan_needed_loc_p10', np.nan)
-            loan_p90 = row_dict.get('loan_needed_loc_p90', np.nan)
+            loan_p50 = row_dict.get("loan_needed_loc_p50", np.nan)
+            loan_p10 = row_dict.get("loan_needed_loc_p10", np.nan)
+            loan_p90 = row_dict.get("loan_needed_loc_p90", np.nan)
         except Exception:
             loan_p50 = loan_p10 = loan_p90 = np.nan
+    
         loc_cols = st.columns(3)
-        loc_cols[0].metric('Loan Needed (LOC) — p50', '$' + (f'{loan_p50:,.0f}' if np.isfinite(loan_p50) else 'NA'))
-        loc_cols[1].metric('p10 (optimistic)', '$' + (f'{loan_p10:,.0f}' if np.isfinite(loan_p10) else 'NA'))
-        loc_cols[2].metric('p90 (conservative)', '$' + (f'{loan_p90:,.0f}' if np.isfinite(loan_p90) else 'NA'))
-        st.caption('LOC sizing uses the peak cash deficit vs. Reserve floor (post-debt cash path).')
-        loan_mode = str(strat.get('LOAN_MODE', 'upfront')).lower()
-        month_col = next((c for c in ('month', 'Month', 't') if c in df_cell.columns), None)
-        if month_col is None and (not df_cell.empty):
-            month_col = 'month' if 'month' in df_cell.columns else df_cell.columns[0]
+        loc_cols[0].metric("Loan Needed (LOC) — p50", "$" + (f"{loan_p50:,.0f}" if np.isfinite(loan_p50) else "NA"))
+        loc_cols[1].metric("p10 (optimistic)", "$" + (f"{loan_p10:,.0f}" if np.isfinite(loan_p10) else "NA"))
+        loc_cols[2].metric("p90 (conservative)", "$" + (f"{loan_p90:,.0f}" if np.isfinite(loan_p90) else "NA"))
+        st.caption("LOC sizing uses the peak cash deficit vs. Reserve floor (post-debt cash path).")
+        
+        # --- Total Loan Used (CapEx vs OpEx) ---
+        loan_mode = str(strat.get("LOAN_MODE", "upfront")).lower()
+        month_col = next((c for c in ("month", "Month", "t") if c in df_cell.columns), None)
+        if month_col is None and not df_cell.empty:
+            # best-effort fallback
+            month_col = "month" if "month" in df_cell.columns else df_cell.columns[0]
+
         total_capex_loan = 0.0
-        total_opex_loan = 0.0
+        total_opex_loan  = 0.0
+ 
         if not df_cell.empty:
-            if loan_mode == 'staged':
-                mcol = month_col or ('month' if 'month' in df_cell.columns else df_cell.columns[0])
-                if 'loan_tranche_draw_capex' in df_cell.columns:
-                    tmp = df_cell[[mcol, 'loan_tranche_draw_capex']].sort_values(mcol).drop_duplicates(subset=[mcol])
-                    total_capex_loan = float(tmp['loan_tranche_draw_capex'].sum())
+            if loan_mode == "staged":
+                # Sum staged CAPEX tranches without scaling by # of simulations:
+                # take one value per month, then sum.
+                mcol = month_col or ("month" if "month" in df_cell.columns else df_cell.columns[0])
+                if "loan_tranche_draw_capex" in df_cell.columns:
+                    tmp = (df_cell[[mcol, "loan_tranche_draw_capex"]]
+                           .sort_values(mcol)
+                           .drop_duplicates(subset=[mcol]))
+                    total_capex_loan = float(tmp["loan_tranche_draw_capex"].sum())
                 else:
                     total_capex_loan = 0.0
                 total_opex_loan = 0.0
             else:
+                # Upfront mode: principals are constant across rows; read once
                 first_row = df_cell.iloc[0]
-                total_capex_loan = float(first_row['loan_principal_504']) if 'loan_principal_504' in df_cell.columns else 0.0
-                total_opex_loan = float(first_row['loan_principal_7a']) if 'loan_principal_7a' in df_cell.columns else 0.0
+                total_capex_loan = float(first_row["loan_principal_504"]) if "loan_principal_504" in df_cell.columns else 0.0
+                total_opex_loan  = float(first_row["loan_principal_7a"])  if "loan_principal_7a"  in df_cell.columns else 0.0
+ 
         loan_cols = st.columns(2)
+               # --- Loan NEEDS (what to request from lender) ---
         try:
-            if loan_mode == 'upfront':
-                capex_needed = float(st.session_state.get('loan_504', 0.0))
-                opex_needed = float(st.session_state.get('loan_7a', 0.0))
+            if loan_mode == "upfront":
+                capex_needed = float(st.session_state.get("loan_504", 0.0))
+                opex_needed  = float(st.session_state.get("loan_7a",  0.0))
             else:
-                mcol = month_col or ('month' if 'month' in df_cell.columns else df_cell.columns[0])
+                # In staged mode, base CapEx NEED on planned equipment spend,
+                # not on the number of simulations. Take first value per month.
+                mcol = month_col or ("month" if "month" in df_cell.columns else df_cell.columns[0])
                 capex_needed = 0.0
-                for col in ('capex_I_cost', 'capex_II_cost'):
+                for col in ("capex_I_cost", "capex_II_cost"):
                     if col in df_cell.columns:
-                        tmp = df_cell[[mcol, col]].sort_values(mcol).drop_duplicates(subset=[mcol])
+                        tmp = (df_cell[[mcol, col]]
+                               .sort_values(mcol)
+                               .drop_duplicates(subset=[mcol]))
                         capex_needed += float(tmp[col].sum())
+                # OpEx staged facility not modeled here; keep at 0 for NEED
                 opex_needed = 0.0
         except Exception:
             capex_needed = 0.0
-            opex_needed = 0.0
+            opex_needed  = 0.0
+
         need_cols = st.columns(2)
-        need_cols[0].metric('Total CapEx Loan Needed ($)', f'{capex_needed:,.0f}')
-        need_cols[1].metric('Total OpEx Loan Needed ($)', f'{opex_needed:,.0f}')
-        loan_cols = st.columns(2)
-        loan_cols[0].metric('Total CapEx Loan Used ($)', f'{total_capex_loan:,.0f}')
-        loan_cols[1].metric('Total OpEx Loan Used ($)', f'{total_opex_loan:,.0f}')
-        st.caption('• CapEx = 504 principal (upfront) or sum of staged tranches.  • OpEx = 7(a) principal (upfront).')
-        if not df_cell.empty and any((c in df_cell.columns for c in ('month', 'Month', 't'))):
-            month_col = 'month' if 'month' in df_cell.columns else 'Month' if 'Month' in df_cell.columns else 't'
+        need_cols[0].metric("Total CapEx Loan Needed ($)", f"{capex_needed:,.0f}")
+        need_cols[1].metric("Total OpEx Loan Needed ($)",  f"{opex_needed:,.0f}")
+
+        loan_cols = st.columns(2)       
+        loan_cols[0].metric("Total CapEx Loan Used ($)", f"{total_capex_loan:,.0f}")
+        loan_cols[1].metric("Total OpEx Loan Used ($)",  f"{total_opex_loan:,.0f}")
+        st.caption("• CapEx = 504 principal (upfront) or sum of staged tranches.  • OpEx = 7(a) principal (upfront).")
+        
+        # -------------------------------------------------------------------------
+        
+        # Figure out which month we actually have DSCR for (M12 or horizon if T<12)
+        if not df_cell.empty and any(c in df_cell.columns for c in ("month", "Month", "t")):
+            month_col = "month" if "month" in df_cell.columns else ("Month" if "Month" in df_cell.columns else "t")
             T = int(df_cell[month_col].max())
         else:
             T = 0
+        
+        
+       # --- Loan repayment plot (outstanding balance over time) ---
         try:
             if df_cell.empty:
-                raise ValueError('No data for this cell; loan plot skipped.')
+                raise ValueError("No data for this cell; loan plot skipped.")
+        
+            # Determine month column and sort
             df_cell_sorted = df_cell.sort_values(month_col).copy()
-            months_arr = df_cell_sorted[month_col].to_numpy() if month_col in df_cell_sorted.columns else np.arange(len(df_cell_sorted))
-            if {'loan_balance_504', 'loan_balance_7a'} <= set(df_cell_sorted.columns):
-                bal504 = df_cell_sorted['loan_balance_504'].to_numpy()
-                bal7a = df_cell_sorted['loan_balance_7a'].to_numpy()
+            months_arr = (
+                df_cell_sorted[month_col].to_numpy()
+                if month_col in df_cell_sorted.columns
+                else np.arange(len(df_cell_sorted))
+            )
+        
+            # 1) Prefer balances directly from the simulator (most robust).
+            if {"loan_balance_504", "loan_balance_7a"} <= set(df_cell_sorted.columns):
+                bal504 = df_cell_sorted["loan_balance_504"].to_numpy()
+                bal7a  = df_cell_sorted["loan_balance_7a"].to_numpy()
                 bal_total = bal504 + bal7a
+        
             else:
-                principal_504 = float(df_cell_sorted.iloc[0]['loan_principal_504']) if 'loan_principal_504' in df_cell_sorted.columns else 0.0
-                principal_7a = float(df_cell_sorted.iloc[0]['loan_principal_7a']) if 'loan_principal_7a' in df_cell_sorted.columns else 0.0
-                pay_504 = df_cell_sorted['loan_payment_504'].to_numpy() if 'loan_payment_504' in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
-                pay_7a = df_cell_sorted['loan_payment_7a'].to_numpy() if 'loan_payment_7a' in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
-
+                # 2) Fallback path: reconstruct safely from payments (+ staged draws).
+        
+                # Principals (from first row)
+                principal_504 = float(df_cell_sorted.iloc[0]["loan_principal_504"]) if "loan_principal_504" in df_cell_sorted.columns else 0.0
+                principal_7a  = float(df_cell_sorted.iloc[0]["loan_principal_7a"])  if "loan_principal_7a"  in df_cell_sorted.columns else 0.0
+        
+                # Payments: may be cumulative in some cached runs → convert to monthly
+                pay_504 = df_cell_sorted["loan_payment_504"].to_numpy() if "loan_payment_504" in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
+                pay_7a  = df_cell_sorted["loan_payment_7a"].to_numpy()  if "loan_payment_7a"  in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
+        
                 def _to_monthly(p):
-                    if len(p) == 0:
-                        return p
-                    is_cum = np.all(np.diff(p) >= -1e-09) and p[-1] > p[0]
+                    if len(p) == 0: return p
+                    is_cum = np.all(np.diff(p) >= -1e-9) and (p[-1] > p[0])
                     return np.clip(np.diff(np.r_[0.0, p]), 0.0, None) if is_cum else p
+        
                 pay_504 = _to_monthly(pay_504)
-                pay_7a = _to_monthly(pay_7a)
-                r504 = float(st.session_state.get('LOAN_504_ANNUAL_RATE', strat.get('LOAN_504_ANNUAL_RATE', 0.0)))
-                r7a = float(st.session_state.get('LOAN_7A_ANNUAL_RATE', strat.get('LOAN_7A_ANNUAL_RATE', 0.0)))
-                term504_m = int(12 * int(st.session_state.get('LOAN_504_TERM_YEARS', strat.get('LOAN_504_TERM_YEARS', 0)))) if len(pay_504) else 0
-                term7a_m = int(12 * int(st.session_state.get('LOAN_7A_TERM_YEARS', strat.get('LOAN_7A_TERM_YEARS', 0)))) if len(pay_7a) else 0
-                io504 = int(st.session_state.get('IO_MONTHS_504', strat.get('IO_MONTHS_504', 0)))
-                io7a = int(st.session_state.get('IO_MONTHS_7A', strat.get('IO_MONTHS_7A', 0)))
-                draws_capex = df_cell_sorted['loan_tranche_draw_capex'].to_numpy() if 'loan_tranche_draw_capex' in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
-                draws_opex = df_cell_sorted['loan_tranche_draw_opex'].to_numpy() if 'loan_tranche_draw_opex' in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
-                capex_mode = str(st.session_state.get('capex_mode', 'upfront')).lower()
-                opex_mode = str(st.session_state.get('opex_mode', 'upfront')).lower()
-                staged_504 = capex_mode == 'staged' and draws_capex.sum() > 0
-                staged_7a = opex_mode == 'staged' and draws_opex.sum() > 0
-
+                pay_7a  = _to_monthly(pay_7a)
+        
+                # Rates/terms/IO from UI/preset
+                r504 = float(st.session_state.get("LOAN_504_ANNUAL_RATE", strat.get("LOAN_504_ANNUAL_RATE", 0.0)))
+                r7a  = float(st.session_state.get("LOAN_7A_ANNUAL_RATE",  strat.get("LOAN_7A_ANNUAL_RATE",  0.0)))
+                term504_m = int(12 * int(st.session_state.get("LOAN_504_TERM_YEARS", strat.get("LOAN_504_TERM_YEARS", 0)))) if len(pay_504) else 0
+                term7a_m  = int(12 * int(st.session_state.get("LOAN_7A_TERM_YEARS",  strat.get("LOAN_7A_TERM_YEARS",  0)))) if len(pay_7a)  else 0
+                io504 = int(st.session_state.get("IO_MONTHS_504", strat.get("IO_MONTHS_504", 0)))
+                io7a  = int(st.session_state.get("IO_MONTHS_7A",  strat.get("IO_MONTHS_7A",  0)))
+        
+                # Staged draw arrays (optional)
+                draws_capex = df_cell_sorted["loan_tranche_draw_capex"].to_numpy() if "loan_tranche_draw_capex" in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
+                draws_opex  = df_cell_sorted["loan_tranche_draw_opex"].to_numpy()  if "loan_tranche_draw_opex"  in df_cell_sorted.columns else np.zeros(len(df_cell_sorted))
+                capex_mode = str(st.session_state.get("capex_mode", "upfront")).lower()
+                opex_mode  = str(st.session_state.get("opex_mode",  "upfront")).lower()
+                staged_504 = (capex_mode == "staged") and (draws_capex.sum() > 0)
+                staged_7a  = (opex_mode  == "staged") and (draws_opex.sum()  > 0)
+        
+                # Helpers
                 def _balances_from_schedule(principal, payments, apr, io_m, term_m):
                     if principal <= 0 or payments is None or len(payments) == 0:
                         return np.zeros(len(months_arr), dtype=float)
                     r_m = float(apr) / 12.0
                     n = len(payments)
-                    try:
-                        term_m = int(term_m)
-                    except:
-                        term_m = n
+                    try: term_m = int(term_m)
+                    except: term_m = n
                     term_m = n if term_m <= 0 or term_m > n else term_m
-                    try:
-                        io_m = int(io_m)
-                    except:
-                        io_m = 0
+                    try: io_m = int(io_m)
+                    except: io_m = 0
                     io_m = max(0, min(io_m, term_m))
                     bal = float(principal)
                     out = np.zeros(n, dtype=float)
@@ -1250,76 +2398,111 @@ with tab_run:
                         else:
                             interest = bal * r_m
                             principal_paid = 0.0 if m < io_m else max(0.0, float(payments[m]) - interest)
-                            principal_paid = min(bal, principal_paid)
+                            principal_paid = min(bal, principal_paid)  # clamp
                             bal = max(0.0, bal - principal_paid)
                         out[m] = bal
                     return out
-
+        
                 def _balances_from_staged(draws, payments, apr):
                     r_m = float(apr) / 12.0
                     n = len(payments)
                     out = np.zeros(n, dtype=float)
                     bal = 0.0
                     for m in range(n):
-                        bal += float(draws[m]) if m < len(draws) else 0.0
+                        bal += float(draws[m]) if m < len(draws) else 0.0   # step-up on tranche
                         interest = bal * r_m
                         principal_paid = max(0.0, float(payments[m]) - interest)
-                        principal_paid = min(bal, principal_paid)
+                        principal_paid = min(bal, principal_paid)          # clamp
                         bal = max(0.0, bal - principal_paid)
                         out[m] = bal
                     return out
-                bal504 = _balances_from_staged(draws_capex, pay_504, r504) if staged_504 else _balances_from_schedule(principal_504, pay_504, r504, io504, term504_m)
-                bal7a = _balances_from_staged(draws_opex, pay_7a, r7a) if staged_7a else _balances_from_schedule(principal_7a, pay_7a, r7a, io7a, term7a_m)
+        
+                bal504 = _balances_from_staged(draws_capex, pay_504, r504) if staged_504 else \
+                         _balances_from_schedule(principal_504, pay_504, r504, io504, term504_m)
+                bal7a  = _balances_from_staged(draws_opex,  pay_7a,  r7a)  if staged_7a  else \
+                         _balances_from_schedule(principal_7a,  pay_7a,  r7a,  io7a,  term7a_m)
+        
                 bal_total = bal504 + bal7a
-            with st.expander('Loan repayment over time', expanded=True):
+        
+            # Plot
+            with st.expander("Loan repayment over time", expanded=True):
                 fig, ax = plt.subplots(figsize=(8, 4))
-                ax.plot(months_arr, bal_total, label='Total outstanding')
-                ax.plot(months_arr, bal504, label='504 outstanding')
-                ax.plot(months_arr, bal7a, label='7(a) outstanding')
-                ax.set_xlabel('Month')
-                ax.set_ylabel('Outstanding balance ($)')
-                ax.set_title('Loan repayment over time')
+                ax.plot(months_arr, bal_total, label="Total outstanding")
+                ax.plot(months_arr, bal504, label="504 outstanding")
+                ax.plot(months_arr, bal7a,  label="7(a) outstanding")
+                ax.set_xlabel("Month"); ax.set_ylabel("Outstanding balance ($)")
+                ax.set_title("Loan repayment over time")
                 ax.legend()
                 st.pyplot(fig)
+        
         except Exception as _e:
-            st.info(f'Loan repayment plot unavailable: {_e}')
-        m_for_dscr = 12 if T >= 12 else T
+            st.info(f"Loan repayment plot unavailable: {_e}")
+        
+        
+        
+        # Figure out checkpoints
+        m_for_dscr  = 12 if T >= 12 else T
         m_for_dscr2 = 60 if T >= 60 else T
-        if 'dscr' in df_cell.columns and m_for_dscr > 0:
-            dscr_at_m1 = df_cell.loc[df_cell[month_col] == m_for_dscr, 'dscr']
+        
+        # DSCR @ M{m_for_dscr} from the time series (not horizon summary)
+        if "dscr" in df_cell.columns and m_for_dscr > 0:
+            dscr_at_m1 = df_cell.loc[df_cell[month_col] == m_for_dscr, "dscr"]
             dscr_med_m1 = float(dscr_at_m1.median()) if not dscr_at_m1.empty else np.nan
         else:
             dscr_med_m1 = np.nan
-        if 'dscr' in df_cell.columns and m_for_dscr2 > 0:
-            dscr_at_m2 = df_cell.loc[df_cell[month_col] == m_for_dscr2, 'dscr']
+        
+        # DSCR @ M{m_for_dscr2} from the time series
+        if "dscr" in df_cell.columns and m_for_dscr2 > 0:
+            dscr_at_m2 = df_cell.loc[df_cell[month_col] == m_for_dscr2, "dscr"]
             dscr_med_m2 = float(dscr_at_m2.median()) if not dscr_at_m2.empty else np.nan
         else:
             dscr_med_m2 = np.nan
+        
+        # ----- KPI row 1 (Year 1) -----
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric('Survival prob @ horizon', f'{surv:.2f}' if np.isfinite(surv) else 'NA')
-        col2.metric('Cash p10 → p50 ($k)', f'{cash_q10 / 1000.0:,.0f} → {cash_med / 1000.0:,.0f}' if np.isfinite(cash_q10) and np.isfinite(cash_med) else 'NA')
-        col3.metric(f'DSCR @ M{m_for_dscr} (p50)', f'{dscr_med_m1:.2f}' if np.isfinite(dscr_med_m1) else 'NA')
-        col4.metric('Breakeven (CFADS, k=3; median months)', f'{t_breakeven:.0f}' if np.isfinite(t_breakeven) else 'NA')
+        col1.metric("Survival prob @ horizon", f"{surv:.2f}" if np.isfinite(surv) else "NA")
+        col2.metric("Cash p10 → p50 ($k)",
+                    f"{(cash_q10/1e3):,.0f} → {(cash_med/1e3):,.0f}"
+                    if np.isfinite(cash_q10) and np.isfinite(cash_med) else "NA")
+        col3.metric(f"DSCR @ M{m_for_dscr} (p50)", f"{dscr_med_m1:.2f}" if np.isfinite(dscr_med_m1) else "NA")
+        col4.metric("Breakeven (CFADS, k=3; median months)",
+                    f"{t_breakeven:.0f}" if np.isfinite(t_breakeven) else "NA")
+        
+        # ----- KPI row 2 (Year 5) -----
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric('Survival prob @ horizon', f'{surv:.2f}' if np.isfinite(surv) else 'NA')
-        col2.metric('Cash p10 → p50 ($k)', f'{cash_q10 / 1000.0:,.0f} → {cash_med / 1000.0:,.0f}' if np.isfinite(cash_q10) and np.isfinite(cash_med) else 'NA')
-        col3.metric(f'DSCR @ M{m_for_dscr2} (p50)', f'{dscr_med_m2:.2f}' if np.isfinite(dscr_med_m2) else 'NA')
-        col4.metric('Breakeven (CFADS, k=3; median months)', f'{t_breakeven:.0f}' if np.isfinite(t_breakeven) else 'NA')
-        st.caption(f"Breakeven signal = {row_dict.get('breakeven_signal', 'cfads')} (k={int(row_dict.get('breakeven_k', 3))} months)")
-        st.markdown('#### Captured charts')
+        col1.metric("Survival prob @ horizon", f"{surv:.2f}" if np.isfinite(surv) else "NA")
+        col2.metric("Cash p10 → p50 ($k)",
+                    f"{(cash_q10/1e3):,.0f} → {(cash_med/1e3):,.0f}"
+                    if np.isfinite(cash_q10) and np.isfinite(cash_med) else "NA")
+        col3.metric(f"DSCR @ M{m_for_dscr2} (p50)", f"{dscr_med_m2:.2f}" if np.isfinite(dscr_med_m2) else "NA")
+        col4.metric("Breakeven (CFADS, k=3; median months)",
+                    f"{t_breakeven:.0f}" if np.isfinite(t_breakeven) else "NA")
+        
+        # Annotation
+        st.caption(f"Breakeven signal = {row_dict.get('breakeven_signal','cfads')} "
+                   f"(k={int(row_dict.get('breakeven_k',3))} months)")
+                
+        st.markdown("#### Captured charts")
         for fname, data in images:
             st.image(data, caption=fname, use_container_width=True)
+
+        # Download bundle (PNGs + manifest) for the cell
         buf = io.BytesIO()
-        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr('manifest.json', json.dumps(manifest, indent=2))
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("manifest.json", json.dumps(manifest, indent=2))
             for fname, data in images:
                 zf.writestr(fname, data)
-        st.download_button('Download plots (zip)', data=buf.getvalue(), file_name=f"{slug(env['name'])}__{slug(strat['name'])}_plots.zip")
-        st.markdown('#### Raw results (first 250 rows)')
+        st.download_button("Download plots (zip)", data=buf.getvalue(),
+                            file_name=f"{slug(env['name'])}__{slug(strat['name'])}_plots.zip")
+
+        st.markdown("#### Raw results (first 250 rows)")
         st.dataframe(df_cell.head(250))
+
+# ---- Matrix heatmaps
 with tab_matrix:
-    st.caption('Runs all presets in SCENARIOS × STRATEGIES with independent seeds.')
-    if st.button('Build matrix', help='Short description of this field.'):
+    st.caption("Runs all presets in SCENARIOS × STRATEGIES with independent seeds.")
+    if st.button("Build matrix"):
+        # auto-bust caches when building the matrix
         try:
             run_cell_cached.clear()
         except Exception:
@@ -1328,196 +2511,347 @@ with tab_matrix:
             st.cache_data.clear()
         except Exception:
             pass
-        with st.spinner('Running matrix…'):
-            runs = []
-            horizons = []
+        with st.spinner("Running matrix…"):
+            runs = []        # keep raw dfs so we can recompute DSCR at a uniform month
+            horizons = []    # track each run's horizon (max month)
+
             for i, E in enumerate(SCENARIOS):
                 for j, S in enumerate(STRATEGIES):
-                    E2 = json.loads(json.dumps(env))
-                    S2 = json.loads(json.dumps(strat))
+                   
+                    # --- start from CURRENT SLIDER STATE as # --- start from CURRENT SLIDER STATE as baseline ---
+                    E2 = json.loads(json.dumps(env))    # baseline = sliders (env)
+                    S2 = json.loads(json.dumps(strat))  # baseline = sliders (strat)
+                    
+                    # --- overlay PRESET values (presets win where they specify a key) ---
+                    # skip meta fields like 'name'; ignore None to avoid clobbering with empties
                     for k, v in (E or {}).items():
-                        if k == 'name' or v is None:
+                        if k == "name" or v is None:
                             continue
                         E2[k] = v
                     for k, v in (S or {}).items():
-                        if k == 'name' or v is None:
+                        if k == "name" or v is None:
                             continue
                         S2[k] = v
-                    E2['name'] = E['name']
-                    S2['name'] = S['name']
+                    
+                    # ensure labels match the preset names (not the slider baseline)
+                    E2["name"] = E["name"]
+                    S2["name"] = S["name"]
+                    
+                    # normalize env after overlay
                     E_norm = _normalize_env(E2)
-                    seed_ = 42 + 1000 * (i * len(STRATEGIES) + j)
-                    df_cell, eff, _imgs, _man = run_cell_cached(E_norm, S2, seed_, _make_cache_key(E_norm, S2, seed_))
+                    
+                    seed_ = 42 + 1000*(i*len(STRATEGIES)+j)
+                    df_cell, eff, _imgs, _man = run_cell_cached(
+                        E_norm, S2, seed_, _make_cache_key(E_norm, S2, seed_)
+                    )
+
+                                        # summarize (for survival, cash, timings, etc.)
                     row_dict, _ = summarize_cell(df_cell)
+
+                    # detect horizon T robustly (handle empty DF, index-based month, or missing cols)
                     if df_cell is None or df_cell.empty:
                         month_col = None
                         T = 0
                     else:
-                        month_col = next((c for c in ('month', 'Month', 't') if c in df_cell.columns), None)
+                        # try known column names
+                        month_col = next((c for c in ("month", "Month", "t") if c in df_cell.columns), None)
                         if month_col is not None:
                             T = int(df_cell[month_col].max())
-                        elif df_cell.index.name in ('month', 'Month', 't') or (getattr(df_cell.index, 'dtype', None) is not None and df_cell.index.dtype.kind in 'iu'):
-                            T = int(df_cell.index.max())
-                            month_col = df_cell.index.name
                         else:
-                            num_cols = [c for c in df_cell.columns if getattr(df_cell[c], 'dtype', None) is not None and df_cell[c].dtype.kind in 'iu']
-                            if num_cols:
-                                month_col = num_cols[0]
-                                T = int(df_cell[month_col].max())
+                            # try index as month
+                            if (df_cell.index.name in ("month", "Month", "t")
+                                or getattr(df_cell.index, "dtype", None) is not None and df_cell.index.dtype.kind in "iu"):
+                                T = int(df_cell.index.max())
+                                month_col = df_cell.index.name  # may be None
                             else:
-                                T = max(int(df_cell.shape[0]) - 1, 0)
+                                # last resort: pick a numeric column
+                                num_cols = [c for c in df_cell.columns
+                                            if getattr(df_cell[c], "dtype", None) is not None
+                                            and df_cell[c].dtype.kind in "iu"]
+                                if num_cols:
+                                    month_col = num_cols[0]
+                                    T = int(df_cell[month_col].max())
+                                else:
+                                    T = max(int(df_cell.shape[0]) - 1, 0)
+
                     horizons.append(T)
-                    runs.append({'env': E['name'], 'strat': S['name'], 'df': df_cell, 'summary': row_dict, 'T': T, 'month_col': month_col})
+
+                    runs.append({
+                        "env": E["name"],
+                        "strat": S["name"],
+                        "df": df_cell,
+                        "summary": row_dict,  # includes dscr_med at that run's own Mmin(12,T)
+                        "T": T,
+                        "month_col": month_col,
+                    })
+
+            # Choose a single month for DSCR across ALL cells: min(12, shortest horizon)
             valid_horizons = [h for h in horizons if h and h > 0]
             global_horizon = min(valid_horizons) if valid_horizons else 0
             m_for_dscr = 12 if global_horizon >= 12 else global_horizon
+
+            # Build the matrix rows, overriding dscr_med with DSCR@M{m_for_dscr} uniformly
             rows = []
             for r in runs:
-                d = dict(r['summary'])
-                d['environment'] = r['env']
-                d['strategy'] = r['strat']
-                df = r['df']
-                mc = r['month_col']
-                if 'dscr' in df.columns and m_for_dscr > 0:
+                d = dict(r["summary"])  # copy the summarize_cell metrics
+                d["environment"] = r["env"]
+                d["strategy"] = r["strat"]
+
+                # Recompute dscr_med at the uniform month (if DSCR exists and month is available)
+                df = r["df"]
+                mc = r["month_col"]
+                if "dscr" in df.columns and m_for_dscr > 0:
                     if mc and mc in df.columns:
-                        dscr_at_m = df.loc[df[mc] == m_for_dscr, 'dscr']
-                    elif df.index.name in ('month', 'Month', 't') or (getattr(df.index, 'dtype', None) is not None and df.index.dtype.kind in 'iu'):
-                        dscr_at_m = df.loc[df.index == m_for_dscr, 'dscr']
+                        dscr_at_m = df.loc[df[mc] == m_for_dscr, "dscr"]
+                    elif (df.index.name in ("month","Month","t")
+                          or getattr(df.index, "dtype", None) is not None and df.index.dtype.kind in "iu"):
+                        dscr_at_m = df.loc[df.index == m_for_dscr, "dscr"]
                     else:
                         dscr_at_m = pd.Series([], dtype=float)
-                    d['dscr_med'] = float(dscr_at_m.median()) if not dscr_at_m.empty else np.nan
+                    d["dscr_med"] = float(dscr_at_m.median()) if not dscr_at_m.empty else np.nan
                 else:
-                    d['dscr_med'] = np.nan
+                    d["dscr_med"] = np.nan
+
+                # --- DSCR @ fixed month 60 (5 years) for this cell ---
                 TARGET_MONTH = 60
-                d['dscr_at_60'] = np.nan
-                if 'dscr' in df.columns:
+                d["dscr_at_60"] = np.nan
+                if "dscr" in df.columns:
                     if mc and mc in df.columns:
-                        _dscr60 = df.loc[df[mc] == TARGET_MONTH, 'dscr']
-                    elif df.index.name in ('month', 'Month', 't') or (getattr(df.index, 'dtype', None) is not None and df.index.dtype.kind in 'iu'):
-                        _dscr60 = df.loc[df.index == TARGET_MONTH, 'dscr']
+                        _dscr60 = df.loc[df[mc] == TARGET_MONTH, "dscr"]
+                    elif (df.index.name in ("month","Month","t")
+                          or getattr(df.index, "dtype", None) is not None and df.index.dtype.kind in "iu"):
+                        _dscr60 = df.loc[df.index == TARGET_MONTH, "dscr"]
                     else:
                         _dscr60 = pd.Series([], dtype=float)
                     if not _dscr60.empty:
-                        d['dscr_at_60'] = float(_dscr60.median())
+                        d["dscr_at_60"] = float(_dscr60.median())
+
                 rows.append(d)
+
             matrix = pd.DataFrame(rows)
-        st.markdown('##### Survival probability')
-        pv = matrix.pivot(index='environment', columns='strategy', values='survival_prob').reindex(index=sorted(matrix['environment'].unique()), columns=sorted(matrix['strategy'].unique()))
+
+        # 1) Survival probability
+        st.markdown("##### Survival probability")
+        pv = (matrix.pivot(index="environment", columns="strategy", values="survival_prob")
+                      .reindex(index=sorted(matrix["environment"].unique()),
+                               columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(6, 4))
-        sns.heatmap(pv, annot=True, fmt='.2f', cmap='Blues', vmin=0, vmax=1, ax=ax, cbar_kws={'label': 'probability'})
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-        ax.set_title('Survival probability (horizon)')
+        sns.heatmap(pv, annot=True, fmt=".2f", cmap="Blues", vmin=0, vmax=1, ax=ax,
+                    cbar_kws={"label": "probability"})
+        ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Survival probability (horizon)")
         st.pyplot(fig)
-        st.markdown(f'##### Median DSCR @ M{m_for_dscr}')
-        pv = matrix.pivot(index='environment', columns='strategy', values='dscr_med').reindex(index=sorted(matrix['environment'].unique()), columns=sorted(matrix['strategy'].unique()))
+
+        # 2) DSCR at a uniform month across all cells
+        st.markdown(f"##### Median DSCR @ M{m_for_dscr}")
+        pv = (matrix.pivot(index="environment", columns="strategy", values="dscr_med")
+                      .reindex(index=sorted(matrix["environment"].unique()),
+                               columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(6, 4))
-        sns.heatmap(pv, annot=True, fmt='.2f', cmap='Purples', ax=ax, cbar_kws={'label': 'ratio'})
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-        ax.set_title(f'Median DSCR @ M{m_for_dscr}')
+        sns.heatmap(pv, annot=True, fmt=".2f", cmap="Purples", ax=ax, cbar_kws={"label":"ratio"})
+        ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title(f"Median DSCR @ M{m_for_dscr}")
         st.pyplot(fig)
-        st.markdown('##### Median cash at horizon ($k)')
-        pv = matrix.pivot(index='environment', columns='strategy', values='cash_med').reindex(index=sorted(matrix['environment'].unique()), columns=sorted(matrix['strategy'].unique()))
+
+        # 3) Median cash at horizon ($k)
+        st.markdown("##### Median cash at horizon ($k)")
+        pv = (matrix.pivot(index="environment", columns="strategy", values="cash_med")
+              .reindex(index=sorted(matrix["environment"].unique()),
+                       columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(6, 4))
-        sns.heatmap(pv / 1000.0, annot=True, fmt='.0f', cmap='YlOrBr', ax=ax, cbar_kws={'label': '$ thousands'})
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-        ax.set_title('Median cash at horizon ($k)')
+        sns.heatmap(pv/1e3, annot=True, fmt=".0f", cmap="YlOrBr", ax=ax, cbar_kws={"label":"$ thousands"})
+        ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Median cash at horizon ($k)")
         st.pyplot(fig)
-        st.markdown('##### Median time to breakeven (months)')
-        pv = matrix.pivot(index='environment', columns='strategy', values='median_time_to_breakeven_months').reindex(index=sorted(matrix['environment'].unique()), columns=sorted(matrix['strategy'].unique()))
+        
+
+        # 4) Median time to breakeven (months)
+        st.markdown("##### Median time to breakeven (months)")
+        pv = (matrix.pivot(index="environment", columns="strategy", values="median_time_to_breakeven_months")
+                      .reindex(index=sorted(matrix["environment"].unique()),
+                               columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(6, 4))
-        sns.heatmap(pv, annot=True, fmt='.0f', cmap='Greens', ax=ax, cbar_kws={'label': 'months'})
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-        ax.set_title('Median time to breakeven (months)')
+        sns.heatmap(pv, annot=True, fmt=".0f", cmap="Greens", ax=ax, cbar_kws={"label":"months"})
+        ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Median time to breakeven (months)")
         st.pyplot(fig)
-        st.markdown('##### Median time to insolvency (months)')
-        pv = matrix.pivot(index='environment', columns='strategy', values='median_time_to_insolvency_months').reindex(index=sorted(matrix['environment'].unique()), columns=sorted(matrix['strategy'].unique()))
+
+        # 5) Median time to insolvency (months)
+        st.markdown("##### Median time to insolvency (months)")
+        pv = (matrix.pivot(index="environment", columns="strategy", values="median_time_to_insolvency_months")
+                      .reindex(index=sorted(matrix["environment"].unique()),
+                               columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(6, 4))
-        sns.heatmap(pv, annot=True, fmt='.0f', cmap='Reds', ax=ax, cbar_kws={'label': 'months'})
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-        ax.set_title('Median time to insolvency (months)')
+        sns.heatmap(pv, annot=True, fmt=".0f", cmap="Reds", ax=ax, cbar_kws={"label":"months"})
+        ax.set_xlabel(""); ax.set_ylabel(""); ax.set_title("Median time to insolvency (months)")
         st.pyplot(fig)
-        st.markdown('##### Survival (annotated) + Median time to insolvency (color)')
-        pv_time = matrix.pivot(index='environment', columns='strategy', values='median_time_to_insolvency_months').reindex(index=sorted(matrix['environment'].unique()), columns=sorted(matrix['strategy'].unique()))
-        pv_surv = matrix.pivot(index='environment', columns='strategy', values='survival_prob').reindex(index=pv_time.index, columns=pv_time.columns)
+        
+        # ===== Combined heatmap: Insolvency time (color) + Survival prob (annotation) =====
+        st.markdown("##### Survival (annotated) + Median time to insolvency (color)")
+        pv_time = (matrix.pivot(index="environment", columns="strategy",
+                                values="median_time_to_insolvency_months")
+                          .reindex(index=sorted(matrix["environment"].unique()),
+                                   columns=sorted(matrix["strategy"].unique())))
+        pv_surv = (matrix.pivot(index="environment", columns="strategy",
+                                values="survival_prob")
+                          .reindex(index=pv_time.index, columns=pv_time.columns))
         fig, ax = plt.subplots(figsize=(8, 6))
-        sns.heatmap(pv_time, annot=pv_surv.round(2), fmt='.2f', cmap='Reds', cbar_kws={'label': 'Median time to insolvency (months)'}, ax=ax)
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-        ax.set_title('Survival probability (annotation) + Insolvency time (color)')
+        sns.heatmap(
+            pv_time,
+            annot=pv_surv.round(2),
+            fmt=".2f",
+            cmap="Reds",
+            cbar_kws={"label": "Median time to insolvency (months)"},
+            ax=ax
+        )
+        ax.set_xlabel(""); ax.set_ylabel("")
+        ax.set_title("Survival probability (annotation) + Insolvency time (color)")
         st.pyplot(fig)
-        st.markdown('##### DSCR at 5 years (month 60) — median across runs')
-        pv_dscr60 = matrix.pivot(index='environment', columns='strategy', values='dscr_at_60').reindex(index=sorted(matrix['environment'].unique()), columns=sorted(matrix['strategy'].unique()))
+
+        # ===== DSCR at 5 years (month 60) =====
+        st.markdown("##### DSCR at 5 years (month 60) — median across runs")
+        pv_dscr60 = (matrix.pivot(index="environment", columns="strategy", values="dscr_at_60")
+                            .reindex(index=sorted(matrix["environment"].unique()),
+                                     columns=sorted(matrix["strategy"].unique())))
         fig, ax = plt.subplots(figsize=(8, 6))
-        sns.heatmap(pv_dscr60, annot=True, fmt='.2f', cmap='Blues', cbar_kws={'label': 'DSCR @ 60 months (median)'}, ax=ax)
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-        ax.set_title('Median DSCR at 5 years')
+        sns.heatmap(
+            pv_dscr60,
+            annot=True, fmt=".2f",
+            cmap="Blues",
+            cbar_kws={"label": "DSCR @ 60 months (median)"},
+            ax=ax
+        )
+        ax.set_xlabel(""); ax.set_ylabel("")
+        ax.set_title("Median DSCR at 5 years")
         st.pyplot(fig)
-        st.download_button('Download matrix CSV', data=matrix.to_csv(index=False).encode('utf-8'), file_name='matrix_summary.csv', mime='text/csv')
-with st.expander('📤 Export to SBA Financial Projections', expanded=False):
+
+        st.download_button("Download matrix CSV",
+                           data=matrix.to_csv(index=False).encode("utf-8"),
+                           file_name="matrix_summary.csv", mime="text/csv")
+
+# ========================= SBA EXPORT =========================
+with st.expander("📤 Export to SBA Financial Projections", expanded=False):
     import os, io, tempfile
     from pathlib import Path
     import streamlit as st
     import pandas as pd
     from sba_export import export_to_sba_workbook
-    st.subheader('📘 Export to SBA Financial Projections')
 
+    st.subheader("📘 Export to SBA Financial Projections")
+
+    # --- Resolve data produced by your simulator ---------------------------------
+    # Try a few likely names first (locals), then Streamlit session_state.
     def _resolve_first_available(names):
+        # 1) look in local/global namespace
         frame = {}
         frame.update(globals())
         frame.update(locals())
         for n in names:
             if n in frame and frame[n] is not None:
                 return frame[n]
+        # 2) look in Streamlit session_state
         for n in names:
             if n in st.session_state and st.session_state[n] is not None:
                 return st.session_state[n]
         return None
-    df_monthly = _resolve_first_available(['df_monthly', 'df_result', 'DF_RESULT', 'df_single_run'])
-    capex_items = _resolve_first_available(['capex_items', 'CAPEX_ITEMS', 'capex_schedule', 'CAPEX_SCHEDULE'])
-    loans = _resolve_first_available(['loans', 'LOANS'])
-    config_snapshot = dict(st.session_state) if hasattr(st, 'session_state') else {}
+
+    # Common names seen in your codebase/messages:
+    df_monthly = _resolve_first_available(["df_monthly", "df_result", "DF_RESULT", "df_single_run"])
+    capex_items = _resolve_first_available(["capex_items", "CAPEX_ITEMS", "capex_schedule", "CAPEX_SCHEDULE"])
+    loans = _resolve_first_available(["loans", "LOANS"])
+    # A lightweight snapshot of current inputs; falls back to empty dict
+    config_snapshot = dict(st.session_state) if hasattr(st, "session_state") else {}
+
     if df_monthly is None:
-        st.warning('Run the simulation first so we have monthly results to export.')
+        st.warning("Run the simulation first so we have monthly results to export.")
         st.stop()
-    tpl = st.file_uploader('SBA template (.xlsx)', type=['xlsx'], help='Upload the Excel template workbook you want populated')
-    scratch_root = Path('./exports')
+
+    # --- Template upload + scratch output dir ------------------------------------
+    tpl = st.file_uploader(
+        "SBA template (.xlsx)",
+        type=["xlsx"],
+        help="Upload the Excel template workbook you want populated"
+    )
+
+    scratch_root = Path("./exports")
     scratch_root.mkdir(parents=True, exist_ok=True)
+
+    # --- Minimal extra inputs used by the exporter (optional) ---------------------
     c1, c2 = st.columns(2)
     with c1:
-        equity_injection = st.number_input('Equity injection ($)', min_value=0.0, value=0.0, step=1000.0, format='%.2f', help='Type a numeric value. Use arrow keys for fine adjustments.')
-        working_capital = st.number_input('Working capital / OpEx buffer ($)', min_value=0.0, value=45000.0, step=500.0, format='%.2f', help='Operational capacity assumptions used to compute membership limits.')
+        equity_injection = st.number_input("Equity injection ($)", min_value=0.0, value=0.0, step=1000.0, format="%.2f")
+        working_capital  = st.number_input("Working capital / OpEx buffer ($)", min_value=0.0, value=45000.0, step=500.0, format="%.2f")
     with c2:
-        owner_salary = st.number_input('Owner salary (monthly)', min_value=0.0, value=0.0, step=500.0, format='%.2f', help='Type a numeric value. Use arrow keys for fine adjustments.')
-        payroll_tax_pct = st.number_input('Payroll tax & benefits (%)', min_value=0.0, value=12.0, step=0.5, format='%.2f', help='Fractional rate (0–1). For example, 6% = 0.06.')
+        owner_salary     = st.number_input("Owner salary (monthly)", min_value=0.0, value=0.0, step=500.0, format="%.2f")
+        payroll_tax_pct  = st.number_input("Payroll tax & benefits (%)", min_value=0.0, value=12.0, step=0.5, format="%.2f")
+
     disabled = tpl is None
-    if st.button('Export SBA Workbook', disabled=disabled, use_container_width=True, help='Include this output in the download. Does not affect calculations.'):
+
+    if st.button("Export SBA Workbook", disabled=disabled, use_container_width=True):
         if tpl is None:
-            st.error('Please upload an SBA template (.xlsx) first.')
+            st.error("Please upload an SBA template (.xlsx) first.")
             st.stop()
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+
+        # Persist uploaded template to a real path the server can read
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
             tmp.write(tpl.getbuffer())
             template_path = tmp.name
-        payroll_cfg = {'owner_salary_monthly': float(owner_salary), 'payroll_tax_rate': float(payroll_tax_pct) / 100.0}
+
+        # Build the minimal payroll config (exporter will skip if not used)
+        payroll_cfg = {
+            "owner_salary_monthly": float(owner_salary),
+            "payroll_tax_rate": float(payroll_tax_pct) / 100.0,
+            # you can add staff rows later if you wire them in your UI
+        }
+
         try:
-            result = export_to_sba_workbook(df_monthly=df_monthly, template_path=template_path, output_root=str(scratch_root), config_snapshot=config_snapshot or {}, capex_items=capex_items, loans=loans, payroll_cfg=payroll_cfg, working_capital=working_capital, equity_injection=equity_injection, run_seed=None)
-            xlsx_path = result['xlsx']
-            csv_path = result.get('csv_path')
-            with open(xlsx_path, 'rb') as f:
-                st.download_button(label='⬇️ Download filled SBA workbook', data=f.read(), file_name=Path(xlsx_path).name, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', use_container_width=True)
+            result = export_to_sba_workbook(
+                df_monthly=df_monthly,
+                template_path=template_path,
+                output_root=str(scratch_root),
+                config_snapshot=config_snapshot or {},
+                capex_items=capex_items,
+                loans=loans,
+                payroll_cfg=payroll_cfg,
+                working_capital=working_capital,
+                equity_injection=equity_injection,
+                run_seed=None,
+            )
+
+            xlsx_path = result["xlsx"]
+            csv_path  = result.get("csv_path")
+
+            # Offer downloads
+            with open(xlsx_path, "rb") as f:
+                st.download_button(
+                    label="⬇️ Download filled SBA workbook",
+                    data=f.read(),
+                    file_name=Path(xlsx_path).name,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+
             if csv_path and os.path.exists(csv_path):
-                with open(csv_path, 'rb') as fcsv:
-                    st.download_button(label='⬇️ Download monthly timeseries CSV', data=fcsv.read(), file_name=Path(csv_path).name, mime='text/csv', use_container_width=True)
+                with open(csv_path, "rb") as fcsv:
+                    st.download_button(
+                        label="⬇️ Download monthly timeseries CSV",
+                        data=fcsv.read(),
+                        file_name=Path(csv_path).name,
+                        mime="text/csv",
+                        use_container_width=True,
+                    )
+
             st.success(f"Export complete · Run ID: {result['run_id']}")
         except Exception as e:
-            st.error(f'Export failed: {e}')
+            st.error(f"Export failed: {e}")
         finally:
+            # Clean up the temp template file
             try:
                 os.remove(template_path)
             except Exception:
                 pass
+    
+
+
+
+
+
+
+
+

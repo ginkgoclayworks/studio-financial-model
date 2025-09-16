@@ -510,6 +510,29 @@ def _push_preset_to_widgets(preset: dict, *, prefix: str, keys: list):
 
             
 # ---------- small helpers ----------
+def _preflight_validate(cfg: dict) -> bool:
+    """Return True if config looks sane, otherwise render an error and return False."""
+    errs = []
+
+    # Composites the engine indexes into:
+    if "USAGE_SHARE" in cfg and not isinstance(cfg["USAGE_SHARE"], (dict, list, tuple)):
+        errs.append("USAGE_SHARE must be a dict/list (got scalar)")
+
+    if "STATIONS" in cfg and not isinstance(cfg["STATIONS"], (dict, list, int)):
+        errs.append("STATIONS must be dict/list/int")
+
+    # Add other composites here if you expose them later:
+    if "SEASONALITY_WEIGHTS" in cfg and not isinstance(cfg["SEASONALITY_WEIGHTS"], (list, tuple)):
+        errs.append("SEASONALITY_WEIGHTS must be a list/tuple")
+
+    if "ATTENDEES_PER_EVENT_RANGE" in cfg and not isinstance(cfg["ATTENDEES_PER_EVENT_RANGE"], (list, tuple)):
+        errs.append("ATTENDEES_PER_EVENT_RANGE must be list/tuple")
+
+    if errs:
+        st.error("Invalid inputs:\n- " + "\n- ".join(errs))
+        return False
+    return True
+
 def _normalize_market_inflow(d: dict) -> dict:
     # Keep only the three known pools; coerce to non-negative ints.
     pools = {
@@ -2149,6 +2172,9 @@ with st.sidebar:
     adv_overrides = render_advanced_controls(DEFAULTS)
     strat.update(adv_overrides)
 
+    # Validate before simulate
+    if not _preflight_validate(strat):
+        st.stop()
 
     # Preset save/load
     st.markdown("---")

@@ -170,14 +170,24 @@ def override_globals(new_vals: dict):
 
 def resolve_cfg(user_cfg: dict | None = None) -> dict:
     """
-    Merge user overrides onto the current file’s defaults.
-    Later, you can also validate types / ranges here if you like.
+    Merge user overrides onto the current file’s defaults, with light type validation
+    so scalar overrides don’t clobber expected dicts.
     """
     defaults = get_default_cfg()
     merged = dict(defaults)
     if user_cfg:
-        merged.update(user_cfg)
+        merged.update(user_cfg)  # shallow merge by design
+
+        # --- Guard against bad scalar overrides for dict-typed knobs ---
+        if not isinstance(merged.get("POOL_BASE_INTENT", defaults["POOL_BASE_INTENT"]), dict):
+            # drop the bad override and fall back to defaults
+            merged["POOL_BASE_INTENT"] = dict(defaults["POOL_BASE_INTENT"])
+
+        if not isinstance(merged.get("MARKET_POOLS_INFLOW", defaults["MARKET_POOLS_INFLOW"]), dict):
+            merged["MARKET_POOLS_INFLOW"] = dict(defaults["MARKET_POOLS_INFLOW"])
+
     return merged
+
 
 # -- Downturn probability sourcing -------------------------------------------
 def _get_downturn_prob(cfg):

@@ -1825,21 +1825,46 @@ with st.sidebar:
     scen_names  = [s["name"] for s in SCENARIOS]
     strat_names = [s["name"] for s in STRATEGIES]
 
-    scen_sel  = st.selectbox("Scenario preset", scen_names, index=0)
-    strat_sel = st.selectbox("Strategy preset", strat_names, index=0)
-    
+ #   scen_sel  = st.selectbox("Scenario preset", scen_names, index=0)
+  #  strat_sel = st.selectbox("Strategy preset", strat_names, index=0)
+    scen_sel  = st.selectbox(
+        "Scenario preset", scen_names, index=0,
+        help="Pick a predefined environment (market & economy) to load baseline assumptions."
+    )
+    strat_sel = st.selectbox(
+        "Strategy preset", strat_names, index=0,
+        help="Pick a predefined operating strategy (pricing, capacity, ops) to load baseline knobs."
+    )
     
     # --- Loan controls (De-Staged) ---
     st.subheader("Loans")
     colA, colB = st.columns(2)
     with colA:
-        capex_mode = st.radio("CapEx Loan (504) Mode", ["upfront","staged"], index=0, horizontal=True)
+        capex_mode = st.radio(
+            "CapEx Loan (504) Mode", ["upfront","staged"], index=0, horizontal=True,
+            help="Upfront = single disbursement at purchase; staged = multiple draws tied to purchases."
+        )
         if capex_mode == "upfront":
-            loan_504 = st.number_input("Upfront CapEx Loan (504)", min_value=0, step=1000, value=0)
+            loan_504 = st.number_input(
+                "Upfront CapEx Loan (504)", min_value=0, step=1000, value=0,
+                help="Total 504 amount funded at the start for equipment/build‑out. Used only in 'upfront' mode."
+            )
         else:
-            capex_draw_pct = st.slider("CapEx: Staged Draw % of purchase", 0.0, 1.0, 1.0, 0.05)
-            capex_min_tr   = st.number_input("CapEx: Min Tranche ($)", min_value=0, step=500, value=0)
-            capex_max_tr   = st.number_input("CapEx: Max Tranche ($, 0=None)", min_value=0, step=500, value=0)
+            capex_draw_pct = st.slider(
+                "CapEx: Staged Draw % of purchase", 0.0, 1.0, 1.0, 0.05,
+                help="Share of each CapEx purchase funded per staged draw (1.0 = 100%)."
+            )
+            capex_min_tr   = st.number_input(
+                "CapEx: Min Tranche ($)", min_value=0, step=500, value=0,
+                help="Smallest allowed staged draw amount for CapEx purchases."
+            )
+            capex_max_tr   = st.number_input(
+                "CapEx: Max Tranche ($, 0=None)", min_value=0, step=500, value=0,
+                help="Largest allowed staged draw per purchase; 0 means no maximum (only the min applies)."
+            )
+            
+            
+            
     with colB:
         opex_mode = st.radio("OpEx Loan (7a) Mode", ["upfront","staged"], index=0, horizontal=True)
         if opex_mode == "upfront":

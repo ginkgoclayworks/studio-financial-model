@@ -1355,7 +1355,7 @@ def _core_simulation_and_reports():
                         # Total joins this month (respect onboarding ops cap, if any)
                         joins = (
                              joins_no_access + joins_home + joins_comm_studio
-                             + (int(stream.get("joins_from_workshops", np.zeros(MONTHS))[month]) if globals().get("WORKSHOPS_ENABLED", False) else 0)
+                             + (int(stream.get("joins_from_workshops", np.zeros(MONTHS, dtype=int))[month]) if globals().get("WORKSHOPS_ENABLED", False) else 0)
                              + class_joins_now
                          )
                         
@@ -1412,7 +1412,7 @@ def _core_simulation_and_reports():
                              + (joins_no_access + joins_home + joins_comm_studio)
                              + baseline_joins
                              + referral_joins
-                             + (int(stream["joins_from_workshops"][month]) if globals().get("WORKSHOPS_ENABLED", False) else 0)
+                             + (int(stream.get("joins_from_workshops", np.zeros(MONTHS, dtype=int))[month]) if globals().get("WORKSHOPS_ENABLED", False) else 0)
                          )
                       
     

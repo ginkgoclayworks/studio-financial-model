@@ -1302,7 +1302,16 @@ def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: Optional[str] 
         try:
             res = run_original_once(SCRIPT, ov)
         except Exception as e:
+            import traceback
             st.error(f"Simulation failed: {e}")
+            st.caption("Full traceback:")
+            st.exception(e)  # shows stack with line numbers
+            # Optional: show the overrides that triggered the failure
+            try:
+                import json
+                st.expander("Overrides payload (ov)").write(json.dumps(ov, indent=2, default=str))
+            except Exception:
+                pass
             return pd.DataFrame(), None, [], []
 
     df_cell, eff = (res if isinstance(res, tuple) else (res, None))

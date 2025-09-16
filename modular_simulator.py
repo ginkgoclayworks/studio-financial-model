@@ -188,7 +188,6 @@ def resolve_cfg(user_cfg: dict | None = None) -> dict:
 
     return merged
 
-
 # -- Downturn probability sourcing -------------------------------------------
 def _get_downturn_prob(cfg):
     """Return (prob, source). Never raises; clamps to [0,1].

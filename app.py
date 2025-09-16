@@ -1180,22 +1180,25 @@ def render_advanced_controls(defaults: dict) -> dict:
             _us_def = defaults.get("USAGE_SHARE")
             _us_def_str = json.dumps(_us_def) if isinstance(_us_def, (dict, list, tuple)) else str(_us_def)
     
+             # USAGE_SHARE: must be JSON mapping/list of shares per station type
+            _us_def = defaults.get("USAGE_SHARE")
+            _us_def_str = json.dumps(_us_def) if isinstance(_us_def, (dict, list, tuple)) else str(_us_def)
+
             usage_share_str = st.text_input(
-                "Usage share (0–1) OR JSON per station type",
+                "Usage share per station type (JSON)",
                 key="adv_USAGE_SHARE_str",
                 value=_us_def_str,
-                help='Examples: 0.65  OR  {"wheels": 0.7, "handbuilding": 0.3}  OR  [0.7, 0.3]'
+                help='Examples: {"Hobbyist":{"wheels":0.5,"handbuilding":0.35,"glaze":0.15}, ...}'
             )
-            try:
-                txt = usage_share_str.strip()
-                if txt == "":
-                    pass  # keep default
-                elif txt.startswith("{") or txt.startswith("["):
-                    adv["USAGE_SHARE"] = json.loads(txt)
-                else:
-                    adv["USAGE_SHARE"] = float(txt)
-            except Exception:
-                st.caption("⚠️ Invalid value for USAGE_SHARE; keeping default.")
+            txt = usage_share_str.strip()
+            if txt:
+                try:
+                    if txt.startswith("{") or txt.startswith("["):
+                        adv["USAGE_SHARE"] = json.loads(txt)  # dict/list
+                    else:
+                        st.caption("⚠️ USAGE_SHARE must be JSON (dict/list). Keeping default.")
+                except Exception:
+                    st.caption("⚠️ Invalid JSON for USAGE_SHARE; keeping default.")
     
             adv["SESSIONS_PER_WEEK"]     = _num("Sessions per week", "adv_SESSIONS_PER_WEEK", defaults.get("SESSIONS_PER_WEEK"), 1, 70, 1)
             adv["SESSION_HOURS"]         = _num("Hours per session", "adv_SESSION_HOURS", defaults.get("SESSION_HOURS"), 0.5, 12.0, 0.5)

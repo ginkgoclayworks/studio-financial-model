@@ -873,15 +873,39 @@ def firings_this_month(n_active_members):
     return int(np.clip(round(raw), MIN_FIRINGS_PER_MONTH, MAX_FIRINGS_PER_MONTH))
 
 def compute_membership_soft_cap():
+    """Compute soft cap from station capacities and member usage assumptions.
+    Defensive against scalar overrides for dict-typed knobs."""
     H = OPEN_HOURS_PER_WEEK
+
+    # --- Defensive coercions for dict-typed configs ---
+    _sessions = SESSIONS_PER_WEEK
+    if not isinstance(_sessions, dict):
+        try:
+            v = float(_sessions)
+            _sessions = {a: v for a in MEMBER_ARCHETYPES.keys()}
+        except Exception:
+            _sessions = {"Hobbyist": 1, "Artist": 3, "Pro": 5, "Seasonal": 2}
+
+    _dur = SESSION_HOURS
+    if not isinstance(_dur, dict):
+        try:
+            v = float(_dur)
+            _dur = {a: v for a in MEMBER_ARCHETYPES.keys()}
+        except Exception:
+            _dur = {"Hobbyist": 2.0, "Artist": 3.0, "Pro": 4.0, "Seasonal": 2.0}
+
+    _share = USAGE_SHARE
+    if not isinstance(_share, dict):
+        _share = {a: {s: 1.0 for s in STATIONS.keys()} for a in MEMBER_ARCHETYPES.keys()}
+
     caps = {}
     for s, cfg in STATIONS.items():
         denom = 0.0
         for arch, arch_cfg in MEMBER_ARCHETYPES.items():
             mix = arch_cfg["prob"]
-            s_per_wk = SESSIONS_PER_WEEK[arch]
-            dur = SESSION_HOURS[arch]
-            share = USAGE_SHARE[arch][s]
+            s_per_wk = _sessions[arch]
+            dur = _dur[arch]
+            share = _share[arch][s]
             denom += mix * s_per_wk * dur * share
         caps[s] = (cfg["alpha"] * cfg["capacity"] * H) / (cfg["kappa"] * denom)
     return min(caps.values()), caps

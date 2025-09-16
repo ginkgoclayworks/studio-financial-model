@@ -1147,7 +1147,7 @@ def _num(label, key, default=None, min_value=None, max_value=None, step=None, he
         st.session_state[key] = default
 
     kw = dict(min_value=min_value, max_value=max_value, step=step, help=help, format=fmt)
-    return st.number_input(
+    return st.number_input(, help="Type an exact numeric value. Use arrow keys for fine adjustments."
         label,
         key=key,
         value=st.session_state[key],
@@ -1223,65 +1223,65 @@ def render_advanced_controls(defaults: dict) -> dict:
                 except Exception:
                     st.caption("⚠️ Invalid JSON for USAGE_SHARE; keeping default.")
     
-            adv["SESSIONS_PER_WEEK"]     = _num("Sessions per week", "adv_SESSIONS_PER_WEEK", defaults.get("SESSIONS_PER_WEEK"), 1, 70, 1)
-            adv["SESSION_HOURS"]         = _num("Hours per session", "adv_SESSION_HOURS", defaults.get("SESSION_HOURS"), 0.5, 12.0, 0.5)
-            adv["OPEN_HOURS_PER_WEEK"]   = _num("Open hours per week", "adv_OPEN_HOURS_PER_WEEK", defaults.get("OPEN_HOURS_PER_WEEK"), 1, 168, 1)
-            adv["CAPACITY_DAMPING_BETA"] = _num("Capacity damping β (higher = softer cap)", "adv_CAPACITY_DAMPING_BETA", defaults.get("CAPACITY_DAMPING_BETA"), 0.0, 10.0, 0.1)
+            adv["SESSIONS_PER_WEEK"]     = _num("Sessions per week", "adv_SESSIONS_PER_WEEK", defaults.get("SESSIONS_PER_WEEK"), 1, 70, 1, help="Member behavior assumptions by archetype. Adjust only if you have measured data.")
+            adv["SESSION_HOURS"]         = _num("Hours per session", "adv_SESSION_HOURS", defaults.get("SESSION_HOURS"), 0.5, 12.0, 0.5, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+            adv["OPEN_HOURS_PER_WEEK"]   = _num("Open hours per week", "adv_OPEN_HOURS_PER_WEEK", defaults.get("OPEN_HOURS_PER_WEEK"), 1, 168, 1, help="Operational capacity assumptions used to compute membership limits.")
+            adv["CAPACITY_DAMPING_BETA"] = _num("Capacity damping β (higher = softer cap)", "adv_CAPACITY_DAMPING_BETA", defaults.get("CAPACITY_DAMPING_BETA"), 0.0, 10.0, 0.1, help="Operational capacity assumptions used to compute membership limits.")
 
     # ---- Top of Funnel & Referrals
     with st.sidebar.expander("Top-of-Funnel & Referrals", expanded=True):
-        adv["BASELINE_RATE_HOME"]        = _num("Baseline join rate (Home potters)", "adv_BASELINE_RATE_HOME", defaults.get("BASELINE_RATE_HOME"), 0.0, 1.0, 0.001)
-        adv["BASELINE_RATE_COMMUNITY"]   = _num("Baseline join rate (Community studio users)", "adv_BASELINE_RATE_COMMUNITY", defaults.get("BASELINE_RATE_COMMUNITY"), 0.0, 1.0, 0.001)
-        adv["BASELINE_RATE_NO_ACCESS"]   = _num("Baseline join rate (No access)", "adv_BASELINE_RATE_NO_ACCESS", defaults.get("BASELINE_RATE_NO_ACCESS"), 0.0, 1.0, 0.001)
-        adv["HOME_INFLOW"]               = _num("Monthly inflow (Home)", "adv_HOME_INFLOW", defaults.get("HOME_INFLOW"), 0, 100000, 10)
-        adv["COMMUNITY_INFLOW"]          = _num("Monthly inflow (Community)", "adv_COMMUNITY_INFLOW", defaults.get("COMMUNITY_INFLOW"), 0, 100000, 10)
-        adv["NO_ACCESS_INFLOW"]          = _num("Monthly inflow (No access)", "adv_NO_ACCESS_INFLOW", defaults.get("NO_ACCESS_INFLOW"), 0, 100000, 10)
-        adv["REFERRAL_RATE_PER_MEMBER"]  = _num("Referrals per member per month", "adv_REFERRAL_RATE_PER_MEMBER", defaults.get("REFERRAL_RATE_PER_MEMBER"), 0.0, 2.0, 0.01)
-        adv["REFERRAL_CONV"]             = _num("Referral conversion rate (0–1)", "adv_REFERRAL_CONV", defaults.get("REFERRAL_CONV"), 0.0, 1.0, 0.01)
-        adv["MARKETING_COST_BASE"]       = _num("Marketing base cost ($/mo)", "adv_MARKETING_COST_BASE", defaults.get("MARKETING_COST_BASE"), 0, 50000, 50)
-        adv["MARKETING_RAMP_MONTHS"]     = _num("Marketing ramp months", "adv_MARKETING_RAMP_MONTHS", defaults.get("MARKETING_RAMP_MONTHS"), 0, 36, 1)
-        adv["MARKETING_RAMP_MULTIPLIER"] = _num("Marketing ramp multiplier", "adv_MARKETING_RAMP_MULTIPLIER", defaults.get("MARKETING_RAMP_MULTIPLIER"), 0.0, 10.0, 0.1)
+        adv["BASELINE_RATE_HOME"]        = _num("Baseline join rate (Home potters)", "adv_BASELINE_RATE_HOME", defaults.get("BASELINE_RATE_HOME"), 0.0, 1.0, 0.001, help="Fractional rate (0–1). For example, 6% = 0.06.")
+        adv["BASELINE_RATE_COMMUNITY"]   = _num("Baseline join rate (Community studio users)", "adv_BASELINE_RATE_COMMUNITY", defaults.get("BASELINE_RATE_COMMUNITY"), 0.0, 1.0, 0.001, help="Fractional rate (0–1). For example, 6% = 0.06.")
+        adv["BASELINE_RATE_NO_ACCESS"]   = _num("Baseline join rate (No access)", "adv_BASELINE_RATE_NO_ACCESS", defaults.get("BASELINE_RATE_NO_ACCESS"), 0.0, 1.0, 0.001, help="Fractional rate (0–1). For example, 6% = 0.06.")
+        adv["HOME_INFLOW"]               = _num("Monthly inflow (Home)", "adv_HOME_INFLOW", defaults.get("HOME_INFLOW"), 0, 100000, 10, help="Market dynamics: higher values speed up growth; churn reduces active members.")
+        adv["COMMUNITY_INFLOW"]          = _num("Monthly inflow (Community)", "adv_COMMUNITY_INFLOW", defaults.get("COMMUNITY_INFLOW"), 0, 100000, 10, help="Market dynamics: higher values speed up growth; churn reduces active members.")
+        adv["NO_ACCESS_INFLOW"]          = _num("Monthly inflow (No access)", "adv_NO_ACCESS_INFLOW", defaults.get("NO_ACCESS_INFLOW"), 0, 100000, 10, help="Market dynamics: higher values speed up growth; churn reduces active members.")
+        adv["REFERRAL_RATE_PER_MEMBER"]  = _num("Referrals per member per month", "adv_REFERRAL_RATE_PER_MEMBER", defaults.get("REFERRAL_RATE_PER_MEMBER"), 0.0, 2.0, 0.01, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        adv["REFERRAL_CONV"]             = _num("Referral conversion rate (0–1)", "adv_REFERRAL_CONV", defaults.get("REFERRAL_CONV"), 0.0, 1.0, 0.01, help="Fractional rate (0–1). For example, 6% = 0.06.")
+        adv["MARKETING_COST_BASE"]       = _num("Marketing base cost ($/mo)", "adv_MARKETING_COST_BASE", defaults.get("MARKETING_COST_BASE"), 0, 50000, 50, help="Enter the monthly dollar amount. Use 0 if not applicable.")
+        adv["MARKETING_RAMP_MONTHS"]     = _num("Marketing ramp months", "adv_MARKETING_RAMP_MONTHS", defaults.get("MARKETING_RAMP_MONTHS"), 0, 36, 1, help="Time length for this setting. Choose years unless otherwise noted.")
+        adv["MARKETING_RAMP_MULTIPLIER"] = _num("Marketing ramp multiplier", "adv_MARKETING_RAMP_MULTIPLIER", defaults.get("MARKETING_RAMP_MULTIPLIER"), 0.0, 10.0, 0.1, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
 
     # ---- Firing & Utilities
     with st.sidebar.expander("Firing & Utilities", expanded=False):
-        adv["BASE_FIRINGS_PER_MONTH"]              = _num("Base firings / month", "adv_BASE_FIRINGS_PER_MONTH", defaults.get("BASE_FIRINGS_PER_MONTH"), 0, 60, 1)
-        adv["MIN_FIRINGS_PER_MONTH"]               = _num("Min firings / month", "adv_MIN_FIRINGS_PER_MONTH", defaults.get("MIN_FIRINGS_PER_MONTH"), 0, 60, 1)
-        adv["MAX_FIRINGS_PER_MONTH"]               = _num("Max firings / month", "adv_MAX_FIRINGS_PER_MONTH", defaults.get("MAX_FIRINGS_PER_MONTH"), 0, 120, 1)
-        adv["DYNAMIC_FIRINGS"]                     = _num("Dynamic firings (0=off,1=on)", "adv_DYNAMIC_FIRINGS", defaults.get("DYNAMIC_FIRINGS"), 0, 1, 1)
-        adv["REFERENCE_MEMBERS_FOR_BASE_FIRINGS"]  = _num("Reference members for base firings", "adv_REFERENCE_MEMBERS_FOR_BASE_FIRINGS", defaults.get("REFERENCE_MEMBERS_FOR_BASE_FIRINGS"), 1, 500, 1)
-        adv["KWH_PER_FIRING_KMT1027"]              = _num("kWh per firing (KMT 1027)", "adv_KWH_PER_FIRING_KMT1027", defaults.get("KWH_PER_FIRING_KMT1027"), 0.0, 5000.0, 1.0)
-        adv["KWH_PER_FIRING_KMT1427"]              = _num("kWh per firing (KMT 1427)", "adv_KWH_PER_FIRING_KMT1427", defaults.get("KWH_PER_FIRING_KMT1427"), 0.0, 5000.0, 1.0)
-        adv["WATER_COST_PER_GALLON"]               = _num("Water cost ($/gal)", "adv_WATER_COST_PER_GALLON", defaults.get("WATER_COST_PER_GALLON"), 0.0, 10.0, 0.01)
+        adv["BASE_FIRINGS_PER_MONTH"]              = _num("Base firings / month", "adv_BASE_FIRINGS_PER_MONTH", defaults.get("BASE_FIRINGS_PER_MONTH"), 0, 60, 1, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        adv["MIN_FIRINGS_PER_MONTH"]               = _num("Min firings / month", "adv_MIN_FIRINGS_PER_MONTH", defaults.get("MIN_FIRINGS_PER_MONTH"), 0, 60, 1, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        adv["MAX_FIRINGS_PER_MONTH"]               = _num("Max firings / month", "adv_MAX_FIRINGS_PER_MONTH", defaults.get("MAX_FIRINGS_PER_MONTH"), 0, 120, 1, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        adv["DYNAMIC_FIRINGS"]                     = _num("Dynamic firings (0=off,1=on)", "adv_DYNAMIC_FIRINGS", defaults.get("DYNAMIC_FIRINGS"), 0, 1, 1, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        adv["REFERENCE_MEMBERS_FOR_BASE_FIRINGS"]  = _num("Reference members for base firings", "adv_REFERENCE_MEMBERS_FOR_BASE_FIRINGS", defaults.get("REFERENCE_MEMBERS_FOR_BASE_FIRINGS"), 1, 500, 1, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        adv["KWH_PER_FIRING_KMT1027"]              = _num("kWh per firing (KMT 1027)", "adv_KWH_PER_FIRING_KMT1027", defaults.get("KWH_PER_FIRING_KMT1027"), 0.0, 5000.0, 1.0, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        adv["KWH_PER_FIRING_KMT1427"]              = _num("kWh per firing (KMT 1427)", "adv_KWH_PER_FIRING_KMT1427", defaults.get("KWH_PER_FIRING_KMT1427"), 0.0, 5000.0, 1.0, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        adv["WATER_COST_PER_GALLON"]               = _num("Water cost ($/gal)", "adv_WATER_COST_PER_GALLON", defaults.get("WATER_COST_PER_GALLON"), 0.0, 10.0, 0.01, help="Enter the monthly dollar amount. Use 0 if not applicable.")
 
     # ---- Classes & Events
     with st.sidebar.expander("Classes & Events", expanded=False):
-        adv["CLASS_INSTR_RATE_PER_HR"] = _num("Instructor rate ($/hr)", "adv_CLASS_INSTR_RATE_PER_HR", defaults.get("CLASS_INSTR_RATE_PER_HR"), 0, 500, 1)
-        adv["CLASS_HOURS_PER_COHORT"]  = _num("Hours per cohort", "adv_CLASS_HOURS_PER_COHORT", defaults.get("CLASS_HOURS_PER_COHORT"), 0, 200, 1)
-        adv["CLASS_FILL_MEAN"]         = _num("Class fill (avg seats)", "adv_CLASS_FILL_MEAN", defaults.get("CLASS_FILL_MEAN"), 0, 50, 1)
-        adv["CLASS_COST_PER_STUDENT"]  = _num("Variable cost per student ($)", "adv_CLASS_COST_PER_STUDENT", defaults.get("CLASS_COST_PER_STUDENT"), 0, 2000, 1)
-        adv["EVENT_CONV_RATE"]         = _num("Event conversion to member (0–1)", "adv_EVENT_CONV_RATE", defaults.get("EVENT_CONV_RATE"), 0.0, 1.0, 0.01)
-        adv["EVENT_CONV_LAG_MO"]       = _num("Event conversion lag (months)", "adv_EVENT_CONV_LAG_MO", defaults.get("EVENT_CONV_LAG_MO"), 0, 12, 1)
-        adv["WORKSHOP_CONV_RATE"]      = _num("Workshop conversion (0–1)", "adv_WORKSHOP_CONV_RATE", defaults.get("WORKSHOP_CONV_RATE"), 0.0, 1.0, 0.01)
-        adv["WORKSHOP_CONV_LAG_MO"]    = _num("Workshop conversion lag (months)", "adv_WORKSHOP_CONV_LAG_MO", defaults.get("WORKSHOP_CONV_LAG_MO"), 0, 12, 1)
+        adv["CLASS_INSTR_RATE_PER_HR"] = _num("Instructor rate ($/hr)", "adv_CLASS_INSTR_RATE_PER_HR", defaults.get("CLASS_INSTR_RATE_PER_HR"), 0, 500, 1, help="Fractional rate (0–1). For example, 6% = 0.06.")
+        adv["CLASS_HOURS_PER_COHORT"]  = _num("Hours per cohort", "adv_CLASS_HOURS_PER_COHORT", defaults.get("CLASS_HOURS_PER_COHORT"), 0, 200, 1, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        adv["CLASS_FILL_MEAN"]         = _num("Class fill (avg seats)", "adv_CLASS_FILL_MEAN", defaults.get("CLASS_FILL_MEAN"), 0, 50, 1, help="Controls revenue/throughput for this activity. Adjust only if you run this offering.")
+        adv["CLASS_COST_PER_STUDENT"]  = _num("Variable cost per student ($)", "adv_CLASS_COST_PER_STUDENT", defaults.get("CLASS_COST_PER_STUDENT"), 0, 2000, 1, help="Enter the monthly dollar amount. Use 0 if not applicable.")
+        adv["EVENT_CONV_RATE"]         = _num("Event conversion to member (0–1)", "adv_EVENT_CONV_RATE", defaults.get("EVENT_CONV_RATE"), 0.0, 1.0, 0.01, help="Controls revenue/throughput for this activity. Adjust only if you run this offering.")
+        adv["EVENT_CONV_LAG_MO"]       = _num("Event conversion lag (months)", "adv_EVENT_CONV_LAG_MO", defaults.get("EVENT_CONV_LAG_MO"), 0, 12, 1, help="Time length for this setting. Choose years unless otherwise noted.")
+        adv["WORKSHOP_CONV_RATE"]      = _num("Workshop conversion (0–1)", "adv_WORKSHOP_CONV_RATE", defaults.get("WORKSHOP_CONV_RATE"), 0.0, 1.0, 0.01, help="Controls revenue/throughput for this activity. Adjust only if you run this offering.")
+        adv["WORKSHOP_CONV_LAG_MO"]    = _num("Workshop conversion lag (months)", "adv_WORKSHOP_CONV_LAG_MO", defaults.get("WORKSHOP_CONV_LAG_MO"), 0, 12, 1, help="Time length for this setting. Choose years unless otherwise noted.")
 
     # ---- Financing
     with st.sidebar.expander("Financing", expanded=False):
-        adv["LOAN_ANNUAL_RATE"] = _num("Loan annual rate (APR)", "adv_LOAN_ANNUAL_RATE", defaults.get("LOAN_ANNUAL_RATE"), 0.0, 0.5, 0.005, fmt="%.3f")
-        adv["LOAN_TERM_YEARS"]  = _num("Loan term (years)", "adv_LOAN_TERM_YEARS", defaults.get("LOAN_TERM_YEARS"), 0, 20, 1)
+        adv["LOAN_ANNUAL_RATE"] = _num("Loan annual rate (APR)", "adv_LOAN_ANNUAL_RATE", defaults.get("LOAN_ANNUAL_RATE"), 0.0, 0.5, 0.005, fmt="%.3f", help="Fractional rate (0–1). For example, 6% = 0.06.")
+        adv["LOAN_TERM_YEARS"]  = _num("Loan term (years)", "adv_LOAN_TERM_YEARS", defaults.get("LOAN_TERM_YEARS"), 0, 20, 1, help="Time length for this setting. Choose years unless otherwise noted.")
 
     # ---- Overheads & Taxes (optional)
     with st.sidebar.expander("Overheads & Taxes (advanced)", expanded=False):
-        adv["INSURANCE_COST"]                 = _num("Insurance ($/mo)", "adv_INSURANCE_COST", defaults.get("INSURANCE_COST"), 0, 20000, 10)
-        adv["GLAZE_COST_PER_MONTH"]          = _num("Glaze cost ($/mo)", "adv_GLAZE_COST_PER_MONTH", defaults.get("GLAZE_COST_PER_MONTH"), 0, 10000, 10)
-        adv["HEATING_COST_SUMMER"]           = _num("Heating ($/mo) summer", "adv_HEATING_COST_SUMMER", defaults.get("HEATING_COST_SUMMER"), 0, 20000, 10)
-        adv["HEATING_COST_WINTER"]           = _num("Heating ($/mo) winter", "adv_HEATING_COST_WINTER", defaults.get("HEATING_COST_WINTER"), 0, 20000, 10)
-        adv["MA_SALES_TAX_RATE"]             = _num("MA sales tax rate (0–1)", "adv_MA_SALES_TAX_RATE", defaults.get("MA_SALES_TAX_RATE"), 0.0, 0.15, 0.001, fmt="%.3f")
-        adv["SALES_TAX_REMIT_FREQUENCY_MONTHS"]    = _num("Sales tax remit frequency (months)", "adv_SALES_TAX_REMIT_FREQUENCY_MONTHS", defaults.get("SALES_TAX_REMIT_FREQUENCY_MONTHS"), 1, 12, 1)
-        adv["ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS"]= _num("Estimated tax remit frequency (months)", "adv_ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS", defaults.get("ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS"), 1, 12, 1)
+        adv["INSURANCE_COST"]                 = _num("Insurance ($/mo)", "adv_INSURANCE_COST", defaults.get("INSURANCE_COST"), 0, 20000, 10, help="Enter the monthly dollar amount. Use 0 if not applicable.")
+        adv["GLAZE_COST_PER_MONTH"]          = _num("Glaze cost ($/mo)", "adv_GLAZE_COST_PER_MONTH", defaults.get("GLAZE_COST_PER_MONTH"), 0, 10000, 10, help="Enter the monthly dollar amount. Use 0 if not applicable.")
+        adv["HEATING_COST_SUMMER"]           = _num("Heating ($/mo) summer", "adv_HEATING_COST_SUMMER", defaults.get("HEATING_COST_SUMMER"), 0, 20000, 10, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        adv["HEATING_COST_WINTER"]           = _num("Heating ($/mo) winter", "adv_HEATING_COST_WINTER", defaults.get("HEATING_COST_WINTER"), 0, 20000, 10, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        adv["MA_SALES_TAX_RATE"]             = _num("MA sales tax rate (0–1)", "adv_MA_SALES_TAX_RATE", defaults.get("MA_SALES_TAX_RATE"), 0.0, 0.15, 0.001, fmt="%.3f", help="Fractional rate (0–1). For example, 6% = 0.06.")
+        adv["SALES_TAX_REMIT_FREQUENCY_MONTHS"]    = _num("Sales tax remit frequency (months)", "adv_SALES_TAX_REMIT_FREQUENCY_MONTHS", defaults.get("SALES_TAX_REMIT_FREQUENCY_MONTHS"), 1, 12, 1, help="Fractional rate (0–1). For example, 6% = 0.06.")
+        adv["ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS"]= _num("Estimated tax remit frequency (months)", "adv_ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS", defaults.get("ESTIMATED_TAX_REMIT_FREQUENCY_MONTHS"), 1, 12, 1, help="Fractional rate (0–1). For example, 6% = 0.06.")
 
     # ---- Seasonality (power user)
     with st.sidebar.expander("Seasonality (power user)", expanded=False):
-        adv["NORMALIZE_SEASONALITY"] = _num("Normalize seasonality (0=off,1=on)", "adv_NORMALIZE_SEASONALITY", defaults.get("NORMALIZE_SEASONALITY"), 0, 1, 1)
+        adv["NORMALIZE_SEASONALITY"] = _num("Normalize seasonality (0=off,1=on)", "adv_NORMALIZE_SEASONALITY", defaults.get("NORMALIZE_SEASONALITY"), 0, 1, 1, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
         # Exposing the raw WEIGHTS as a JSON string would be next; keep simple for now.
 
     # Keep only keys whose values are not None
@@ -1302,16 +1302,7 @@ def run_cell_cached(env: dict, strat: dict, seed: int, cache_key: Optional[str] 
         try:
             res = run_original_once(SCRIPT, ov)
         except Exception as e:
-            import traceback
             st.error(f"Simulation failed: {e}")
-            st.caption("Full traceback:")
-            st.exception(e)  # shows stack with line numbers
-            # Optional: show the overrides that triggered the failure
-            try:
-                import json
-                st.expander("Overrides payload (ov)").write(json.dumps(ov, indent=2, default=str))
-            except Exception:
-                pass
             return pd.DataFrame(), None, [], []
 
     df_cell, eff = (res if isinstance(res, tuple) else (res, None))
@@ -1825,28 +1816,28 @@ with st.sidebar:
     scen_names  = [s["name"] for s in SCENARIOS]
     strat_names = [s["name"] for s in STRATEGIES]
 
-    scen_sel  = st.selectbox("Scenario preset", scen_names, index=0)
-    strat_sel = st.selectbox("Strategy preset", strat_names, index=0)
+    scen_sel  = st.selectbox("Scenario preset", scen_names, index=0, help="Brief description pending. If unclear, hover other fields in this section for examples.")
+    strat_sel = st.selectbox("Strategy preset", strat_names, index=0, help="Fractional rate (0–1). For example, 6% = 0.06.")
     
     
     # --- Loan controls (De-Staged) ---
     st.subheader("Loans")
     colA, colB = st.columns(2)
     with colA:
-        capex_mode = st.radio("CapEx Loan (504) Mode", ["upfront","staged"], index=0, horizontal=True)
+        capex_mode = st.radio("CapEx Loan (504) Mode", ["upfront","staged"], index=0, horizontal=True, help="Operational capacity assumptions used to compute membership limits.")
         if capex_mode == "upfront":
-            loan_504 = st.number_input("Upfront CapEx Loan (504)", min_value=0, step=1000, value=0)
+            loan_504 = st.number_input("Upfront CapEx Loan (504)", min_value=0, step=1000, value=0, help="Operational capacity assumptions used to compute membership limits.")
         else:
-            capex_draw_pct = st.slider("CapEx: Staged Draw % of purchase", 0.0, 1.0, 1.0, 0.05)
-            capex_min_tr   = st.number_input("CapEx: Min Tranche ($)", min_value=0, step=500, value=0)
-            capex_max_tr   = st.number_input("CapEx: Max Tranche ($, 0=None)", min_value=0, step=500, value=0)
+            capex_draw_pct = st.slider("CapEx: Staged Draw % of purchase", 0.0, 1.0, 1.0, 0.05, help="Operational capacity assumptions used to compute membership limits.")
+            capex_min_tr   = st.number_input("CapEx: Min Tranche ($)", min_value=0, step=500, value=0, help="Operational capacity assumptions used to compute membership limits.")
+            capex_max_tr   = st.number_input("CapEx: Max Tranche ($, 0=None)", min_value=0, step=500, value=0, help="Operational capacity assumptions used to compute membership limits.")
     with colB:
-        opex_mode = st.radio("OpEx Loan (7a) Mode", ["upfront","staged"], index=0, horizontal=True)
+        opex_mode = st.radio("OpEx Loan (7a) Mode", ["upfront","staged"], index=0, horizontal=True, help="Brief description pending. If unclear, hover other fields in this section for examples.")
         if opex_mode == "upfront":
-            loan_7a  = st.number_input("Upfront OpEx Loan (7a)",  min_value=0, step=1000, value=0)
+            loan_7a  = st.number_input("Upfront OpEx Loan (7a)",  min_value=0, step=1000, value=0, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
         else:
             opex_facility = st.number_input("OpEx: Staged Facility Limit ($)", min_value=0, step=1000, value=0, help="Maximum 7(a) staged working-capital facility.")
-            opex_min_tr   = st.number_input("OpEx: Min Monthly Draw ($)",     min_value=0, step=500,  value=0)
+            opex_min_tr   = st.number_input("OpEx: Min Monthly Draw ($)",     min_value=0, step=500,  value=0, help="Type an exact numeric value. Use arrow keys for fine adjustments.")
             opex_max_tr   = st.number_input("OpEx: Max Monthly Draw ($)",     min_value=0, step=500,  value=0, help="0 = unlimited per month")
             reserve_floor = st.number_input("OpEx: Cash Floor Trigger ($)",    min_value=0, step=500,  value=0, help="If cash dips below this, staged OpEx can draw.")
 
@@ -2207,7 +2198,7 @@ tab_run, tab_matrix = st.tabs(["Single run", "Matrix heatmaps"])
 # ---- Single run
 with tab_run:
     st.caption("Runs a single run simulation with values indicated in the slider")
-    run_btn = st.button("Run simulation")
+    run_btn = st.button("Run simulation", help="Brief description pending. If unclear, hover other fields in this section for examples.")
     if run_btn:
         # auto-bust caches when the user explicitly runs
         try:
@@ -2501,7 +2492,7 @@ with tab_run:
 # ---- Matrix heatmaps
 with tab_matrix:
     st.caption("Runs all presets in SCENARIOS × STRATEGIES with independent seeds.")
-    if st.button("Build matrix"):
+    if st.button("Build matrix", help="Brief description pending. If unclear, hover other fields in this section for examples."):
         # auto-bust caches when building the matrix
         try:
             run_cell_cached.clear()
@@ -2775,15 +2766,15 @@ with st.expander("📤 Export to SBA Financial Projections", expanded=False):
     # --- Minimal extra inputs used by the exporter (optional) ---------------------
     c1, c2 = st.columns(2)
     with c1:
-        equity_injection = st.number_input("Equity injection ($)", min_value=0.0, value=0.0, step=1000.0, format="%.2f")
-        working_capital  = st.number_input("Working capital / OpEx buffer ($)", min_value=0.0, value=45000.0, step=500.0, format="%.2f")
+        equity_injection = st.number_input("Equity injection ($)", min_value=0.0, value=0.0, step=1000.0, format="%.2f", help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        working_capital  = st.number_input("Working capital / OpEx buffer ($)", min_value=0.0, value=45000.0, step=500.0, format="%.2f", help="Operational capacity assumptions used to compute membership limits.")
     with c2:
-        owner_salary     = st.number_input("Owner salary (monthly)", min_value=0.0, value=0.0, step=500.0, format="%.2f")
-        payroll_tax_pct  = st.number_input("Payroll tax & benefits (%)", min_value=0.0, value=12.0, step=0.5, format="%.2f")
+        owner_salary     = st.number_input("Owner salary (monthly)", min_value=0.0, value=0.0, step=500.0, format="%.2f", help="Type an exact numeric value. Use arrow keys for fine adjustments.")
+        payroll_tax_pct  = st.number_input("Payroll tax & benefits (%)", min_value=0.0, value=12.0, step=0.5, format="%.2f", help="Fractional rate (0–1). For example, 6% = 0.06.")
 
     disabled = tpl is None
 
-    if st.button("Export SBA Workbook", disabled=disabled, use_container_width=True):
+    if st.button("Export SBA Workbook", disabled=disabled, use_container_width=True, help="Include this output in the download. Does not affect calculations."):
         if tpl is None:
             st.error("Please upload an SBA template (.xlsx) first.")
             st.stop()
@@ -2847,7 +2838,6 @@ with st.expander("📤 Export to SBA Financial Projections", expanded=False):
             except Exception:
                 pass
     
-
 
 
 

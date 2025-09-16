@@ -1345,12 +1345,26 @@ def _core_simulation_and_reports():
                                 "community_studio": _haz_to_prob(lam_comm),  # applies only to cs_eligible
                             }
                         else:
-                            pool_intents = {
-                                "no_access":        POOL_BASE_INTENT["no_access"]        * intent_common_mult,
-                                "home_studio":      POOL_BASE_INTENT["home_studio"]      * intent_common_mult,
-                                "community_studio": POOL_BASE_INTENT["community_studio"] * intent_common_mult,  # applies only to cs_eligible
-                            }
-    
+                          # Tolerate bad overrides where POOL_BASE_INTENT is a scalar instead of a mapping
+                          _base_int = POOL_BASE_INTENT
+                          if not isinstance(_base_int, dict):
+                              try:
+                                  s = float(_base_int)
+                                  _base_int = {
+                                      "no_access": s,
+                                      "home_studio": s,
+                                      "community_studio": s,
+                                  }
+                              except Exception:
+                                  # fall back to defaults if totally borked
+                                  _base_int = {"no_access": 0.04, "home_studio": 0.01, "community_studio": 0.10}
+
+                          pool_intents = {
+                              "no_access":        _base_int["no_access"]        * intent_common_mult,
+                              "home_studio":      _base_int["home_studio"]      * intent_common_mult,
+                              "community_studio": _base_int["community_studio"] * intent_common_mult,  # applies only to cs_eligible
+                          }
+  
                         # Draw adopters from each pool
                         joins_no_access   = draw_adopters(remaining_pool["no_access"],      pool_intents["no_access"], rng)
                         joins_home        = draw_adopters(remaining_pool["home_studio"],    pool_intents["home_studio"], rng)
